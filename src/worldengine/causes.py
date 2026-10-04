@@ -28,11 +28,12 @@ MAX_STEPS = 16                 # an answer holds at most this many entries, and 
 FOLLOW_TOP = 2
 WORTH_FOLLOWING = 0.1          # a driver smaller than this share of the largest one is not followed
 WORTH_SAYING = 0.002           # a driver smaller than this share of the largest one is not mentioned
+NO_VALUE = "no value"          # how a missing value is worded
 
 
 def _fmt(v, unit):
     if v is None or (isinstance(v, float) and v != v):
-        return "undefined"
+        return NO_VALUE
     if unit == "C_from_K":
         return f"{v - 273.15:.1f} °C"
     if unit == "K_difference":
@@ -121,6 +122,10 @@ def explain(view, cell: int, field: str) -> dict:
         def append(self, entry):
             if self and self[-1].get("cut"):
                 return
+            if len(self) >= MAX_STEPS and not entry.get("cut"):          # the answer is full, whatever was about to be added
+                entry = {"field": entry["field"], "cell": entry["cell"], "end": True, "cut": True,
+                         "text": f"The walk stops here: the answer has reached {MAX_STEPS} entries. "
+                                 f"Ask about {entry['field']} to go on."}
             if entry["cell"] != cell and not entry["text"].startswith("At "):
                 entry["text"] = here(entry["cell"]) + entry["text"]
             list.append(self, entry)
@@ -256,7 +261,9 @@ def explain(view, cell: int, field: str) -> dict:
             kind = "a physical push" if meta.get("physical") else "a push that is not physical"
             chain.append({"field": f, "cell": int(c), "push": pid, "physical": bool(meta.get("physical")),
                           "text": f"{kind.capitalize()} acted here: entry {meta['entry']} ({meta.get('reason') or 'no reason given'}), "
-                                  f"operation {meta['op']}, at {w * 100:.0f} % strength. Before the push the value was {b_text}."})
+                                  f"operation {meta['op']}, at {w * 100:.0f} % strength. "
+                                  + ("Before the push the cell had no value." if b_text == NO_VALUE
+                                     else f"Before the push the value was {b_text}.")})
         if pat.get("ends"):
             chain.append({"field": f, "cell": int(c), "end": True, "text": pat["ends"].format_map(slots)})
             return

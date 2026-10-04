@@ -3,8 +3,8 @@
 Model (Adapted): a one-layer water budget, as in the atmosphere of the UVic model (Weaver et al.
 2001). Vapour leaves the sea, travels with the wind, and falls where the air is too moist to
 hold it. Each month is solved as a steady state, because vapour stays in the air for only about
-ten days. Vapour also mixes sideways, which stands for the passing storms the model does not
-follow. Three rules make rain.
+ten days [UNVERIFIED: the usual figure for Earth, recalled]. Vapour also mixes sideways, which
+stands for the passing storms the model does not follow. Three rules make rain.
   Rain where the air is too moist: rain rises steeply with the humidity of the whole column,
     P = exp(11.4 (r - 0.522)) mm a day, the fit of Bretherton, Peters and Back 2004 (their
     equation 2) to monthly data over tropical seas. The design named a sharp threshold at 85 %
@@ -20,7 +20,8 @@ follow. Three rules make rain.
     of the overturning loop.
 
 The flow that carries the vapour. Circulation's surface wind flows toward where the air rises
-in a layer about a kilometre deep, while vapour reaches higher. So the carrying flow is first
+in a layer about a kilometre deep, while vapour reaches higher [UNVERIFIED: my recollection of
+the depth of Earth's trade-wind inflow]. So the carrying flow is first
 fitted from the surface wind on flat ground: it is the smallest change to the surface wind's
 flow after which it gathers and spreads only a set share as strongly as the surface wind does.
 That is exactly the part of the wind that turns without gathering, plus the set share of the
@@ -35,8 +36,9 @@ extension]. Three things follow.
   * Behind high ground more air leaves than crosses. The difference comes down from above the
     vapour and brings none, so the vapour there is thin: the rain shadow.
   * Before high ground more air arrives than can cross: it is held back. The share named above
-    is lifted and rains on the higher ground. The rest is turned aside: it spreads through the
-    part of the vapour layer that is open, over a set reach, and gathers there, which makes a
+    is lifted: of its vapour, the part given by the humidity rains on the higher ground, and
+    what is left stays in the cell at the foot. The rest of the air is turned aside: it spreads
+    through the part of the vapour layer that is open, over a set reach, and gathers there, which makes a
     broad wet zone before a long range and lets air flow around the end of a short one. This
     stands in for what the surface wind would do if Circulation knew the ground (the idea of
     mass-consistent wind models: Sasaki 1958, Sherman 1978) [INFERRED: my construction]. An
@@ -54,10 +56,17 @@ near 30 degrees in summer, where one layer of air tends to rain where Earth has 
 a long wall kilometres high the wet zone is probably too wet: about a third of the vapour held
 back by a wall 2.5 km high rains within 500 km of it. The rain of rising ground falls on the
 first higher cell, so at a cliff it grows as the cells shrink, while the amount per kilometre
-of cliff stays the same; the seeded continents end in cliffs, which no real coast does. Where
-the air is cold the vapour layer is shallower than the fixed depth used to spread the held-back
-air. Simple models of rain on slopes must be calibrated to perform well, and the same holds for
-this whole budget: its constants were set by hand on the default planet.
+of cliff stays the same; the seeded continents end in cliffs, which no real coast does. In the
+default world the wettest such cell gets 3.2 m of this rain a year on the preview mesh, 6.5 m
+at twice the detail and 13 m on the standard mesh [MEASURED]; spreading it over a set distance
+inland would end that, and is left for the upgrade of this process (build step 5). Where the
+air is cold the vapour layer is shallower than the fixed depth used to spread the held-back
+air. Simple models of rain on slopes "must be calibrated to perform well" (Minder and Roe, in
+the design's sources), and the same holds for this whole budget: its constants were set by hand
+on the default planet.
+
+A month in which nothing feeds the air (no sea, and no water given off by land) is not solved:
+its steady state holds no water.
 """
 import hashlib
 
@@ -162,6 +171,12 @@ class OneLayerMoisture(Process):
             w_sat = holds * depth
             speed = np.sqrt(np.einsum("ij,ij->i", wind[m], wind[m]) + c["gust_m_s"] ** 2)     # of the surface wind, gusts included
             evap = np.where(sea, c["exchange_coefficient"] * speed * holds, 0.0)         # kg/m2/s at zero humidity
+            if not evap.any() and not land_source[m].any():
+                # Nothing feeds the air in this month, so its steady state holds no water and no rain falls. The
+                # solver would get there only slowly, because air that holds little water rains very little: it
+                # stopped with a part of its first guess still in the air, more of it the finer the mesh (third check).
+                came_from[m] = -1
+                continue
             rain_scale = w_sat / law["reference_column_kg_m2"] / SECONDS_PER_DAY         # kg/m2/s where the law gives 1 mm a day
             shifted = law["humidity_at_one_mm_per_day"] + c["sinking_shift"] * np.clip(sinking[m] / c["sinking_reference_mm_s"], 0.0, 1.0)
             coefficients = []

@@ -54,10 +54,11 @@ slots:
                                                # [MEASURED: with 4, the direction of a straight boundary is off by at most 10 degrees; with 2, by 20]
         direction_known_above: 0.3             # the sides within reach must add up to more than this share of their length for the
                                                # boundary to have a direction there; otherwise the cell counts as sliding past
-                                               # [MEASURED: a straight boundary gives 0.67 to 0.87. A plate up to about four cells
+                                               # [MEASURED: a straight boundary gives 0.67 to 0.87. A plate up to about three cells
                                                #  across has its whole outline within reach, which adds up to next to nothing: such
-                                               #  a plate gets no ridge or trench. With 0.02, round plates two cells in radius that
-                                               #  only spin showed false ridges and trenches at 10 of 322 boundary cells]
+                                               #  a plate gets no ridge or trench (third check: none at three cells across; at four
+                                               #  cells, 27 of 140 boundary cells get a direction). With 0.02, round plates two cells
+                                               #  in radius that only spin showed false ridges and trenches at 10 of 322 boundary cells]
       orogeny:
         subduction_thickening_m: 18000.0       # crust added behind a trench at the reference speed [PROVISIONAL: tuned, as the paper's uplift is]
         subduction_width_km: 600.0
@@ -98,9 +99,12 @@ slots:
         old_floor_amplitude_m: 3200.0
         levelling_time_my: 62.8
         old_rule_from_my: 20.0                 # the second rule holds from this age; the process changes rule where the two cross in between
-        reference_offset_m: 1100.0             # [PROVISIONAL: set so that the default world's sea comes to rest near the reference
-                                               #  level. The design's tuning on Earth's crust thickness and floor ages (Layer 5) is
-                                               #  not done yet: the Earth data could not be fetched where this was built]
+        reference_offset_m: 1100.0             # [PROVISIONAL: set, before the reviews of build step 1, so that the default world's sea
+                                               #  came to rest near the reference level. The fixes of the reviews changed the plates
+                                               #  and the depth of old floor, and the offset was not set again: the sea now rests 153 m
+                                               #  below the reference level on the preview mesh and 225 m below it on the standard mesh
+                                               #  (measured). The design's tuning on Earth's crust thickness and floor ages (Layer 5)
+                                               #  replaces this number; the Earth data could not be fetched where this was built]
     expected_range:
       surface_gravity_m_s2: [5.0, 20.0]
 
@@ -226,8 +230,11 @@ slots:
     writes: [ocean_evaporation, column_water, precipitation, snowfall]
     constants:
       rain_law:                                # rain in mm a day = exp(steepness * (humidity - humidity_at_one_mm_per_day))
+                                               #                    - exp(-steepness * humidity_at_one_mm_per_day)
         steepness: 11.4                        # [DOCUMENTED: Bretherton, Peters and Back 2004, eq. 2, the fit to monthly data over
-        humidity_at_one_mm_per_day: 0.522      #  tropical seas: P = exp(11.4 (r - 0.522)) mm a day, r the humidity of the whole column]
+        humidity_at_one_mm_per_day: 0.522      #  tropical seas: P = exp(11.4 (r - 0.522)) mm a day, r the humidity of the whole column.
+                                               #  INFERRED: taking off the law's value at r = 0, so that air holding no water gives no
+                                               #  rain, is my addition; it lowers the rate at one mm a day by 0.3 %]
         reference_column_kg_m2: 60.0           # outside the tropics the rate is scaled by saturation column / this [INFERRED: my extension]
       # The five numbers sinking_shift, exchange_coefficient, gust_m_s, mixing_m2_s and share_of_converging_wind were set
       # together by hand on the default planet [CALIBRATED], after the reviews of build step 1. The aims, from
@@ -247,24 +254,29 @@ slots:
                                                # belts): that flow is deep, and carries the whole column
         share_of_converging_wind: 0.25         # of the part that flows toward where the air rises: that flow is about a kilometre
                                                # deep while vapour reaches higher, and the model's is about twice as fast as Earth's
+                                               # [UNVERIFIED: both statements are my recollection of Earth's trade winds, not looked up]
         turned_aside_reach_km: 500.0           # air that high ground holds back and does not lift spreads over this distance
                                                # before it gathers again [INFERRED: the order of the distance over which a range
                                                # slows the air before it; with 500 km a wall 2.5 km high facing a wind of 6 m/s
                                                # has 3.9 m of rain a year over the 500 km before it, on every mesh tried]
       rising_ground_efficiency: 0.08           # share of the vapour that the surface wind pushes against higher ground, below that
-                                               # ground's level, that falls there as rain, at full humidity [CALIBRATED: with it a
-                                               # scarp 1.4 km high facing steady trade winds draws about 7 kg of rain a second per
-                                               # metre of its length, 2 to 3 m of rain a year over a strip 100 km wide, the order of
-                                               # Earth's wet trade-wind coasts as I recall them: UNVERIFIED]
+                                               # ground's level, that falls there as rain, at full humidity [CALIBRATED by hand.
+                                               # MEASURED in the third check: a scarp 1.4 km high facing a wind of 6 m/s over a sea
+                                               # at 298 K draws 5.4 kg of rain a second per metre of its length, which is 1.7 m of
+                                               # rain a year over a strip 100 km wide; a wall 2.5 km high draws 8.5 to 9.4 kg. That
+                                               # is the order of Earth's wet trade-wind coasts as I recall them: UNVERIFIED]
       newton_steps: 6
-      vapour_scale_height_m: 2500.0            # depth of the layer that holds the vapour [UNVERIFIED: typical value]; also the height
-                                               # over which vapour thins, for mixing between columns over ground of different height
+      vapour_scale_height_m: 2500.0            # depth of the layer that holds the vapour [UNVERIFIED: typical value]: it turns what
+                                               # air can hold at the surface into what a column can hold, and it sets how much of the
+                                               # layer is open above high ground for the air that is held back. (What crosses between
+                                               # columns over ground of different height follows the saturation ratio, not this depth.)
       sinking_reference_mm_s: 3.0              # the sinking speed at which the shift above is reached in full [PROVISIONAL]
       coarser_meshes: 4                        # the budget is solved on a ladder of this many coarser meshes below the world's own
       maximum_trips: 30                        # cap on the trips down the ladder and back, on each mesh
       coarsest_cycles: 20                      # sweeps on the coarsest mesh in each trip
-      tolerance_kg_m2: 2.0e-3                  # the solver stops when its last sweep changes no column by more than this; the
-                                               # answer then lies within about this much of the settled one (second review: 2.5e-3)
+      tolerance_kg_m2: 2.0e-3                  # the solver stops when its last sweep changes no column by more than this. That is
+                                               # not a bound on the error: in the default world the answer then lies 0.002 to 0.012
+                                               # kg/m2 from the fully settled one, and the rain within 0.03 % of it (third check)
       saturation:                              # saturation vapour pressure over water [UNVERIFIED: the formula of Bolton 1980 as I recall it]
         pressure_at_zero_pa: 611.2
         exponent_factor: 17.67

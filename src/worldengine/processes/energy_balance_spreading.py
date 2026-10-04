@@ -22,17 +22,22 @@ Wrong where: it spreads heat over about 3,500 km, so anything narrower is smooth
 Coasts facing the wind are not milder than coasts facing away. High plateaus are too cold.
 The largest known error of the climate stage: one spreading constant ties land to the sea too
 tightly, so the seasons on land are too weak unless the continent is very large. Measured with
-this process alone, sunlight of Earth and an albedo of 0.31 everywhere: at the centre of a
-continent 60 degrees of longitude wide the temperature at 50 degrees north swings 10.7 K either
-side of its mean, where the middle of North America swings about 19 K [UNVERIFIED: recalled];
-on a continent 140 degrees wide it swings 20 K, close to inner Asia's. With weak seasons the
-summers of land poleward of about 50 degrees stay below freezing, snow outlasts them, and the
-reflecting snow cools the land further: in ten seeded worlds 15 to 48 % of the land lies under
-snow all year, where Earth has about 10 % under ice. Later two-dimensional models of this
-family let the spreading weaken toward the poles and over land (North, Mengel and Short 1983;
-Zhuang, North and Stevens 2017; Ziegler and Rehfeld 2021); with a spreading constant of 0.35
-in place of 0.649 the same two continents swing 15.9 and 27.6 K. That is a change of model,
-left for a version of this process that is tested against Earth.
+this process alone on the preview mesh, with Earth's sunlight and an albedo of 0.31 everywhere:
+on a continent that reaches from 15 to 70 degrees north and is 60 degrees of longitude wide,
+the temperature at its centre at 50 degrees north swings 10.7 K either side of its mean, where
+the middle of North America swings about 19 K [UNVERIFIED: recalled]; on a continent from 10 to
+75 degrees north and 140 degrees wide it swings 20 K at its centre at 55 degrees north, close
+to inner Asia's [UNVERIFIED: recalled]. (The third check measured continents of other extents:
+10.9 and 19.3 K from 20 to 80 degrees north, 11.6 and 22.3 K from pole to pole.) With weak
+seasons the summers of land poleward of about 50 degrees stay below freezing, snow outlasts
+them, and the reflecting snow cools the land further: in ten seeded worlds 15 to 48 % of the
+land lies under snow all year [MEASURED], where Earth has 10 % under ice [DOCUMENTED: National
+Snow and Ice Data Center, Glacier Quick Facts]. Later two-dimensional models of this family
+let the spreading weaken toward the poles and over land (North, Mengel and Short 1983; Zhuang,
+North and Stevens 2017; Ziegler and Rehfeld 2021) [of these I opened only the last]; with a
+spreading constant of 0.35 in place of 0.649 the same two continents swing 15.9 and 27.6 K
+[MEASURED]. That is a change of model, left for a version of this process that is tested
+against Earth.
 """
 import numpy as np
 import scipy.sparse as sp

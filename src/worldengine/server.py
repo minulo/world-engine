@@ -99,8 +99,8 @@ class WorldService:
 
     def _plane(self, name, month, part):
         """One value per cell for display: a month of a monthly field, the speed or one part of a direction."""
+        a = self._field(name)                                # says so if the world has no such field
         spec = self.view.specs[name]
-        a = self._field(name)
         monthly = spec["shape"] == "month_cell"
         if monthly:
             m = int(month) if month is not None else 0
@@ -123,8 +123,8 @@ class WorldService:
         with self._lock:
             hit = self._stats.get(name)
         if hit is None:
-            spec = self.view.specs[name]
             a = self._field(name)
+            spec = self.view.specs[name]
             if spec["kind"] == "direction":
                 a = np.linalg.norm(a, axis=-1)
             a = a.astype(np.float64)
@@ -165,6 +165,20 @@ class WorldService:
         return explain(self.view, cell, field)
 
 
+class _BadRequest(Exception):
+    """The request itself is wrong: a part is missing, or is not the kind of value it must be."""
+
+
+def _asked(q, name, kind=str):
+    """One part of a request, as text or as a whole number."""
+    if name not in q:
+        raise _BadRequest(f"the request needs {name}")
+    try:
+        return kind(q[name])
+    except ValueError:
+        raise _BadRequest(f"{name} must be a whole number, got {q[name]!r}") from None
+
+
 class _Handler(BaseHTTPRequestHandler):
     service: WorldService = None
     viewer_dir: Path = VIEWER_DIR
@@ -192,16 +206,16 @@ class _Handler(BaseHTTPRequestHandler):
             if url.path == "/api/world":
                 return self._json(s.world())
             if url.path == "/api/idmap":
-                return self._send(200, s.idmap(int(q.get("width", 2048))), "application/octet-stream")
+                return self._send(200, s.idmap(_asked(q, "width", int) if "width" in q else 2048), "application/octet-stream")
             if url.path == "/api/field":
-                month = int(q["month"]) - 1 if "month" in q else None
-                return self._send(200, s.field(q["name"], month, q.get("part")), "application/octet-stream")
+                month = _asked(q, "month", int) - 1 if "month" in q else None
+                return self._send(200, s.field(_asked(q, "name"), month, q.get("part")), "application/octet-stream")
             if url.path == "/api/stats":
-                return self._json(s.stats(q["name"]))
+                return self._json(s.stats(_asked(q, "name")))
             if url.path == "/api/cell":
-                return self._json(s.cell(int(q["id"])))
+                return self._json(s.cell(_asked(q, "id", int)))
             if url.path == "/api/explain":
-                return self._json(s.explain(int(q["cell"]), q["field"]))
+                return self._json(s.explain(_asked(q, "cell", int), _asked(q, "field")))
             if url.path.startswith("/api/"):
                 return self._json({"error": f"no such request: {url.path}"}, 404)
             rel = "index.html" if url.path in ("/", "") else url.path.lstrip("/")
@@ -210,7 +224,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "not found"}, 404)
             ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             return self._send(200, path.read_bytes(), ctype + ("; charset=utf-8" if ctype.startswith("text/") or ctype.endswith("javascript") else ""))
-        except (KeyError, IndexError, ValueError) as e:
+        except (_BadRequest, KeyError, IndexError) as e:    # a wrong request, or a field, cell or month the world does not have
             return self._json({"error": str(e).strip("'\"")}, 400)
         except Exception as e:                               # a fault of the engine: say so, and keep the connection whole
             return self._json({"error": f"the server could not answer ({type(e).__name__}: {e})"}, 500)

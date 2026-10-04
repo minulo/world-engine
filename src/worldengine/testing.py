@@ -62,6 +62,7 @@ class Harness(Engine):
         self.constants, self.shared_for, self.decls, self.procs = {}, {}, {}, {}
         self.memo = {}
         self.member_stage, self.table_stage, self.push_by_id = {}, {}, {}
+        self.clocks = {s["name"]: s["clock"] for s in self.params["stages"]["stages"]}
         self._received, self._last_given, self._applied, self._rounds_in_force = set(), {}, {}, {}
 
     def run(self, slot, reads=None, lagged=None, groups=None, tables=None, lagged_tables=None, constants=None,
@@ -95,6 +96,17 @@ class Harness(Engine):
             unknown = sorted(n for n in names if n not in known)
             if unknown:
                 raise KeyError(f"the test hands {slot} the {kind} {', '.join(unknown)}, which the data files do not declare")
+        # an input that the process does not declare would never be read: the test that gives it tests less than it says
+        tabled = lambda names: {f[len("table:"):] for f in names if f.startswith("table:")}
+        declared = {"reads": set(decl["reads"]) | set(decl["modifies"]), "lagged": set(decl["lagged"]),
+                    "groups": set(decl["lagged_group"]) | set(decl["group_reads"]),
+                    "tables": tabled(decl["reads"]), "lagged_tables": tabled(decl["lagged"])}
+        for where_given, given in (("reads", reads), ("lagged", lagged), ("groups", groups), ("tables", tables),
+                                   ("lagged_tables", lagged_tables)):
+            unread = sorted(set(given or {}) - declared[where_given])
+            if unread:
+                raise KeyError(f"the test hands {slot} {', '.join(unread)} under {where_given}, but the process does not declare "
+                               f"it there, so it would never read it")
         self.procs, self.decls = {slot: proc}, {slot: decl}
         self.constants = {slot: freeze(consts)}
         self.shared_for = {slot: freeze({s: all_shared[s] for s in proc.shared})}
@@ -148,6 +160,13 @@ class Harness(Engine):
                         if t in (lagged_tables or {}):
                             raise ValueError(f"start=True fills table {t}; a test cannot also give it under lagged_tables")
                         w.lagged_tables[t] = w.tables[t]
+                    elif name in w.fields:                   # a field, as the engine hands it to round 1's read from the previous round
+                        if name in (lagged or {}):
+                            raise ValueError(f"start=True fills {name}; a test cannot also give it under lagged")
+                        w.lagged[name] = w.fields[name]
+                for group, member in decl["contributes"].items():    # and what the start step added to a group
+                    if member in w.group_now.get(group, {}):
+                        w.group_lagged.setdefault(group, {})[member] = w.group_now[group][member]
             ctx = Context(self, slot, proc, decl, stage, round_no, round_no, length, recording, False)
             proc.run(ctx)
             ctx._finish()

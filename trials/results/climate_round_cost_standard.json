@@ -3,28 +3,28 @@
  "cells": 163842,
  "machine": "x86_64",
  "cores": 2,
- "total_seconds": 232.7,
+ "total_seconds": 505.9,
  "climate_rounds": 17,
  "settled": true,
  "first_round_seconds": {
-  "Albedo": 0.19,
-  "Insolation": 0.52,
-  "EnergyBalance": 27.53,
-  "Circulation": 7.56,
-  "Moisture": 8.17,
-  "Biomes": 0.34
+  "Albedo": 0.12,
+  "Insolation": 0.82,
+  "EnergyBalance": 34.35,
+  "Circulation": 9.54,
+  "Moisture": 37.83,
+  "Biomes": 0.54
  },
  "later_round_seconds_mean": {
-  "Albedo": 0.03,
+  "Albedo": 0.11,
   "Insolation": 0.01,
-  "EnergyBalance": 0.46,
-  "Circulation": 2.09,
-  "Moisture": 7.54,
-  "Biomes": 0.35
+  "EnergyBalance": 0.43,
+  "Circulation": 2.18,
+  "Moisture": 20.3,
+  "Biomes": 0.5
  },
- "later_round_total_mean": 10.48,
- "cause_pass_seconds": 10.32,
- "geological_seconds": 8.84,
+ "later_round_total_mean": 23.54,
+ "cause_pass_seconds": 24.93,
+ "geological_seconds": 17.49,
  "notices": [],
- "solver_preparation_seconds": 27.07
+ "solver_preparation_seconds": 33.92
 }

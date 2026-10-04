@@ -188,7 +188,7 @@ async function loadField() {
   draw();
 }
 function fmt(v, unit) {
-  if (v === null || v === undefined || Number.isNaN(v)) return "undefined";
+  if (v === null || v === undefined || Number.isNaN(v)) return "no value";
   const a = Math.abs(v); let t;
   if (a !== 0 && (a < 0.01 || a >= 1e6)) t = v.toExponential(2); else t = a >= 1000 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : v.toFixed(2);
   return unit && !/^(category|index|true or false|0 to 1)$/.test(unit) ? `${t} ${unit}` : t;

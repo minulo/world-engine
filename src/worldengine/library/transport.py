@@ -137,7 +137,13 @@ class Ladder:
 
     def solve(self, start_humidity, tolerance, max_trips, steps, coarsest_cycles):
         """Solve on every mesh in turn, each answer starting the next finer one. Returns the answer on the
-        finest mesh, the trips used there, and the largest change of its last sweep."""
+        finest mesh, the trips used there, and the largest change of its last sweep.
+
+        The trips stop when the last sweep changes no value by more than the tolerance. That is a test of the
+        last step, not of the error: what the coarser meshes would still correct is not in it. Measured on the
+        default world, the answer lies up to six times the tolerance from the fully settled one (third check).
+        A budget that nothing feeds settles toward nothing far more slowly than that, because air that holds
+        little water rains little; the caller does not send such a budget here."""
         newton_tolerance = 0.1 * tolerance
         humidity = start_humidity
         w, trips, change = None, 0, 0.0

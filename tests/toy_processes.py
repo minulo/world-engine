@@ -555,3 +555,31 @@ class Zeros(Process):
 
     def run(self, ctx):
         ctx.write("c", np.zeros((ctx.months, ctx.mesh.n)))
+
+
+# ---------------------------------------------------------------- toy processes for the cases of the third check
+class StartsMember(Process):
+    """Adds a member to the group toy_heat in its start step and in every round."""
+    stage = "climate"
+    adds_to = {"toy_heat": "heat_member"}
+    has_start = True
+
+    def start(self, ctx):
+        ctx.add_to_group("toy_heat", np.full(ctx.mesh.n, 5.0))
+
+    def run(self, ctx):
+        ctx.add_to_group("toy_heat", np.full(ctx.mesh.n, 5.0))
+
+
+class LaggedSumLog(Process):
+    """Reads the group from the previous round, keeps what it was given in each round, and writes it."""
+    stage = "climate"
+    reads_groups_lagged = ("toy_heat",)
+    writes = ("c",)
+    seen = []
+
+    def run(self, ctx):
+        total = ctx.read_group_lagged("toy_heat").total
+        LaggedSumLog.seen.append(float(total[0]))
+        ctx.write("c", np.broadcast_to(total, (ctx.months, ctx.mesh.n)))
+

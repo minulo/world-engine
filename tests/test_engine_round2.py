@@ -211,7 +211,7 @@ def test_a_cell_exactly_on_a_side_of_an_outline_is_inside_whichever_way_the_corn
     ([[0, 0], [0, 180], [40, 90]], "lie opposite each other"),
     ([[0, 0], [0, 0], [40, 20]], "two corners in a row are the same point"),
     ([[0, 0], [0, 120], [0, 240]], "must be smaller than a hemisphere"),
-    ([[60, 0], [60, 120], [60, 240], [-50, 170]], "must be smaller than a hemisphere"),
+    ([[60, 0], [60, 120], [60, 240], [-80, 170]], "must be smaller than a hemisphere"),
 ])
 def test_an_outline_that_cannot_be_used_is_refused_on_loading(corners, said):
     """Outlines with no area, with sides that cross, with a latitude of 100 or wider than half the planet were taken,

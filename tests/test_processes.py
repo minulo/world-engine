@@ -248,37 +248,65 @@ def test_a_plate_of_one_cell_has_no_ridge_or_trench(h):
         assert f["boundary_kind"][cell] == kinds.index("transform") and f["convergence_rate"][cell] == 0.0
 
 
+def turned_and_plain(hh, points, plates):
+    """Tectonics run on the given tables, and on the same tables turned by a fifth of a circle about the poles, which
+    maps the mesh onto itself. Returns both sets of fields and, for every cell, the cell it lands on."""
+    m = hh.mesh
+    g = geometry(hh)
+    turn = np.deg2rad(72.0)
+    rz = np.array([[np.cos(turn), -np.sin(turn), 0.0], [np.sin(turn), np.cos(turn), 0.0], [0.0, 0.0, 1.0]])
+    goes_to = np.argmax(m.xyz @ rz.T @ m.xyz.T, axis=1)                       # where each cell lands
+    assert np.allclose(m.xyz[goes_to], m.xyz @ rz.T, atol=1e-12) and len(set(goes_to)) == m.n
+    points = {name: np.asarray(col) for name, col in points.items()}
+    plates = {name: np.asarray(col) for name, col in plates.items()}
+    turned_points = {name: np.empty_like(col) for name, col in points.items()}
+    for name, col in points.items():
+        turned_points[name][goes_to] = col
+    turned_points.update(x=m.xyz[:, 0], y=m.xyz[:, 1], z=m.xyz[:, 2])
+    axes = np.stack([plates["axis_x"], plates["axis_y"], plates["axis_z"]], axis=1) @ rz.T
+    turned_plates = dict(plates, axis_x=axes[:, 0], axis_y=axes[:, 1], axis_z=axes[:, 2])
+    events = {"time_my": [], "kind": [], "plate_a": [], "plate_b": [], "cells": []}
+    run = lambda pts, pl: hh.run("Tectonics", reads={"cell_area": g["cell_area"]},
+                                 lagged_tables={"crust_points": pts, "plates": pl, "tectonic_events": events}).fields
+    return run(points, plates), run(turned_points, turned_plates), goes_to
+
+
+def assert_the_same_world_turned(plain, turned, goes_to):
+    for name in ("plate_id", "crust_type", "boundary_kind"):
+        assert np.array_equal(turned[name][goes_to], plain[name]), name
+    for name, within in (("crust_thickness", 1.0), ("convergence_rate", 1e-6), ("boundary_distance", 1.0), ("volcanism", 1e-5)):
+        assert np.abs(turned[name][goes_to].astype(np.float64) - plain[name]).max() < within, name
+    age_plain, age_turned = plain["ocean_crust_age"].astype(np.float64), turned["ocean_crust_age"][goes_to].astype(np.float64)
+    assert np.array_equal(np.isnan(age_plain), np.isnan(age_turned))
+    if not np.isnan(age_plain).all():
+        assert np.nanmax(np.abs(age_plain - age_turned)) < 1e-3
+
+
 def test_turning_the_planet_by_one_face_of_the_mesh_turns_the_tectonics_with_it():
     """The mesh maps onto itself when turned by a fifth of a circle about its poles. Many cells lie exactly as far
     from two boundary cells as from one, and a cell can share the same length of side with two plates; if such ties
     are settled by the order of the cells or by the last bit of a sum, the turned planet is a different world (second
     review: the crust differed by up to 10.6 km in the default world)."""
     hh = Harness(level=4, seed=20261004)
-    m = hh.mesh
     g = geometry(hh)
     seeded = hh.run("Tectonics", reads={"cell_area": g["cell_area"]}, start=True)
-    pts, pl = seeded.tables["crust_points"], seeded.tables["plates"]
-    turn = np.deg2rad(72.0)
-    rz = np.array([[np.cos(turn), -np.sin(turn), 0.0], [np.sin(turn), np.cos(turn), 0.0], [0.0, 0.0, 1.0]])
-    goes_to = np.argmax(m.xyz @ rz.T @ m.xyz.T, axis=1)                       # where each cell lands
-    assert np.allclose(m.xyz[goes_to], m.xyz @ rz.T, atol=1e-12) and len(set(goes_to)) == m.n
-    turned_points = {name: np.empty_like(np.asarray(col)) for name, col in pts.items()}
-    for name, col in pts.items():
-        turned_points[name][goes_to] = np.asarray(col)
-    turned_points.update(x=m.xyz[:, 0], y=m.xyz[:, 1], z=m.xyz[:, 2])
-    axes = np.stack([pl["axis_x"], pl["axis_y"], pl["axis_z"]], axis=1) @ rz.T
-    turned_plates = {name: np.asarray(col) for name, col in pl.items()}
-    turned_plates.update(axis_x=axes[:, 0], axis_y=axes[:, 1], axis_z=axes[:, 2])
-    events = {"time_my": [], "kind": [], "plate_a": [], "plate_b": [], "cells": []}
-    run = lambda points, plates: hh.run("Tectonics", reads={"cell_area": g["cell_area"]},
-                                        lagged_tables={"crust_points": points, "plates": plates, "tectonic_events": events}).fields
-    plain, turned = run({k: np.asarray(v) for k, v in pts.items()}, {k: np.asarray(v) for k, v in pl.items()}), run(turned_points, turned_plates)
-    for name in ("plate_id", "crust_type", "boundary_kind"):
-        assert np.array_equal(turned[name][goes_to], plain[name]), name
-    for name, within in (("crust_thickness", 1.0), ("convergence_rate", 1e-6), ("boundary_distance", 1.0), ("volcanism", 1e-5)):
-        assert np.abs(turned[name][goes_to].astype(np.float64) - plain[name]).max() < within, name
-    age_plain, age_turned = plain["ocean_crust_age"].astype(np.float64), turned["ocean_crust_age"][goes_to].astype(np.float64)
-    assert np.array_equal(np.isnan(age_plain), np.isnan(age_turned)) and np.nanmax(np.abs(age_plain - age_turned)) < 1e-3
+    plain, turned, goes_to = turned_and_plain(hh, seeded.tables["crust_points"], seeded.tables["plates"])
+    assert_the_same_world_turned(plain, turned, goes_to)
+
+
+@pytest.mark.parametrize("radius_deg", [13.0, 20.0, 31.0])
+def test_a_round_plate_centred_on_a_pole_is_the_same_world_when_turned(radius_deg):
+    """The cells near the middle of a round plate lie exactly as far from many cells of its rim: from five of them,
+    or from ten. Comparing only the four nearest left the choice among the rest to the order of the cells, and the
+    turned planet differed in the closing speed at the five-sided cells and in the crust (third check)."""
+    hh = Harness(level=4, seed=1)
+    m = hh.mesh
+    plate = (np.rad2deg(np.arccos(np.clip(m.xyz[:, 2], -1, 1))) < radius_deg).astype(np.int32)      # the cap around the north pole
+    continental = (plate == 0) & (m.lat < np.deg2rad(60.0))                # the cap moves against a continent on one side
+    tables = plate_tables(m, plate, [(0, 0, 1), (1, 0, 0)], [0.0, 0.008], continental=continental)
+    plain, turned, goes_to = turned_and_plain(hh, tables["crust_points"], tables["plates"])
+    assert plate.sum() > 5 and len(set(plain["boundary_kind"])) > 2          # the rim holds several kinds of boundary
+    assert_the_same_world_turned(plain, turned, goes_to)
 
 
 def test_which_plate_dives_follows_the_continent_first_and_then_the_older_floor():
@@ -896,17 +924,40 @@ def test_rain_on_rising_ground_follows_the_surface_wind_and_falls_on_the_higher_
     assert np.allclose(lift, by_hand, rtol=2e-3, atol=1e-3)
 
 
-def test_air_that_holds_no_water_gives_no_rain(h):
-    """On a planet without sea nothing evaporates. The rain law alone would still give a millimetre a year from air
-    that holds nothing (second review); its value in dry air is taken off."""
+@pytest.mark.parametrize("level", [4, 5])
+def test_a_planet_without_sea_has_no_vapour_and_no_rain(level):
+    """On a planet without sea nothing evaporates, so the air holds nothing and no rain falls. The solver alone does
+    not get there: it starts from moist air, and air that holds little water rains very little, so it stopped with
+    0.03 kg/m2 still in the air on the preview mesh and 1.3 on the standard mesh, and rained it out (third check).
+    A month that nothing feeds is now given its answer outright."""
+    hh = Harness(level=level)
+    g = geometry(hh)
+    n = hh.mesh.n
+    out = hh.run("Moisture", reads={"wind": np.broadcast_to(5.0 * hh.mesh.east, (12, n, 3)), "subsidence": np.zeros((12, n)),
+                                    "surface_temperature": np.full((12, n), 290.0), "height_above_sea": np.zeros(n),
+                                    "ocean_mask": np.zeros(n, dtype=bool), "cell_area": g["cell_area"]})
+    for name in ("column_water", "precipitation", "snowfall", "ocean_evaporation"):
+        assert out.fields[name].max() == 0.0 and out.fields[name].min() == 0.0, name
+    assert (out.drivers["precipitation"]["vapour_came_from"] == -1).all()
+    assert out.notices == []
+
+
+def test_the_rain_law_gives_nothing_in_air_that_holds_no_water_and_never_less_than_nothing(h):
+    """The published law alone gives a millimetre a year from air that holds nothing (second review); its value in
+    dry air is taken off. With one small sea, most of the planet is nearly dry: no cell may get negative rain."""
+    from worldengine.library.transport import rain_from_humidity
+    law = h.params["models"]["slots"]["Moisture"]["constants"]["rain_law"]
+    assert rain_from_humidity(np.zeros(3), np.ones(3), law["steepness"], law["humidity_at_one_mm_per_day"]).tolist() == [0.0] * 3
     g = geometry(h)
     n = h.mesh.n
+    sea = h.mesh.xyz @ h.mesh.xyz[100] > np.cos(np.deg2rad(8.0))                # one sea about 900 km across
     out = h.run("Moisture", reads={"wind": np.broadcast_to(5.0 * h.mesh.east, (12, n, 3)), "subsidence": np.zeros((12, n)),
-                                   "surface_temperature": np.full((12, n), 290.0), "height_above_sea": np.zeros(n),
-                                   "ocean_mask": np.zeros(n, dtype=bool), "cell_area": g["cell_area"]})
-    assert out.fields["column_water"].max() < h.constants["Moisture"]["tolerance_kg_m2"]     # the solver stops this near to nothing
-    assert out.fields["precipitation"].max() < 1e-3                    # mm a month; it was 0.08, a millimetre a year
-    assert out.fields["ocean_evaporation"].max() == 0.0
+                                   "surface_temperature": np.full((12, n), 290.0), "height_above_sea": np.where(sea, 0.0, 10.0),
+                                   "ocean_mask": sea, "cell_area": g["cell_area"]})
+    rain = out.fields["precipitation"].astype(np.float64)
+    assert sea.sum() > 5 and rain.min() >= 0.0 and rain.max() > 0.0
+    area = g["cell_area"]
+    assert abs((out.fields["ocean_evaporation"].astype(np.float64).sum(axis=0) * area).sum() / (rain.sum(axis=0) * area).sum() - 1) < 2e-3
 
 
 def test_cold_high_ground_does_not_draw_in_vapour_from_the_air_below_it(h):

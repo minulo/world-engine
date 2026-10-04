@@ -37,7 +37,7 @@ EVENT_CODES = 8                 # room for the kinds of event when a pair of pla
 SAME_WITHIN = 1.0e-9            # two lengths or distances that differ by less than this share count as equal
 JOINED_STEPS_PER_CELL = 3       # sides walked along a boundary for each cell spacing of reach: enough to cover the reach
                                 # (a side is about 0.6 of a spacing long), few enough not to walk round a small plate twice
-CANDIDATES = 4                  # how many nearest points are compared when looking for points that are equally near
+CANDIDATES = 4                  # how many nearest points are looked at first when looking for points that are equally near
 
 
 def _arc(chord):
@@ -47,20 +47,32 @@ def _arc(chord):
 def _nearest(points, targets, first_key, second_key):
     """For each target, the straight-line distance to the nearest of the points and that point's index.
 
-    On this mesh many cells lie exactly as far from two boundary cells as from one. Which of the two a search tree
-    returns depends on the order of the cells, so that turning the planet by one face of the mesh changed the world
-    (second review). Of the points that are equally near, the one with the highest first key is taken, then the
-    highest second key: what the points are decides, not how they are numbered."""
+    On this mesh many cells lie exactly as far from two boundary cells as from one, and a cell at the middle of a
+    round plate lies as far from every cell of its rim. Which of them a search tree returns depends on the order of
+    the cells, so that turning the planet by one face of the mesh changed the world (second review). Of the points
+    that are equally near, the one with the highest first key is taken, then the highest second key: what the
+    points are decides, not how they are numbered. All points that are equally near are compared, however many
+    (third check: a fixed handful was not enough for a plate centred on a pole)."""
+    tree = cKDTree(points)
+    dist, index = np.empty(len(targets)), np.empty(len(targets), dtype=np.int64)
+    todo = np.arange(len(targets))
     count = min(CANDIDATES, len(points))
-    d, idx = cKDTree(points).query(targets, k=count)
-    if count == 1:
-        return d, idx
-    tied = d <= d[:, :1] * (1.0 + SAME_WITHIN) + np.finfo(float).tiny
-    key = np.where(tied, first_key[idx], -np.inf)
-    best = tied & (key >= key.max(axis=1, keepdims=True))
-    pick = np.argmax(np.where(best, second_key[idx].astype(np.float64), -np.inf), axis=1)
-    rows = np.arange(len(targets))
-    return d[rows, pick], idx[rows, pick]
+    while todo.size:
+        d, idx = tree.query(targets[todo], k=count)
+        if count == 1:
+            d, idx = d[:, None], idx[:, None]
+        tied = d <= d[:, :1] * (1.0 + SAME_WITHIN) + np.finfo(float).tiny
+        more = tied[:, -1] & (count < len(points))               # every point looked at is equally near: look at more
+        key = np.where(tied, first_key[idx], -np.inf)
+        top = key.max(axis=1, keepdims=True)
+        best = tied & (key >= top - SAME_WITHIN * np.abs(top))
+        pick = np.argmax(np.where(best, second_key[idx].astype(np.float64), -np.inf), axis=1)
+        rows = np.arange(todo.size)
+        settled = ~more
+        dist[todo[settled]], index[todo[settled]] = d[rows, pick][settled], idx[rows, pick][settled]
+        todo = todo[more]
+        count = min(2 * count, len(points))
+    return dist, index
 
 
 class SnapshotPlates(Process):

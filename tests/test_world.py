@@ -115,7 +115,7 @@ def test_less_sunlight_cools_the_default_planet_and_a_deep_ice_age_is_reported(p
     w = dimmer(0.98)
     assert w.settled["climate"] and not _deep_ice_age_notes(w)
     cooling = _mean_temperature_c(w0) - _mean_temperature_c(w)
-    assert 2.0 < cooling < 7.0                                            # measured 4.4 K
+    assert 2.0 < cooling < 7.0                                            # measured 4.2 K
     assert _mean_temperature_c(w) > 4.0
     cold = dimmer(0.95)
     notes = _deep_ice_age_notes(cold)
@@ -250,6 +250,23 @@ def test_a_why_answer_never_points_to_a_step_about_another_cell(plain):
     assert seen_other_cell > 20                                      # the test has something to see
 
 
+def test_no_why_answer_on_the_planet_runs_past_its_limit_or_stumbles_over_its_words(plain):
+    """Third check: the answer for ocean_evaporation in cell 7650 had 17 entries and no entry that said where it
+    stopped; the sentence for snowfall said "of water of water"."""
+    from worldengine.causes import MAX_STEPS
+    e, w = plain
+    view = store.MemoryView(w, e)
+    longest = 0
+    for cell in list(range(0, w.n, 499)) + [7650]:
+        for field in view.field_names():
+            chain = explain(view, cell, field)["chain"]
+            longest = max(longest, len(chain))
+            assert len(chain) <= MAX_STEPS + 1 and (len(chain) <= MAX_STEPS or chain[-1].get("cut")), (cell, field)
+            text = " ".join(step["text"] for step in chain)
+            assert "undefined" not in text and "of water of water" not in text, (cell, field)
+    assert longest == MAX_STEPS + 1                                  # the test has something to see
+
+
 def test_the_sea_cell_answer_leads_to_why_it_is_sea_and_a_mountain_names_its_event(plain):
     e, w = plain
     view = store.MemoryView(w, e)
@@ -323,10 +340,16 @@ def test_a_place_label_alone_changes_no_other_field(plain):
     labelled = w.fields["place_label"] == 1
     names = e.registry.fields["biome"].categories
     forests = {"temperate_seasonal_forest", "temperate_rainforest", "boreal_forest"}
-    if labelled.any():                                       # the entry places no forest: it names what grew
-        assert set(names[b] for b in w.fields["biome"][labelled]) <= forests
-    else:
-        assert {"kind": "push_touched_nothing", "push": "whispering_forest:place_label"} in w.notices
+    assert labelled.sum() > 50                               # the example's circle lies where forest grows in the default world
+    assert set(names[b] for b in w.fields["biome"][labelled]) <= forests       # the entry places no forest: it names what grew
+    assert not [n for n in w.notices if n["kind"] == "push_touched_nothing"]
+    centre = w.mesh.xyz[cell_at(w.mesh, -50.0, 105.0)]
+    assert (np.arccos(np.clip(w.mesh.xyz[labelled] @ centre, -1, 1)) * 6371.0).max() < 1500.0 + 250.0     # inside the circle
+    moved = example("place_label.yaml")
+    moved[0]["region"]["circle"] = {"lat": 45.0, "lon": 10.0, "radius_km": 1500}       # no forest grows there in this world
+    _, empty = build(interventions=moved)
+    assert not (empty.fields["place_label"] == 1).any()
+    assert {"kind": "push_touched_nothing", "push": "whispering_forest:place_label"} in empty.notices
     a, b = w0.fingerprints(), w.fingerprints()
     assert {k: v for k, v in a.items() if k != "place_label"} == {k: v for k, v in b.items() if k != "place_label"}
     assert w.rounds_used == w0.rounds_used

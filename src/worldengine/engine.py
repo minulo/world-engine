@@ -482,20 +482,24 @@ class Engine:
         if lagged:
             members.update({k: v for k, v in w.group_lagged.get(group, {}).items() if self.member_stage.get((group, k)) == stage})
         at = round_no - 1 if lagged else round_no            # the round whose sum the reader is given
-        given = set()                                        # the pushes that this sum holds
+        given = {}                                           # the pushes that this sum holds, each with the round it was made in
         for key in members:                                  # a push with a condition is a member worked out in its place
             q = self.push_by_id.get(key[len("push:"):]) if key.startswith("push:") else None
             if q is not None:                                # (a test harness may hand over a member under such a name)
                 made_in = self.member_stage.get((group, key))
                 made_at = at if made_in == stage else w.rounds_used.get(made_in, 0)     # another stage's member is read as stored
                 if made_at >= 1 and self._push_active(q, made_in, made_at):
-                    given.add(q.id)
+                    given[q.id] = made_at
+        # A push with a fixed region is the same in every round it is in force. Before the first round of a history
+        # nothing was in force: there a read from the previous round gets no push, whichever kind of region it has.
+        # The climate clock has no history: its rounds are a solver's working steps, and the push is there from the first.
+        before_the_history = at < 1 and self.clocks.get(stage) == "geological"
         for key, value in w.group_const.get(group, {}).items():
             q = self.push_by_id[key[len("push:"):]]
-            if self._push_active(q, stage, at):
+            if not before_the_history and self._push_active(q, stage, at):
                 members[key] = value
-                given.add(q.id)
-        self._received |= given
+                given[q.id] = at
+        self._received |= set(given)
         if recording:
             self._last_given[(group, lagged)] = given
         total = np.zeros(spec.array_shape(w.n, w.months))
@@ -534,7 +538,12 @@ class Engine:
                 a = np.array(given, dtype=t, copy=True)
             if a.ndim != 1 or (length is not None and a.size != length):
                 raise ContractError(f"{writer} wrote table {name}: every column must be one list of the same length")
-            if a.dtype.kind in "iub" and given.dtype.kind in "iuf" and a.size and not np.array_equal(a.astype(given.dtype), given):
+            fits = True
+            if a.dtype.kind in "iu" and given.dtype.kind in "iu" and a.size:      # a whole number outside the type would wrap round
+                limits = np.iinfo(a.dtype)
+                fits = int(given.min()) >= limits.min and int(given.max()) <= limits.max
+            if a.dtype.kind in "iub" and given.dtype.kind in "iuf" and a.size and \
+                    not (fits and np.array_equal(a.astype(given.dtype), given)):
                 raise ContractError(f"{writer} wrote table {name}: column {c} holds values that do not fit its type {t} "
                                     f"(a fraction, or a number too large); they would be changed without a word")
             if a.dtype.kind == "f" and a.size and np.isinf(a).any():
@@ -583,7 +592,10 @@ class Engine:
         seen.add(round_no)                                   # the cause pass runs a round a second time: it counts once
         a = self.world.push_activity.setdefault(q.id, {"stage": stage, "first_round": round_no, "last_round": round_no,
                                                         "rounds": 0, "touched": False})
-        a.update(first_round=min(seen), last_round=max(seen), rounds=len(seen), touched=bool(a["touched"] or wts.any()))
+        # In a history every round counts: a push that covered a cell in any round changed the world. The rounds of the
+        # climate clock are a solver's working steps: only the round the world ends with says whether a cell was covered.
+        covered = bool(wts.any()) if self.clocks.get(stage) == "climate" else bool(a["touched"] or wts.any())
+        a.update(first_round=min(seen), last_round=max(seen), rounds=len(seen), touched=covered)
 
     def _push_record(self, q, wts, **more):
         return {**more, "weight": wts.astype(np.float32), "physical": q.physical, "reason": q.reason,
@@ -604,7 +616,10 @@ class Engine:
             member.flags.writeable = False
             w.group_now.setdefault(q.target, {})["push:" + q.id] = member
             if active:                                       # its record is written at the end, if a reader was given it
-                self._applied[q.id] = wts
+                kept = self._applied.setdefault(q.id, {})    # the weights of this round and of the one before: a reader
+                kept[round_no] = wts                         # is given the sum of one or the other
+                for r in [r for r in kept if r < round_no - 1]:
+                    del kept[r]
                 self._acted(q, stage, round_no, wts)
             return
         spec = self.registry.fields[q.target]
@@ -640,14 +655,15 @@ class Engine:
 
         A push on a group leaves a record if the sum that a reader was last given held it: in the last round for a
         read of the same round, in the round before for a read from the previous round. The record of a push with a
-        condition carries the weights of the last round it was in force. A push is reported as having changed
-        nothing if no process reads its group, if it was in force in no round, if no process read the group in a round
-        whose sum held it, or if its region covered no cell."""
+        condition carries the weights the push had in the round that sum was made in (the later one, if the group is
+        read both ways). A push is reported as having changed nothing if no process reads its group, if it was in
+        force in no round, if no process read the group in a round whose sum held it, or if its region covered no cell."""
         w = self.world
         read = {g for d in self.plan.steps.values() for g in d["lagged_group"] + d["group_reads"]}
-        last = {}
-        for (group, _), ids in self._last_given.items():
-            last.setdefault(group, set()).update(ids)
+        last = {}                                            # push -> the round in which the sum last given was made
+        for given in self._last_given.values():
+            for pid, made_at in given.items():
+                last[pid] = max(made_at, last.get(pid, made_at))
         for q in self.pushes:
             if not q.on_group:
                 continue
@@ -660,8 +676,12 @@ class Engine:
                         self._acted(q, stage, r, self._weights[q.id])
                     if rounds:
                         break
-            if q.id in last.get(q.target, ()):
-                wts = self._weights[q.id] if q.region.fixed else self._applied[q.id]
+            if q.id in last:
+                if q.region.fixed:
+                    wts = self._weights[q.id]
+                else:                                        # the weights of the round the sum was made in
+                    kept = self._applied[q.id]
+                    wts = kept.get(last[q.id], kept[max(kept)])
                 w.push_records[q.id] = self._push_record(q, wts, group=q.target)
         for q in self.pushes:
             act = w.push_activity.get(q.id)
@@ -841,6 +861,10 @@ class Engine:
             for f in sorted(self._fresh.get(stage, ())):     # a field filled by a start step is round 1's "previous round"
                 if f in self.lagged_fields:
                     self.world.lagged[f] = self.world.fields[f]
+            for g in self.lagged_groups:                     # ... and so is what a start step added to a group
+                added = {k: v for k, v in self.world.group_now.get(g, {}).items() if self.member_stage.get((g, k)) == stage}
+                if added:
+                    self.world.group_lagged.setdefault(g, {}).update(added)
 
     def _run_once(self, stage):
         self._start(stage)
@@ -948,6 +972,7 @@ class Engine:
                       "modifiers": {m: {"constants": self.constants.get(m, {}), "shared": self.shared_for.get(m, {})}
                                     for m in modifiers},
                       "mesh_level": self.level,
+                      "stage": self.stage_cfg[d["stage"]],           # the clock, and the length and number of its rounds
                       "seed": self.seed if draws else None,          # the seed counts where a draw is made
                       "climate": self.profile["climate"] if self.clocks[d["stage"]] == "climate" else None}
             w.lineage[f] = {

@@ -21,6 +21,7 @@ _CONDITION_KEYS = ("field", "lagged", "month", "is_one_of", "is", "above", "belo
 MIN_CORNERS = 3
 _PROBE = 1.0e-3            # how far beside a side the sense of an outline is probed, as a share of the side's length
 _ON_A_SIDE = 1.0e-9        # a point nearer than this to a side of an outline (radians) lies on it, and counts as inside
+_CAP_STEPS = 200           # steps of the search for the smallest cap that holds an outline's corners
 _QUARTER_TURN_DEG, _HALF_TURN_DEG = 90.0, 180.0
 
 
@@ -96,6 +97,22 @@ def _conditions(spec, where: str) -> list:
     return out
 
 
+def _cap_centre(pts) -> np.ndarray:
+    """The middle of the smallest cap of the sphere that holds all the points, found by walking toward the farthest
+    point in ever smaller steps (the method of Badoiu and Clarkson for the smallest ball). The mean of the points
+    will not do: several corners close together pull it toward themselves, away from a far corner."""
+    centre = pts.sum(axis=0)
+    centre = pts[0].copy() if np.linalg.norm(centre) < _ON_A_SIDE else centre / np.linalg.norm(centre)
+    for k in range(1, _CAP_STEPS + 1):
+        farthest = pts[np.argmin(pts @ centre)]
+        centre = centre + (farthest - centre) / (k + 1)
+        size = np.linalg.norm(centre)
+        if size < _ON_A_SIDE:                                # the points surround the planet: no cap smaller than half of it
+            return -farthest
+        centre /= size
+    return centre
+
+
 def outline_problems(outline) -> list:
     """What makes an outline unusable, as sentences; an empty list if it can be used. An outline is a list of
     [latitude, longitude] corners, joined by the shorter arcs between them; it must enclose an area smaller than half
@@ -113,8 +130,7 @@ def outline_problems(outline) -> list:
         return ["two corners in a row are the same point"]
     if np.any(np.linalg.norm(pts + nxt, axis=1) < _ON_A_SIDE):
         return ["two corners in a row lie opposite each other on the planet, so the side between them is not defined"]
-    middle = pts.sum(axis=0)
-    if np.linalg.norm(middle) < _ON_A_SIDE or np.any(pts @ (middle / np.linalg.norm(middle)) <= 0.0):
+    if np.any(pts @ _cap_centre(pts) <= 0.0):
         return ["its corners do not fit inside half the planet; an outline must be smaller than a hemisphere"]
     # Just beside the middle of every side, one point must lie inside and the other outside, and the inside must be on
     # the same hand all the way round. Sides that cross, and an outline with no area, break this.
@@ -146,6 +162,10 @@ def parse(entries, registry) -> list[Push]:
             raise ParameterError(f"{where}: the id {eid!r} is used twice")
         seen.add(eid)
         r = e.get("region") or {}
+        sizes = {"edge_km": r.get("edge_km", 0.0), **({"circle.radius_km": r["circle"].get("radius_km")} if r.get("circle") else {})}
+        for name, size in sizes.items():
+            if isinstance(size, bool) or not isinstance(size, (int, float)) or not np.isfinite(size) or size < 0:
+                raise ParameterError(f"{where}: region.{name} must be a length in km, zero or more and not infinite; got {size!r}")
         region = Region(circle=r.get("circle"), outline=r.get("outline"),
                         conditions=_conditions(r.get("where"), where), edge_km=float(r.get("edge_km", 0.0)))
         if region.circle is None and region.outline is None and not region.conditions:
@@ -310,8 +330,8 @@ def _outside_outline_m(xyz, outline, radius_m) -> np.ndarray:
     for a, b in zip(pts, np.roll(pts, -1, axis=0)):
         normal = np.cross(a, b)
         size = np.linalg.norm(normal)
-        to_a = np.arccos(np.clip(xyz @ a, -1.0, 1.0))
-        to_b = np.arccos(np.clip(xyz @ b, -1.0, 1.0))
+        to_a = 2.0 * np.arcsin(np.clip(np.linalg.norm(xyz - a, axis=1) / 2.0, 0.0, 1.0))    # by the chord: the angle from
+        to_b = 2.0 * np.arcsin(np.clip(np.linalg.norm(xyz - b, axis=1) / 2.0, 0.0, 1.0))    # the dot product is blunt near zero
         d = np.minimum(to_a, to_b)
         if size > 0.0:
             normal /= size

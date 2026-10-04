@@ -121,7 +121,7 @@ Moisture:
       stopped_by_sinking_air: {says: "sinking air changes it by {v}", follows: [subsidence]}
       vapour_came_from: {cell: true}
   snowfall:
-    says: "Snowfall here averages {value} of water."
+    says: "Snowfall here averages {value}."
     follows: [precipitation, surface_temperature]
   column_water:
     says: "The air column here holds {value} of water vapour on average."

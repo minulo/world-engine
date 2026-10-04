@@ -164,6 +164,10 @@ class Registry:
             if dtype not in _DTYPES_OF_KIND[kind]:
                 raise ParameterError(f"fields.yaml.fields.{name}: a field of kind {kind} cannot be stored as {dtype} "
                                      f"(it takes: {', '.join(_DTYPES_OF_KIND[kind])})")
+            if kind == "index" and not np.iinfo(dtype).min <= default <= np.iinfo(dtype).max:
+                raise ParameterError(f"fields.yaml.fields.{name}: the default {default!r} does not fit the stored type {dtype}")
+            if kind in ("number", "direction") and np.isfinite(default) and abs(default) > float(np.finfo(dtype).max):
+                raise ParameterError(f"fields.yaml.fields.{name}: the default {default!r} is too large for the stored type {dtype}")
             if e.get("range") is not None and not e["range"][0] <= e["range"][1]:
                 raise ParameterError(f"fields.yaml.fields.{name}: the range {e['range']} runs backwards; it gives the lowest "
                                      f"valid value and then the highest")

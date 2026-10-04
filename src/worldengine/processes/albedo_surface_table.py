@@ -33,10 +33,14 @@ Wrong where: the cloud decks of cool subtropical seas and the cloud bands of the
 Clouds are the largest known gap in the climate stage. While land is too dry (see Moisture),
 snow on land is too thin and melts too early. The constants of EnergyBalance were fitted by
 their authors together with their own snow rule, so with less snow this planet runs warmer
-than theirs would. A planet can still freeze over: with ice on most of its surface it reflects
-more sunlight than it needs to stay frozen, and models of this kind are known to tip that way
-more easily than fuller ones. When more than a third of the surface lies under snow and ice on
-the year's average, the process says so in a note.
+than theirs would [INFERRED]. A planet can still freeze over: with ice on most of its surface
+it reflects more sunlight than it needs to stay frozen, and models of this kind tip that way
+more easily than fuller ones [UNVERIFIED: my recollection of the literature on energy balance
+models; the design cites Roe and Baker 2010 for the two steady states]. Measured on the
+default planet: with 2 % less sunlight it is 4.2 K colder and stays open, as do ten other
+seeded worlds; with 5 % less it is below freezing on average and the note below is raised.
+When more than a third of the surface lies under snow and ice on the year's average, the
+process says so in a note.
 """
 import numpy as np
 
