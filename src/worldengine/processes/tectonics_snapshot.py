@@ -10,12 +10,17 @@ Ignores: time. Nothing has moved, so the ocean floor's age is read off the dista
 nearest spreading ridge and the spreading speed there; mountain belts have no history; island
 arcs, hot spots, shelves and rifts are absent.
 Wrong where: everywhere a history matters. The size and width of the thickening are tuned
-numbers, not derived. Build step 3 replaces this with the full plate history.
+numbers, not derived. A plate with no ridge of its own, or floor far from one, gets the oldest
+age allowed: a quarter to a half of the ocean floor sits at that cap, where Earth's floor is on
+average about 60 My old [UNVERIFIED: recalled]. A continent ends in a cliff: crust of its full
+thickness stands beside ocean floor with no shelf or slope between, so a coastal cell can stand
+kilometres high. Build step 3 replaces this with the full plate history.
 
 State: the seeded plates and crust points are made once, in start(), and carried in tables.
 In this version one crust point sits on each cell centre and does not move.
 """
 import numpy as np
+import scipy.sparse as sp
 from scipy.spatial import cKDTree
 
 from ..library import operators as op
@@ -29,8 +34,33 @@ EVENT_SUBDUCTION, EVENT_COLLISION, EVENT_SPREADING = 1, 2, 4
 EVENT_CODES = 8                 # room for the kinds of event when a pair of plates and a kind are packed into one number
 
 
+SAME_WITHIN = 1.0e-9            # two lengths or distances that differ by less than this share count as equal
+JOINED_STEPS_PER_CELL = 3       # sides walked along a boundary for each cell spacing of reach: enough to cover the reach
+                                # (a side is about 0.6 of a spacing long), few enough not to walk round a small plate twice
+CANDIDATES = 4                  # how many nearest points are compared when looking for points that are equally near
+
+
 def _arc(chord):
     return 2 * np.arcsin(np.clip(chord / 2, 0, 1))
+
+
+def _nearest(points, targets, first_key, second_key):
+    """For each target, the straight-line distance to the nearest of the points and that point's index.
+
+    On this mesh many cells lie exactly as far from two boundary cells as from one. Which of the two a search tree
+    returns depends on the order of the cells, so that turning the planet by one face of the mesh changed the world
+    (second review). Of the points that are equally near, the one with the highest first key is taken, then the
+    highest second key: what the points are decides, not how they are numbered."""
+    count = min(CANDIDATES, len(points))
+    d, idx = cKDTree(points).query(targets, k=count)
+    if count == 1:
+        return d, idx
+    tied = d <= d[:, :1] * (1.0 + SAME_WITHIN) + np.finfo(float).tiny
+    key = np.where(tied, first_key[idx], -np.inf)
+    best = tied & (key >= key.max(axis=1, keepdims=True))
+    pick = np.argmax(np.where(best, second_key[idx].astype(np.float64), -np.inf), axis=1)
+    rows = np.arange(len(targets))
+    return d[rows, pick], idx[rows, pick]
 
 
 class SnapshotPlates(Process):
@@ -128,11 +158,16 @@ class SnapshotPlates(Process):
         other = np.concatenate([j[cross], i[cross]]).astype(np.int64)
         length = np.concatenate([mesh.edge_dual[cross], mesh.edge_dual[cross]])
         outward = np.concatenate([mesh.edge_normal[cross], -mesh.edge_normal[cross]]) * length[:, None]
-        # the plate a cell faces: the one it shares the greatest length of side with (the lower number if equal)
+        # the plate a cell faces: the one it shares the greatest length of side with. Lengths that differ by less
+        # than round-off count as equal, and the lower plate number then wins: the answer must not hang on the last
+        # bit of a sum (it did, by 3e-15, in the second review).
         uniq, inverse = np.unique(cell * k + plate[other], return_inverse=True)
         shared = np.bincount(inverse, weights=length)
         u_cell, u_plate = uniq // k, uniq % k
-        order = np.lexsort((u_plate, -shared, u_cell))
+        longest = np.zeros(n)
+        np.maximum.at(longest, u_cell, shared)
+        short = shared < longest[u_cell] * (1.0 - SAME_WITHIN)
+        order = np.lexsort((u_plate, short, u_cell))
         first = np.ones(order.size, dtype=bool)
         first[1:] = u_cell[order][1:] != u_cell[order][:-1]
         bcell = u_cell[order][first]
@@ -149,6 +184,37 @@ class SnapshotPlates(Process):
         at, side = bcell[found.row], found.col
         same = (plate[cell[side]] == plate[at]) & (facing[cell[side]] == facing[at])
         at, side = at[same], side[same]
+        # Only sides that the boundary itself joins to the cell's own sides count. A plate narrower than the reach has
+        # its other flank within reach too, facing the opposite way; added in, it cancels the direction or turns it
+        # by chance (second review: a strip sliding along itself came out as ridge and trench). Two sides are joined
+        # if they meet at a corner, which is where the three cells of one mesh triangle meet.
+        number = np.full(2 * cross.size, -1, dtype=np.int64)                     # each kept side's place in the arrays above
+        number[np.flatnonzero(toward)] = np.arange(cell.size)
+        edge_key = mesh.edge_cells[:, 0].astype(np.int64) * n + mesh.edge_cells[:, 1]
+        place = np.full(mesh.edge_cells.shape[0], -1, dtype=np.int64)
+        place[cross] = np.arange(cross.size)
+        fa, fb, fc = mesh.faces[:, 0].astype(np.int64), mesh.faces[:, 1].astype(np.int64), mesh.faces[:, 2].astype(np.int64)
+        sides_of = [np.searchsorted(edge_key, np.minimum(a, c) * n + np.maximum(a, c)) for a, c in ((fa, fb), (fb, fc), (fc, fa))]
+        rows, cols = [], []
+        for e1, e2 in ((sides_of[0], sides_of[1]), (sides_of[1], sides_of[2]), (sides_of[2], sides_of[0])):
+            both = (place[e1] >= 0) & (place[e2] >= 0)
+            p1, p2 = place[e1][both], place[e2][both]
+            for half1 in (0, cross.size):                                        # each side is seen from both of its cells
+                for half2 in (0, cross.size):
+                    s1, s2 = number[p1 + half1], number[p2 + half2]
+                    joined = (s1 >= 0) & (s2 >= 0)
+                    s1, s2 = s1[joined], s2[joined]
+                    joined = (plate[cell[s1]] == plate[cell[s2]]) & (plate[other[s1]] == plate[other[s2]])
+                    rows += [s1[joined], s2[joined]]
+                    cols += [s2[joined], s1[joined]]
+        rows, cols = np.concatenate(rows), np.concatenate(cols)
+        step = sp.csr_matrix((np.ones(rows.size), (rows, cols)), shape=(cell.size, cell.size)) + sp.identity(cell.size, format="csr")
+        runs = sp.csr_matrix((np.ones(cell.size), (cell, np.arange(cell.size))), shape=(n, cell.size))     # a cell's own sides
+        for _ in range(int(np.ceil(JOINED_STEPS_PER_CELL * b["direction_reach_cells"]))):
+            runs = runs @ step
+            runs.data[:] = 1.0
+        joined = np.asarray(runs[at, side]).ravel() > 0
+        at, side = at[joined], side[joined]
         order = np.lexsort((side, at))                                           # a fixed order, so the sums never vary
         at, side = at[order], side[order]
         x = mesh.xyz[bcell]
@@ -156,7 +222,11 @@ class SnapshotPlates(Process):
                            for axis in range(outward.shape[1])], axis=1)
         across -= np.einsum("ij,ij->i", across, x)[:, None] * x                 # lying in the surface at the cell
         size = np.linalg.norm(across, axis=1)
-        known = size > np.sqrt(np.finfo(float).eps) * length.max()               # a sliver ringed by one plate has no direction
+        added = np.bincount(at, weights=length[side], minlength=n)[bcell]        # the length of side that went into the sum
+        # Sides along a straight boundary add up to 0.67 to 0.87 of their length. The whole outline of a small plate
+        # adds up to next to nothing, and what is left points anywhere: such a plate has no direction, and its
+        # boundary counts as sliding past.
+        known = size > b["direction_known_above"] * added
         normal = np.where(known[:, None], across / np.maximum(size, np.finfo(float).tiny)[:, None], 0.0)
         relative = np.cross(rotation[plate[bcell]] - rotation[facing[bcell]], x) * radius   # m per year, own plate against the faced one
         closing = np.einsum("ij,ij->i", relative, normal)                        # positive where the plates close
@@ -223,14 +293,14 @@ class SnapshotPlates(Process):
         is_boundary, facing, faces_continent, b_kind, b_close = self._boundaries(mesh, plate, ctype, rotation, radius, k,
                                                                                  c["boundaries"])
 
-        # every cell: its nearest boundary cell on its own plate
+        # every cell: its nearest boundary cell on its own plate; of several equally near, the one that closes fastest
         near = np.full(n, -1, dtype=np.int64)
         dist = np.full(n, np.pi * radius)
         for p in range(k):
             mine = np.flatnonzero(plate == p)
             bp = mine[is_boundary[mine]]
             if bp.size:
-                d, idx = cKDTree(mesh.xyz[bp]).query(mesh.xyz[mine])
+                d, idx = _nearest(mesh.xyz[bp], mesh.xyz[mine], b_close[bp], b_kind[bp])
                 near[mine], dist[mine] = bp[idx], _arc(d) * radius
         has = near >= 0
         safe = np.where(has, near, 0)
@@ -246,7 +316,7 @@ class SnapshotPlates(Process):
             mine = np.flatnonzero((plate == p) & ocean)
             rp = np.flatnonzero((plate == p) & is_boundary & (b_kind == RIDGE))
             if mine.size and rp.size:
-                d, idx = cKDTree(mesh.xyz[rp]).query(mesh.xyz[mine])
+                d, idx = _nearest(mesh.xyz[rp], mesh.xyz[mine], -b_close[rp], b_kind[rp])     # of equally near ridge cells, the fastest
                 half = np.maximum(-b_close[rp[idx]] / 2, a["minimum_half_rate_m_per_year"])
                 age[mine] = np.minimum(_arc(d) * radius / half / YEARS_PER_MY, a["maximum_my"])
 

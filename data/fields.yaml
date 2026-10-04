@@ -107,7 +107,8 @@ fields:
     {family: Water, unit: mm/month, shape: month_cell, kind: number, range: [0, 20000],
      description: "Rain plus snow."}
   snowfall:
-    {family: Water, unit: mm/month of water, shape: month_cell, kind: number, range: [0, 20000],
+    {family: Water, unit: mm/month of water, shape: month_cell, kind: number, default: 0.0, range: [0, 20000],
+     settle: {mean: 0.05, cell: 1.0},
      description: "The part of precipitation that falls as snow."}
   # ---------------------------------------------------------------- Soil and life
   climate_class:

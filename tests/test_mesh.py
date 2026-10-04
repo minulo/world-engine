@@ -75,23 +75,74 @@ def test_smoothing_keeps_the_mean_and_flattens():
     assert s.max() < 1.0 and s.min() > 0.0
 
 
-def test_a_wind_is_split_into_the_part_that_converges_and_the_part_that_turns():
-    """A wind that only circles has no converging part; a wind that only flows toward one latitude is all converging."""
+def _flows(m, v):
+    """What a wind carries out of each cell across each side: side length times speed."""
+    return m.nbr_dual * op.side_speeds(m, v)
+
+
+def _uniform_ease(m):
+    ease = np.where(m.nbr >= 0, m.nbr_dual / np.where(m.nbr >= 0, m.nbr_dist, 1.0), 0.0)
+    return ease, op.potential_solver(op.laplacian_matrix(m), m.area)
+
+
+def test_what_leaves_a_cell_across_a_side_enters_its_neighbour():
+    m = get_mesh(4)
+    v = np.cross(np.array([0.3, -0.2, 0.93]), m.xyz) + 0.4 * m.north
+    out = op.side_speeds(m, v)
+    i, k = np.nonzero(m.nbr >= 0)
+    j = m.nbr[i, k]
+    back = np.array([np.flatnonzero(m.nbr[b] == a)[0] for a, b in zip(i, j)])      # the same side, seen from the neighbour
+    assert np.array_equal(out[i, k], -out[j, back])
+    assert np.array_equal(out[m.nbr < 0], np.zeros((m.nbr < 0).sum()))
+    per_edge = np.arange(m.edge_cells.shape[0], dtype=np.float64)
+    handed = op.side_values(m, per_edge)
+    assert np.array_equal(handed[i, k], handed[j, back]) and np.array_equal(handed[i, k], per_edge[m.nbr_edge[i, k]])
+
+
+def test_fitting_flows_to_no_gathering_keeps_the_part_of_a_wind_that_turns():
+    """A wind that only circles is left alone; a wind that only flows toward one latitude is removed whole.
+    Unlike a split made on the wind vectors, the fit works in the measure the transport scheme uses: what is
+    left gathers nowhere, to within the solver's shift of one part in a million (the second review measured 8 %
+    left over by the earlier split)."""
     m = get_mesh(5)
-    rms = lambda v: float(np.sqrt((np.einsum("ij,ij->i", v, v) * m.area).sum() / m.area.sum()))
+    ease, solver = _uniform_ease(m)
+    size = lambda f: float(np.sqrt((f * f).sum()))
+    nothing = np.zeros(m.n)
     lat = np.deg2rad(m.lat)
-    circling = np.cross(np.array([0.3, -0.2, 0.93]), m.xyz) * 7.0            # the surface turning about a tilted axis
-    assert rms(op.converging_part(m, circling)) < 0.01 * rms(circling)
-    toward_equator = (-5.0 * np.sin(2 * lat))[:, None] * m.north             # the gradient of 2.5 cos(2 lat)
-    part = op.converging_part(m, toward_equator)
-    assert rms(part - toward_equator) < 0.02 * rms(toward_equator)
+    circling = _flows(m, np.cross(np.array([0.3, -0.2, 0.93]), m.xyz) * 7.0)     # the surface turning about a tilted axis
+    toward_equator = _flows(m, (-5.0 * np.sin(2 * lat))[:, None] * m.north)      # the gradient of 2.5 cos(2 lat)
+    assert size(op.fit_side_flows(m, circling, nothing, ease, solver) - circling) < 0.01 * size(circling)
+    assert size(op.fit_side_flows(m, toward_equator, nothing, ease, solver)) < 0.02 * size(toward_equator)
     both = circling + toward_equator
-    memo = {}
-    part = op.converging_part(m, both, memo)
-    assert rms(part - toward_equator) < 0.02 * rms(toward_equator)
-    assert rms((both - part) - circling) < 0.02 * rms(circling)
-    assert np.array_equal(part, op.converging_part(m, both, memo))           # the kept solver gives the same bits
-    assert np.array_equal(part, op.converging_part(m, both))                 # and so does a fresh one
+    turning = op.fit_side_flows(m, both, nothing, ease, solver)
+    assert size(turning - circling) < 0.02 * size(circling)
+    assert np.abs(turning.sum(axis=1)).max() < 1e-6 * np.abs(both.sum(axis=1)).max()       # gathers nowhere
+    assert np.array_equal(turning, op.fit_side_flows(m, both, nothing, ease, solver))       # the same bits again
+    fresh = op.potential_solver(op.laplacian_matrix(m), m.area)
+    assert np.array_equal(turning, op.fit_side_flows(m, both, nothing, ease, fresh))        # and with a fresh solver
+
+
+def test_fitted_flows_add_up_to_what_is_wanted_and_avoid_sides_that_are_hard_to_cross():
+    """The flow out of every cell meets the wanted amount, and stays equal and opposite on the two faces of a side.
+    Where a band of sides is made a hundred times harder to change, the fit sends the correction around it."""
+    m = get_mesh(4)
+    flow = _flows(m, 3.0 * m.east + 1.0 * m.north)
+    wanted = m.area * np.sin(3 * np.deg2rad(m.lon)) * np.cos(np.deg2rad(m.lat))
+    wanted -= m.area * wanted.sum() / m.area.sum()                              # it must add up to zero over the planet
+    i, j = m.edge_cells[:, 0], m.edge_cells[:, 1]
+    hard = (np.abs(m.lon[i]) < 30.0) & (np.abs(m.lon[j]) < 30.0)                # a band about the reference meridian
+    weight = np.where(hard, 0.01, 1.0)
+    ease = op.side_values(m, weight * m.edge_dual / m.edge_dist)
+    solver = op.potential_solver(op.weighted_laplacian_matrix(m, weight), m.area)
+    fitted = op.fit_side_flows(m, flow, wanted, ease, solver)
+    assert np.abs(fitted.sum(axis=1) - wanted).max() < 1e-6 * np.abs(flow.sum(axis=1) - wanted).max()
+    a, k = np.nonzero(m.nbr >= 0)
+    b = m.nbr[a, k]
+    back = np.array([np.flatnonzero(m.nbr[q] == p)[0] for p, q in zip(a, b)])
+    assert np.array_equal(fitted[a, k], -fitted[b, back])
+    change = np.abs(fitted - flow)
+    in_band = op.side_values(m, hard.astype(np.float64)) > 0
+    assert change[in_band].mean() < 0.2 * change[(m.nbr >= 0) & ~in_band].mean()        # measured: 0.10
 
 
 def test_zonal_mean_and_east_north():

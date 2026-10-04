@@ -14,6 +14,9 @@ Model (Assembled; the process the design trusts least).
 (d) Surface wind follows from a balance of pressure, the planet's spin and drag on the ground.
 (e) Wind aloft comes from the thermal wind relation; storm growth is the Eady growth rate.
 
+Temperatures are first brought to sea level with the shared lapse rate; ground below sea level
+counts as standing at sea level.
+
 Ignores: single storms, the waves that mountain ranges raise in the flow, the turning aside of
 wind by high ground, how monsoons really work. Stability and layer depth are constants.
 Wrong where: the seasonal shift of the tropical rain belt, monsoons, storm paths downwind of

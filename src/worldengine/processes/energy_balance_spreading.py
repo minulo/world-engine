@@ -9,7 +9,8 @@ Heat lost to space is a straight-line function of temperature, A + B T. Land and
 how slowly they warm and cool (C). The repeating year is solved directly: the monthly forcing
 is split into its yearly mean and a few waves in time, and each is one linear system on the
 mesh, prepared once for a climate run with a direct solver. My additions: height cools the
-surface at a fixed rate per kilometre, and the heat group enters as a known amount.
+surface at a fixed rate per kilometre (ground below sea level counts as standing at sea level),
+and the heat group enters as a known amount.
 
 Ignores: the layers of the air, heat carried as water vapour, heat carried by wind and ocean
 (their effect is folded into D, which was fitted to the observed fall of temperature from
@@ -19,6 +20,19 @@ the paper), so swings of the sunlight faster than that are left out: at the pole
 polar night makes the year far from a smooth wave, up to 20 W/m2 of the monthly sunlight.
 Wrong where: it spreads heat over about 3,500 km, so anything narrower is smoothed away.
 Coasts facing the wind are not milder than coasts facing away. High plateaus are too cold.
+The largest known error of the climate stage: one spreading constant ties land to the sea too
+tightly, so the seasons on land are too weak unless the continent is very large. Measured with
+this process alone, sunlight of Earth and an albedo of 0.31 everywhere: at the centre of a
+continent 60 degrees of longitude wide the temperature at 50 degrees north swings 10.7 K either
+side of its mean, where the middle of North America swings about 19 K [UNVERIFIED: recalled];
+on a continent 140 degrees wide it swings 20 K, close to inner Asia's. With weak seasons the
+summers of land poleward of about 50 degrees stay below freezing, snow outlasts them, and the
+reflecting snow cools the land further: in ten seeded worlds 15 to 48 % of the land lies under
+snow all year, where Earth has about 10 % under ice. Later two-dimensional models of this
+family let the spreading weaken toward the poles and over land (North, Mengel and Short 1983;
+Zhuang, North and Stevens 2017; Ziegler and Rehfeld 2021); with a spreading constant of 0.35
+in place of 0.649 the same two continents swing 15.9 and 27.6 K. That is a change of model,
+left for a version of this process that is tested against Earth.
 """
 import numpy as np
 import scipy.sparse as sp

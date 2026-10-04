@@ -72,7 +72,7 @@ Albedo:
     drivers:
       from_cloud_and_sun_angle: {says: "cloud and the low sun reflect {v}"}
       from_surface_type: {says: "the surface type reflects {v}", follows: [ocean_mask]}
-      from_snow_and_ice: {says: "snow and ice add {v}", follows: [surface_temperature]}
+      from_snow_and_ice: {says: "snow and ice add {v}", follows: [surface_temperature, snowfall]}
 
 EnergyBalance:
   surface_temperature:

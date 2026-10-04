@@ -21,7 +21,9 @@ def sweep(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_c
         sum_k out[i,k] W[i] - sum_k in[i,k] W[j] + sum_k (mix_own[i,k] W[i] - mix_other[i,k] W[j]) + area[i] rain(W[i])
             = area[i] * (evap[i] * max(1 - W[i]/Wsat[i], 0) + source[i]) + extra[i]
 
-    with rain(W) = rain_scale[i] * exp(rain_steepness * (W/Wsat[i] - rain_humidity[i])) + lift[i] * W * W / Wsat[i].
+    with rain(W) = rain_scale[i] * (exp(rain_steepness * (W/Wsat[i] - rain_humidity[i])) - exp(-rain_steepness * rain_humidity[i]))
+                   + lift[i] * W * W / Wsat[i].
+    The second exponential is the first one's value in air that holds no water, so that such air gives no rain.
     Above saturation (W > Wsat) the first term goes on as a straight line with the slope it has at saturation,
     and nothing evaporates. mix_own and mix_other are the same number where two cells stand at the same height;
     where they do not, each carries the share of its column that lies above the higher of the two grounds.
@@ -42,16 +44,18 @@ def sweep(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_c
                     gain += (in_coef[i, k] + mix_other[i, k]) * w[j]
                     loss += out_coef[i, k] + mix_own[i, k]
                 x = w[i]
+                in_dry_air = rain_scale[i] * np.exp(-rain_steepness * rain_humidity[i])     # what the law would give at no water
                 for _n in range(newton_steps):
                     humidity = x / w_sat[i]
                     if humidity <= 1.0:
-                        wet = rain_scale[i] * np.exp(rain_steepness * (humidity - rain_humidity[i]))
-                        wet_slope = wet * rain_steepness / w_sat[i]
+                        grown = rain_scale[i] * np.exp(rain_steepness * (humidity - rain_humidity[i]))
+                        wet = grown - in_dry_air
+                        wet_slope = grown * rain_steepness / w_sat[i]
                         dry = evap_coef[i] * (1.0 - humidity)
                         dry_slope = -evap_coef[i] / w_sat[i]
                     else:                                    # above saturation the law goes on as a straight line
                         top = rain_scale[i] * np.exp(rain_steepness * (1.0 - rain_humidity[i]))
-                        wet = top * (1.0 + rain_steepness * (humidity - 1.0))
+                        wet = top * (1.0 + rain_steepness * (humidity - 1.0)) - in_dry_air
                         wet_slope = top * rain_steepness / w_sat[i]
                         dry = 0.0
                         dry_slope = 0.0
@@ -85,11 +89,12 @@ def residual(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, eva
             loss += out_coef[i, k] + mix_own[i, k]
         x = w[i]
         humidity = x / w_sat[i]
+        in_dry_air = rain_scale[i] * np.exp(-rain_steepness * rain_humidity[i])
         if humidity <= 1.0:
-            wet = rain_scale[i] * np.exp(rain_steepness * (humidity - rain_humidity[i]))
+            wet = rain_scale[i] * np.exp(rain_steepness * (humidity - rain_humidity[i])) - in_dry_air
             dry = evap_coef[i] * (1.0 - humidity)
         else:
-            wet = rain_scale[i] * np.exp(rain_steepness * (1.0 - rain_humidity[i])) * (1.0 + rain_steepness * (humidity - 1.0))
+            wet = rain_scale[i] * np.exp(rain_steepness * (1.0 - rain_humidity[i])) * (1.0 + rain_steepness * (humidity - 1.0)) - in_dry_air
             dry = 0.0
         r[i] = gain - loss * x - area[i] * (wet + lift_coef[i] * x * x / w_sat[i] - dry)
     return r
@@ -152,9 +157,10 @@ class Ladder:
 
 
 def rain_from_humidity(humidity, scale, steepness, at_one):
-    """The rain law of sweep() for arrays: exponential in the humidity of the column up to saturation, a straight line above."""
+    """The rain law of sweep() for arrays: exponential in the humidity of the column up to saturation, a straight line
+    above, less what the exponential gives in air that holds no water."""
     below = scale * np.exp(steepness * (np.minimum(humidity, 1.0) - at_one))
-    return below * (1.0 + steepness * np.maximum(humidity - 1.0, 0.0))
+    return below * (1.0 + steepness * np.maximum(humidity - 1.0, 0.0)) - scale * np.exp(-steepness * at_one)
 
 
 def evaporation_from_humidity(humidity, at_zero_humidity):

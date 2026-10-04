@@ -111,25 +111,52 @@ def smooth(mesh: Mesh, f: np.ndarray, length: float, memo: dict | None = None) -
     return lu.solve(mesh.area * np.asarray(f, dtype=np.float64))
 
 
-def converging_part(mesh: Mesh, v: np.ndarray, memo: dict | None = None) -> np.ndarray:
-    """The part of a tangent vector field (n, 3) that converges and spreads, as opposed to the part that turns.
+def side_speeds(mesh: Mesh, v: np.ndarray) -> np.ndarray:
+    """Speed of a tangent vector field (n, 3) out of each cell across each of its sides: (n, 6), zero where a cell
+    has no sixth side. The value on a side is that of edge_normal_speed, so what leaves one cell enters the next."""
+    valid = mesh.nbr >= 0
+    return np.where(valid, edge_normal_speed(mesh, v)[np.where(valid, mesh.nbr_edge, 0)] * mesh.nbr_sign, 0.0)
 
-    Any wind field is the sum of two parts (the Helmholtz split). One flows toward the places where air gathers
-    and away from where it spreads: it is the gradient of a potential chi with Laplacian(chi) = divergence(v).
-    The other circles without gathering anywhere. This returns the first; v minus it is the second.
-    One direct solve; the prepared solver is kept in `memo` if one is given.
+
+def weighted_laplacian_matrix(mesh: Mesh, edge_weight: np.ndarray) -> sp.csr_matrix:
+    """As laplacian_matrix, with each edge's term multiplied by a weight: (L f)[i] = sum of w * (dual / dist) * (f[j] - f[i])."""
+    i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
+    c = edge_weight * mesh.edge_dual / mesh.edge_dist
+    n = mesh.n
+    rows = np.concatenate([i, j, i, j]); cols = np.concatenate([j, i, i, j])
+    vals = np.concatenate([c, c, -c, -c])
+    return sp.csr_matrix((vals, (rows, cols)), shape=(n, n))
+
+
+def potential_solver(matrix: sp.spmatrix, weight: np.ndarray):
+    """A prepared direct solver for (matrix) x = b where the matrix is a Laplacian, which alone cannot be inverted
+    (a constant has none). A shift far below its smallest rate fixes the weighted mean of x at zero and changes the
+    answer by less than one part in a million, provided b adds up to zero."""
+    return spla.splu((matrix - _POTENTIAL_SHIFT * sp.diags(weight)).tocsc())
+
+
+def fit_side_flows(mesh: Mesh, flow: np.ndarray, wanted: np.ndarray, ease: np.ndarray, solver) -> np.ndarray:
+    """The smallest change to a flow across the cell sides after which the flow out of every cell adds up to `wanted`
+    (to within the solver's shift: one part in a million of the correction).
+
+    `flow` is (n, 6): what leaves each cell across each side, the negative of what its neighbour sees there.
+    `wanted` is (n,) and must add up to zero over the planet. `ease` is (n, 6), the same on both faces of a side:
+    the change on a side is ease * (p[neighbour] - p[cell]), which makes the sum over all sides of change**2 / ease
+    as small as the constraint allows (a least-squares fit with a multiplier p, the method of mass-consistent
+    wind models). `solver` is potential_solver() of the Laplacian weighted by the same ease.
+    With every ease equal to side length / distance and wanted = 0, what comes back is the part of the flow that
+    turns without gathering anywhere (the Helmholtz split), exact in the measure a finite-volume scheme uses.
     """
-    key = ("potential", mesh.level)
-    lu = memo.get(key) if memo is not None else None
-    if lu is None:
-        # The Laplacian alone cannot be inverted (a constant has none). A shift far below its smallest rate of 2
-        # fixes the mean of chi at zero and changes the answer by less than one part in a million.
-        m = laplacian_matrix(mesh) - _POTENTIAL_SHIFT * sp.diags(mesh.area)
-        lu = spla.splu(m.tocsc())
-        if memo is not None:
-            memo[key] = lu
-    chi = lu.solve(mesh.area * divergence(mesh, np.asarray(v, dtype=np.float64)))
-    return gradient(mesh, chi)
+    valid = mesh.nbr >= 0
+    nb = np.where(valid, mesh.nbr, 0)
+    p = solver.solve(wanted - flow.sum(axis=1))
+    return np.where(valid, flow + ease * (p[nb] - p[:, None]), 0.0)
+
+
+def side_values(mesh: Mesh, edge_values: np.ndarray) -> np.ndarray:
+    """A value held per edge, handed out per cell and side: (n, 6), zero where a cell has no sixth side."""
+    valid = mesh.nbr >= 0
+    return np.where(valid, edge_values[np.where(valid, mesh.nbr_edge, 0)], 0.0)
 
 
 def area_mean(mesh: Mesh, f: np.ndarray, mask: np.ndarray | None = None) -> float:

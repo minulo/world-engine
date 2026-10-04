@@ -6,9 +6,11 @@
 
 shared:
   lapse_rate_k_per_km: 6.5                     # cooling of air with height [UNVERIFIED: the standard atmosphere's value]
-  freezing_point_k: 273.15                     # snow lies on land in every month below this [DOCUMENTED: North, Cahalan and Coakley 1981, p. 102]
-  sea_ice_yearly_mean_below_k: 263.15          # ice lies on the sea where the mean temperature of the year is below this, -10 C
-                                               # [DOCUMENTED: the same paper, eq. 15 and p. 102: "the mean annual -10 C isotherm"]
+  freezing_point_k: 273.15                     # snow on the ground melts in months warmer than this
+  sea_ice_yearly_mean_below_k: 263.15          # ice lies on the sea where the mean temperature of the year is below this, -10 C.
+                                               # [DOCUMENTED: North, Cahalan and Coakley 1981, eq. 15 and p. 102, put the edge of
+                                               #  their ice cap at "the mean annual -10 C isotherm"; INFERRED: applying it to the
+                                               #  sea only is my reading]
 
 slots:
   PlanetGeometry:
@@ -49,7 +51,13 @@ slots:
         transform_ratio: 0.5                   # closing or opening slower than this share of the sliding speed counts as sliding past [INFERRED]
         minimum_speed_m_per_year: 0.002
         direction_reach_cells: 4.0             # the direction of a boundary is taken over the stretch within this many cell spacings of a cell
-                                               # [MEASURED: with 4, the direction of a straight boundary is off by at most 10 degrees; with 2, by 18]
+                                               # [MEASURED: with 4, the direction of a straight boundary is off by at most 10 degrees; with 2, by 20]
+        direction_known_above: 0.3             # the sides within reach must add up to more than this share of their length for the
+                                               # boundary to have a direction there; otherwise the cell counts as sliding past
+                                               # [MEASURED: a straight boundary gives 0.67 to 0.87. A plate up to about four cells
+                                               #  across has its whole outline within reach, which adds up to next to nothing: such
+                                               #  a plate gets no ridge or trench. With 0.02, round plates two cells in radius that
+                                               #  only spin showed false ridges and trenches at 10 of 322 boundary cells]
       orogeny:
         subduction_thickening_m: 18000.0       # crust added behind a trench at the reference speed [PROVISIONAL: tuned, as the paper's uplift is]
         subduction_width_km: 600.0
@@ -119,9 +127,9 @@ slots:
   Albedo:
     implementation: worldengine.processes.albedo_surface_table:SurfaceTableAlbedo
     standing: Rule
-    model: "A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection at low sun angles. Ice lies on the sea where the year's mean temperature is below -10 C, and snow on land in every month below freezing (North, Cahalan and Coakley 1981)."
-    ignores: "Where clouds actually form, plant cover, dust, the depth of snow, and sea ice that comes and goes with the seasons."
-    wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics. Clouds are the largest known gap in the climate stage."
+    model: "A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection at low sun angles. Ice lies on the sea where the year's mean temperature is below -10 C (North, Cahalan and Coakley 1981). Snow lies on land where a store filled by snowfall and emptied by warmth holds snow (the degree-day rule of melt, Hock 2003)."
+    ignores: "Where clouds actually form, plant cover, dust, sea ice that comes and goes with the seasons, the darkening of old snow and of snow under trees."
+    wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics. Clouds are the largest known gap in the climate stage. While land is too dry, snow on land is too thin and melts too early. A planet can still freeze over, more easily than in fuller models; the process says so in a note when snow and ice cover more than a third of the surface."
     writes: [albedo]
     constants:
       cloud_share: 0.255                       # [INFERRED: set so that an ice-free planet with the table below reflects the 0.319 of North et al. 1981]
@@ -130,14 +138,23 @@ slots:
         sea: 0.07                              # [UNVERIFIED: typical value]
         land: 0.20                             # [UNVERIFIED: typical value for ground with some plants]
         ice: 0.658                             # [INFERRED: gives ice-covered cells the 0.62 of North et al. 1981]
-      ice_ramp_k: 2.0                          # width of the change from bare to ice-covered around each limit, so that the rounds settle [INFERRED]
+      ice_ramp_k: 2.0                          # width of the change from open to ice-covered sea around the limit, so that the rounds settle [INFERRED]
+      snow:
+        melt_mm_per_day_per_k: 4.0             # degree-day factor of snow melt [DOCUMENTED: Hock 2003, eq. 1 for the rule; her Table 1
+                                               #  lists 2.5 to 5.5 mm a day per degree for snow at sites without glaciers. INFERRED: 4]
+        full_cover_mm: 15.0                    # the ground counts as fully white once the store holds this much water
+                                               # [DOCUMENTED: Dutra et al. 2010, eq. A2, the older ECMWF rule: cover = min(1, S / 15), S in kg/m2]
+        years_followed: 3                      # the store is followed through this many years from bare ground; where it still
+                                               # grows in the last one, snow outlasts the summer [INFERRED]
+      note_when_covered_above: 0.333           # a note is raised when snow and ice cover more than this share of the planet on the
+                                               # year's average [INFERRED: Earth today is near a tenth by my estimate; UNVERIFIED]
 
   EnergyBalance:
     implementation: worldengine.processes.energy_balance_spreading:SpreadingEnergyBalance
     standing: Adapted
     model: "The energy balance model of North, Cahalan and Coakley 1981: absorbed sunlight equals heat lost to space (A + B T) plus heat spread sideways, with land and sea differing in how slowly they warm. First version: spreading only."
     ignores: "The layers of the air, heat carried as water vapour, wind and ocean heat (folded into the spreading constant), sea ice as a lid on the sea, and the make-up of the air: every planet gets Earth's greenhouse effect."
-    wrong_where: "It spreads heat over about 3,500 km, so anything narrower is smoothed away. Coasts facing the wind are not milder. High plateaus are too cold."
+    wrong_where: "It spreads heat over about 3,500 km, so anything narrower is smoothed away. Coasts facing the wind are not milder. High plateaus are too cold. One spreading constant ties land to the sea too tightly: the seasons on land are too weak unless the continent is very large, so too much land poleward of about 50 degrees keeps its snow all year."
     writes: [surface_temperature]
     constants:
       loss_at_zero_celsius_w_m2: 203.3         # A [DOCUMENTED: North, Cahalan and Coakley 1981]
@@ -203,17 +220,17 @@ slots:
   Moisture:
     implementation: worldengine.processes.moisture_one_layer:OneLayerMoisture
     standing: Adapted
-    model: "A one-layer water budget, as in the UVic model: vapour leaves the sea, travels with the wind and mixes sideways, in both cases at its own height, so that high ground holds back the vapour below its level. Rain rises steeply with the humidity of the column (Bretherton, Peters and Back 2004). Air forced up a slope rains, and rain is suppressed under sinking air."
-    ignores: "The layers of the air, how thunderstorms organise, air blocked and turned aside by ranges, evaporation from land, passing storms."
-    wrong_where: "Land everywhere is too dry, because nothing evaporates from land until Hydrology exists: land gets only what the sea supplies. Rain totals in the tropics, ranges narrower than a cell, and hot land near 30 degrees in summer, where one layer of air tends to rain where Earth has desert."
+    model: "A one-layer water budget, as in the UVic model: vapour leaves the sea, travels with a flow fitted from the surface wind and mixes sideways. Between cells of different height only the part of each column above the higher ground crosses; the air held back before high ground is partly lifted, which rains on the higher ground, and partly turned aside; behind high ground the vapour is thin. Rain rises steeply with the humidity of the column (Bretherton, Peters and Back 2004), and is suppressed under sinking air."
+    ignores: "The layers of the air, how thunderstorms organise, evaporation from land, passing storms, and how stable the air is, which decides how much of a flow goes over high ground and how much around it."
+    wrong_where: "Land everywhere is too dry, because nothing evaporates from land until Hydrology exists: land gets only what the sea supplies. Rain totals in the tropics, ranges narrower than a cell, and hot land near 30 degrees in summer, where one layer of air tends to rain where Earth has desert. The wet zone before a long, high wall is probably too wet, and the rain of rising ground at a cliff grows as the cells shrink."
     writes: [ocean_evaporation, column_water, precipitation, snowfall]
     constants:
       rain_law:                                # rain in mm a day = exp(steepness * (humidity - humidity_at_one_mm_per_day))
         steepness: 11.4                        # [DOCUMENTED: Bretherton, Peters and Back 2004, eq. 2, the fit to monthly data over
         humidity_at_one_mm_per_day: 0.522      #  tropical seas: P = exp(11.4 (r - 0.522)) mm a day, r the humidity of the whole column]
         reference_column_kg_m2: 60.0           # outside the tropics the rate is scaled by saturation column / this [INFERRED: my extension]
-      # The six numbers from here to rising_ground_efficiency were set together by hand on the default planet
-      # [CALIBRATED], after the review of build step 1 corrected the mixing and the evaporation wind. The aims, from
+      # The five numbers sinking_shift, exchange_coefficient, gust_m_s, mixing_m2_s and share_of_converging_wind were set
+      # together by hand on the default planet [CALIBRATED], after the reviews of build step 1. The aims, from
       # Earth's yearly water budget as I recall it [UNVERIFIED: no Earth data could be fetched where this was built]:
       # evaporation from the sea near 1,200 mm a year; the rain belt at the equator near 2,000 mm; the dry belts near
       # 25 degrees and the storm belts near 50 degrees as close to 700 and 900 mm as one layer of air allows.
@@ -224,12 +241,21 @@ slots:
                                                # in for that of the air at the surface, which is moister
       gust_m_s: 4.0                            # wind that always stirs the sea surface, added to the surface wind [INFERRED]
       mixing_m2_s: 4.0e+6                      # spreading of vapour by all stirring the model does not resolve, storms included
-      carrying_wind:                           # the wind that carries the column's vapour, made from the surface wind
+      carrying_wind:                           # the flow that carries the column's vapour, made from the surface wind
+                                               # [INFERRED: taking the two parts of the wind in different shares is my construction]
         share_of_turning_wind: 1.0             # of the part that circles without gathering (the trades and westerlies along their
                                                # belts): that flow is deep, and carries the whole column
         share_of_converging_wind: 0.25         # of the part that flows toward where the air rises: that flow is about a kilometre
                                                # deep while vapour reaches higher, and the model's is about twice as fast as Earth's
-      rising_ground_efficiency: 0.3            # share of the vapour lifted over a slope that falls as rain
+        turned_aside_reach_km: 500.0           # air that high ground holds back and does not lift spreads over this distance
+                                               # before it gathers again [INFERRED: the order of the distance over which a range
+                                               # slows the air before it; with 500 km a wall 2.5 km high facing a wind of 6 m/s
+                                               # has 3.9 m of rain a year over the 500 km before it, on every mesh tried]
+      rising_ground_efficiency: 0.08           # share of the vapour that the surface wind pushes against higher ground, below that
+                                               # ground's level, that falls there as rain, at full humidity [CALIBRATED: with it a
+                                               # scarp 1.4 km high facing steady trade winds draws about 7 kg of rain a second per
+                                               # metre of its length, 2 to 3 m of rain a year over a strip 100 km wide, the order of
+                                               # Earth's wet trade-wind coasts as I recall them: UNVERIFIED]
       newton_steps: 6
       vapour_scale_height_m: 2500.0            # depth of the layer that holds the vapour [UNVERIFIED: typical value]; also the height
                                                # over which vapour thins, for mixing between columns over ground of different height
@@ -237,12 +263,15 @@ slots:
       coarser_meshes: 4                        # the budget is solved on a ladder of this many coarser meshes below the world's own
       maximum_trips: 30                        # cap on the trips down the ladder and back, on each mesh
       coarsest_cycles: 20                      # sweeps on the coarsest mesh in each trip
-      tolerance_kg_m2: 2.0e-3                  # the largest change of the last sweep must fall below this
+      tolerance_kg_m2: 2.0e-3                  # the solver stops when its last sweep changes no column by more than this; the
+                                               # answer then lies within about this much of the settled one (second review: 2.5e-3)
       saturation:                              # saturation vapour pressure over water [UNVERIFIED: the formula of Bolton 1980 as I recall it]
         pressure_at_zero_pa: 611.2
         exponent_factor: 17.67
         exponent_offset_k: 29.65
         vapour_gas_constant_j_kg_k: 461.5
+        lowest_temperature_k: 150.0            # below this the formula is held at its value here [INFERRED: the formula
+                                               # is a fit to ordinary air temperatures and has a pole at the offset above]
       snow: {all_rain_above_k: 276.15, all_snow_below_k: 270.15}     # [INFERRED: a ramp around freezing for monthly means]
     expected_range:
       surface_gravity_m_s2: [5.0, 20.0]

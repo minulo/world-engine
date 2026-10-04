@@ -81,12 +81,54 @@ def test_both_poles_are_cold_and_carry_ice(plain):
     assert np.all(np.diff(zonal[lat > 20]) < 0) and np.all(np.diff(zonal[lat < -20]) > 0)   # colder toward each pole
 
 
+def _mean_temperature_c(w):
+    area = w.fields["cell_area"]
+    return float((w.fields["surface_temperature"].astype(np.float64).mean(axis=0) * area).sum() / area.sum()) - 273.15
+
+
+def _deep_ice_age_notes(w):
+    return [n for n in w.notices if n["kind"] == "process_note" and n["slot"] == "Albedo"]
+
+
+def test_a_seeded_world_that_froze_over_under_the_earlier_snow_rule_now_stays_open():
+    """Seed 10 was the one world in 32 that froze over in the second review: -5.4 C, 98.5 % of its land frozen all
+    year, reported as an ordinary settled world. Snow then lay on any land below freezing, snowfall or none. Now snow
+    must fall before it lies. The world is still a cold one, with much of its land near the poles (measured: 9 C)."""
+    w = Engine(DATA, profile="preview", seed=10).build()
+    assert w.settled["climate"]
+    assert _mean_temperature_c(w) > 5.0
+    assert not _deep_ice_age_notes(w)
+    for pole in (NORTH_POLE, SOUTH_POLE):
+        assert w.fields["surface_temperature"].astype(np.float64).mean(axis=0)[pole] < 273.15       # and its poles are still cold
+
+
+def test_less_sunlight_cools_the_default_planet_and_a_deep_ice_age_is_reported(plain):
+    """Two per cent less sunlight froze the default planet in the second review (-5.3 C). Now it cools it by about
+    4 K. With five per cent less, snow and ice do take over, as they do in every model of this kind, and the world
+    then says so in a note."""
+    _, w0 = plain
+
+    def dimmer(factor):
+        planet = yaml.safe_load((DATA / "planet.yaml").read_text())
+        planet["star_output_w_m2"] *= factor
+        return build(planet=planet)[1]
+    w = dimmer(0.98)
+    assert w.settled["climate"] and not _deep_ice_age_notes(w)
+    cooling = _mean_temperature_c(w0) - _mean_temperature_c(w)
+    assert 2.0 < cooling < 7.0                                            # measured 4.4 K
+    assert _mean_temperature_c(w) > 4.0
+    cold = dimmer(0.95)
+    notes = _deep_ice_age_notes(cold)
+    assert len(notes) == 1 and "deep ice age" in notes[0]["what"] and notes[0]["share_covered"] > 1 / 3
+    assert _mean_temperature_c(cold) < 0.0
+
+
 def test_a_tilt_above_54_degrees_is_allowed_and_reported():
     planet = yaml.safe_load((DATA / "planet.yaml").read_text())
     planet["axial_tilt_deg"] = 60.0
     models = yaml.safe_load((DATA / "models.yaml").read_text())
     models["slots"] = {k: models["slots"][k] for k in ("PlanetGeometry", "Tectonics", "Isostasy", "SeaLevel", "Insolation",
-                                                       "Albedo", "EnergyBalance")}
+                                                       "Albedo", "EnergyBalance", "Circulation", "Moisture")}
     e, w = build(planet=planet, models=models)
     assert {"kind": "model_outside_range", "slot": "EnergyBalance", "parameter": "axial_tilt_deg", "value": 60.0,
             "expected": [0.0, 54.0]} in w.notices
@@ -231,9 +273,12 @@ def test_no_column_of_air_holds_far_more_vapour_than_it_can_and_no_cell_rains_wi
     c = e.constants["Moisture"]
     holds = saturation_vapour_density(f["surface_temperature"].astype(np.float64), c["saturation"]) * c["vapour_scale_height_m"]
     humidity = f["column_water"].astype(np.float64) / holds
-    assert humidity.max() < 1.5
+    assert humidity.max() < 1.0
     yearly = f["precipitation"].astype(np.float64).sum(axis=0)
-    assert yearly.max() < 15000.0                                    # Earth's wettest places get about 12 m a year
+    assert yearly.max() < 8000.0                                     # measured 5.4 m, under the rain belt at sea; Earth's wettest places get about 12 m
+    assert yearly[~f["ocean_mask"]].max() < 6000.0                   # on land 3.7 m, where the trade winds meet a coast 4 km high
+    lifted = w.drivers["precipitation"]["from_rising_ground"].astype(np.float64).sum(axis=0)
+    assert lifted[f["height_above_sea"] <= 0].max() == 0.0           # the rain of rising ground falls on rising ground, never on the sea
     land = ~f["ocean_mask"]
     area = f["cell_area"]
     high = land & (f["height_above_sea"] > 2000.0)
