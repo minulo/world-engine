@@ -1,0 +1,22 @@
+{
+ "level": 7,
+ "cells": 163842,
+ "rounds": 125,
+ "resample_every": 60,
+ "seconds": 32.6,
+ "patch_travelled_cells": 148.2,
+ "patch_miss_cells": 0.082,
+ "patch_mark_kept": 0.989,
+ "continental_area_start_share": 0.4,
+ "continental_area_end_share": 0.2205,
+ "destroyed_by_closing_share_of_start": 0.4469,
+ "area_change_beyond_rules": -0.0018,
+ "flicker_mean_share": 0.00069,
+ "flicker_max_share": 0.00121,
+ "points_consumed": 155727,
+ "points_created": 149074,
+ "points_at_end": 162369,
+ "pass_A_patch": true,
+ "pass_B_area": true,
+ "pass_C_flicker": true
+}

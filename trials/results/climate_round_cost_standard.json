@@ -1,0 +1,30 @@
+{
+ "profile": "standard",
+ "cells": 163842,
+ "machine": "x86_64",
+ "cores": 2,
+ "total_seconds": 232.7,
+ "climate_rounds": 17,
+ "settled": true,
+ "first_round_seconds": {
+  "Albedo": 0.19,
+  "Insolation": 0.52,
+  "EnergyBalance": 27.53,
+  "Circulation": 7.56,
+  "Moisture": 8.17,
+  "Biomes": 0.34
+ },
+ "later_round_seconds_mean": {
+  "Albedo": 0.03,
+  "Insolation": 0.01,
+  "EnergyBalance": 0.46,
+  "Circulation": 2.09,
+  "Moisture": 7.54,
+  "Biomes": 0.35
+ },
+ "later_round_total_mean": 10.48,
+ "cause_pass_seconds": 10.32,
+ "geological_seconds": 8.84,
+ "notices": [],
+ "solver_preparation_seconds": 27.07
+}

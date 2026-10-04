@@ -105,7 +105,7 @@ def world_attributes(world, engine) -> dict:
         "drivers": {f: sorted(t) for f, t in world.drivers.items()},
         "additive": sorted({f for p in engine.procs.values() for f in p.additive}),
         "pushes": {pid: {k: v for k, v in rec.items() if not isinstance(v, np.ndarray)} for pid, rec in world.push_records.items()},
-        "timings": world.timings, "fingerprints": world.fingerprints(), "world_fingerprint": world.fingerprint(),
+        "timings": world.timings, "round_times": world.round_times, "fingerprints": world.fingerprints(), "world_fingerprint": world.fingerprint(),
     })
 
 

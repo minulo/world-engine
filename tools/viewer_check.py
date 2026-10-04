@@ -1,7 +1,7 @@
 """Open the viewer on a world store in a headless browser and save screenshots.
 
 A development tool, not part of the engine. It needs the Python package playwright and a Chromium.
-    python tools/viewer_check.py STORE OUT_DIR [field ...]
+    python tools/viewer_check.py STORE OUT_DIR [field ...] ["?lat=48&lon=-20&month=7"]
 For each field it saves a globe view and a flat view, then clicks the middle of the globe and
 saves the page with the cell panel filled in. It prints what the page reported.
 """
@@ -16,7 +16,7 @@ from playwright.sync_api import sync_playwright          # noqa: E402
 from worldengine.server import make_server                # noqa: E402
 
 
-def main(store, out_dir, fields):
+def main(store, out_dir, fields, query=""):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     srv = make_server(store, port=0)
@@ -28,7 +28,7 @@ def main(store, out_dir, fields):
         page = browser.new_page(viewport={"width": 1500, "height": 860})
         page.on("console", lambda m: problems.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: problems.append(str(e)))
-        page.goto(f"http://127.0.0.1:{port}/")
+        page.goto(f"http://127.0.0.1:{port}/{query}")
         page.wait_for_function("window.viewerReady === true", timeout=120000)
         print("world:", page.inner_text("#worldinfo"))
         names = fields or [page.eval_on_selector("#field", "e => e.value")]
@@ -43,10 +43,16 @@ def main(store, out_dir, fields):
             page.screenshot(path=str(out / f"{name}_flat.png"))
         page.click("#viewglobe")
         box = page.locator("#gl").bounding_box()
-        page.mouse.click(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.42)
+        page.mouse.click(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
         page.wait_for_timeout(1200)
         print("cell:", page.inner_text("#celltitle"))
-        print("why:", page.inner_text("#why")[:900])
+        print("why:", page.inner_text("#why")[:1500])
+        print("banner:", page.inner_text("#banner") if page.is_visible("#banner") else "none")
+        if page.is_enabled("#play"):
+            page.click("#play")
+            page.wait_for_timeout(2400)
+            print("month after playing:", page.inner_text("#monthlabel"))
+            page.click("#play")
         page.screenshot(path=str(out / "cell_panel.png"))
         print("status:", page.inner_text("#status"))
         browser.close()
@@ -56,4 +62,5 @@ def main(store, out_dir, fields):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1], sys.argv[2], sys.argv[3:]))
+    args = [a for a in sys.argv[3:] if not a.startswith("?")]
+    sys.exit(main(sys.argv[1], sys.argv[2], args, next((a for a in sys.argv[3:] if a.startswith("?")), "")))

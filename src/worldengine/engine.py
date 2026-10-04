@@ -83,6 +83,7 @@ class World:
         self.settle_log: list[dict] = []
         self.lineage: dict[str, dict] = {}
         self.timings: dict[str, float] = {}
+        self.round_times: list[dict] = []                    # seconds spent in each step of each round
         self.meta: dict = {}
 
     def notice(self, kind, **details):
@@ -490,6 +491,8 @@ class Engine:
             if any(self.plan.steps[m]["stage"] == stage for m in self.plan.members.get(g, [])):
                 w.group_now[g] = {}
         when = "start" if starting else round_no
+        spent = {}
+        w.round_times.append({"stage": stage, "round": round_no, "cause_pass": bool(replay), "start_step": bool(starting), "seconds": spent})
         for step in self.plan.order[stage]:
             t0 = time.perf_counter()
             if step.startswith("Default["):
@@ -507,7 +510,8 @@ class Engine:
                 ctx = Context(self, step, proc, decl, stage, round_no, when, cfg.get("round_length_my"), recording, replay)
                 (proc.start if starting else proc.run)(ctx)
                 ctx._finish(starting)
-            w.timings[step] = w.timings.get(step, 0.0) + time.perf_counter() - t0
+            spent[step] = time.perf_counter() - t0
+            w.timings[step] = w.timings.get(step, 0.0) + spent[step]
 
     def _blend(self, old, new, weight, kind):
         if weight >= 1.0 or kind not in ("number", "direction"):

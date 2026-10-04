@@ -319,7 +319,12 @@ async function start() {
   const sel = $("field");
   for (const [fam, names] of Object.entries(groups)) { const og = document.createElement("optgroup"); og.label = fam;
     for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n.replace(/_/g, " "); og.append(o); } sel.append(og); }
-  const want = new URLSearchParams(location.search).get("field");
+  const asked = new URLSearchParams(location.search);       // ?field=biome&lat=48&lon=-20&month=7&view=flat
+  if (asked.has("lat")) state.lat0 = Math.max(-90, Math.min(90, +asked.get("lat")));
+  if (asked.has("lon")) state.lon0 = +asked.get("lon");
+  if (asked.has("month")) { state.month = Math.max(1, Math.min(m.months, +asked.get("month"))); $("month").value = state.month; $("monthlabel").textContent = state.month; }
+  if (asked.get("view") === "flat") setView(true);
+  const want = asked.get("field");
   state.field = want && w.fields[want] ? want : ["biome", "elevation", "latitude"].find((n) => w.fields[n]) || Object.keys(w.fields)[0];
   sel.value = state.field;
   $("status").textContent = "preparing the map of cells…";
