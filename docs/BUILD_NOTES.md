@@ -20,7 +20,7 @@ and the versions in `requirements.lock`. Nothing here was run on the target lapt
 | 1. The slice | Done, with the gaps listed in section 5 | 98 further tests of the ten processes and of the whole world; two trials in `trials/results/` |
 | 2 to 11 | Not started | |
 
-`python -m pytest` runs 362 tests in about five minutes. [MEASURED: 4 min 56 s]
+`python -m pytest` runs 362 tests in about five minutes. [MEASURED: 4 min 56 s and 5 min 7 s in two runs]
 
 ## 2. Step 0 against its "done when"
 
@@ -68,7 +68,7 @@ All [MEASURED] by `tests/test_processes.py` and `tests/test_world.py` (preview m
 | Albedo | With cloud and low-sun terms at zero, each surface returns its table value; ice-covered cells reflect 0.62; ice lies on the sea where the year's mean is below −10 °C; snow lies on land only where it fell and until it has melted | Pass |
 | EnergyBalance | Without spreading, the yearly mean is (absorbed sunlight − A) ÷ B; colder toward the poles; a larger swing inland than over sea; 6.5 K per km of height | Pass |
 | Circulation | On an all-ocean planet each month in the north mirrors the south half a year later; trade winds from the east, westerlies in mid-latitudes, high pressure near 30°; as much air sinks as rises | Pass |
-| Moisture | One ridge across a steady wind: wet on the side facing the wind, dry on the sheltered side; evaporation equals precipitation over the globe; the driest land band between the equator and 60° lies between 15° and 40° | Pass: the side facing the wind gets 2.9 times the rain of the same strip without the ridge, the sheltered side 0.2 times; evaporation over precipitation is 1.000000; the driest land bands lie at 29° N and 24° S (both at 24° on the standard mesh) |
+| Moisture | One ridge across a steady wind: wet on the side facing the wind, dry on the sheltered side; evaporation equals precipitation over the globe; the driest land band between the equator and 60° lies between 15° and 40° | Pass: the side facing the wind gets 2.9 times the rain of the same strip without the ridge, the sheltered side 0.2 times (numbers of the third check); evaporation over precipitation is 1.000000; the driest land bands lie at 29° N and 24° S (both at 24° on the standard mesh) |
 | Biomes | Twelve months at 26 °C with 300 mm each give tropical rainforest and class Af; a warmest month below freezing gives ice and no plant cover; seven further classes follow the published rules | Pass |
 
 Two conditions were added by the reviews and hold on every mesh tried. The rain over the 500 km
@@ -205,9 +205,11 @@ All [MEASURED] on the 2-core build environment; the laptop is not timed.
 In a standard round Moisture takes 20.3 s, Circulation 2.2 s, Biomes 0.5 s, EnergyBalance 0.4 s.
 Before the reviews a standard build took 233 s; the rule for air held back by high ground
 (section 6, item 6) costs two extra solves per month and mesh level. The limit of the standard
-profile is 1,800 s. The three standard builds gave the same world, bit for bit: the last was
-made after the fixes of the third check, which therefore changed nothing in the default world. The high_fidelity profile was not run. Its solvers would need about four
-times the memory of the standard profile's, so whether it fits in 32 GB is open. [INFERRED]
+profile is 1,800 s. The first and the last of the three standard builds gave the same world,
+bit for bit (the second was not compared). The last was made after the fixes of the third
+check, which therefore changed nothing in the default world. The high_fidelity profile was not
+run. Its solvers would need about four times the memory of the standard profile's, so whether
+it fits in 32 GB is open. [INFERRED]
 
 ## 4. Three rounds of checking, and what they changed
 
@@ -309,7 +311,7 @@ Default world, standard mesh, unless marked. [MEASURED unless marked]
 
 | | This world | Earth |
 |---|---|---|
-| Land, share of the surface | 36 % | 29 % [DOCUMENTED in the design: NOAA] |
+| Land, share of the surface | 36 % | 29 % [from the sea area in the design's source: NOAA, 361.9 of 510.1 million km²] |
 | Mean depth of the sea | 4,070 m | about 3,700 m [DOCUMENTED in the design: NOAA] |
 | Mean temperature | 11.4 °C | about 14 °C [UNVERIFIED] |
 | Yearly swing on land at 40° to 60°, either side of the mean | 6.2 K | 15 to 20 K inside the northern continents [UNVERIFIED] |
@@ -338,7 +340,8 @@ Default world, standard mesh, unless marked. [MEASURED unless marked]
   more easily than fuller ones. [MEASURED for the numbers; UNVERIFIED for the comparison]
 * **The rain of rising ground falls in one cell.** The amount per kilometre of cliff is the same
   on every mesh, so the amount per cell grows as cells shrink: 3.2 m a year in the wettest such
-  cell on the preview mesh, 6.5 m at twice the detail, 13 m on the standard mesh. The seeded
+  cell on the preview mesh, 6.5 m at twice the detail, 12.5 m on the standard mesh, in a cell
+  that stands 3.75 km high at a coast. The seeded
   continents end in cliffs, which no real coast does. Spreading that rain over a set distance
   inland is left for the upgrade of Moisture (step 5).
 * **The wet zone before a long, high wall is probably too wet.** About a third of the vapour

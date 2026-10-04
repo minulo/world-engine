@@ -58,7 +58,7 @@ back by a wall 2.5 km high rains within 500 km of it. The rain of rising ground 
 first higher cell, so at a cliff it grows as the cells shrink, while the amount per kilometre
 of cliff stays the same; the seeded continents end in cliffs, which no real coast does. In the
 default world the wettest such cell gets 3.2 m of this rain a year on the preview mesh, 6.5 m
-at twice the detail and 13 m on the standard mesh [MEASURED]; spreading it over a set distance
+at twice the detail and 12.5 m on the standard mesh [MEASURED]; spreading it over a set distance
 inland would end that, and is left for the upgrade of this process (build step 5). Where the
 air is cold the vapour layer is shallower than the fixed depth used to spread the held-back
 air. Simple models of rain on slopes "must be calibrated to perform well" (Minder and Roe, in
