@@ -41,6 +41,19 @@ def _resolve_level(value, level, where):
     return value
 
 
+def _resolve_files(value, params, where):
+    """A constant may be a table kept in a category file, given as {from_file: {file: biomes, key: biomes}}."""
+    if isinstance(value, dict) and set(value) == {"from_file"}:
+        src = value["from_file"]
+        try:
+            return params[src["file"]][src["key"]]
+        except KeyError:
+            raise ParameterError(f"{where}: from_file names {src}, which does not exist") from None
+    if isinstance(value, dict):
+        return {k: _resolve_files(v, params, f"{where}.{k}") for k, v in value.items()}
+    return value
+
+
 def _lookup(mapping, dotted):
     cur = mapping
     for part in dotted.split("."):
@@ -62,6 +75,7 @@ class World:
         self.group_const: dict[str, dict] = {}
         self.drivers: dict[str, dict] = {}
         self.push_records: dict[str, dict] = {}
+        self.group_records: dict[str, dict] = {}
         self.written_round: dict[str, int] = {}
         self.notices: list[dict] = []
         self.rounds_used: dict[str, int] = {}
@@ -73,6 +87,8 @@ class World:
 
     def notice(self, kind, **details):
         entry = {"kind": kind, **details}
+        if kind == "field_outside_range":                    # one notice per field: the latest round's
+            self.notices = [n for n in self.notices if not (n["kind"] == kind and n.get("field") == details.get("field"))]
         if entry not in self.notices:
             self.notices.append(entry)
 
@@ -137,12 +153,18 @@ class Context:
     def read_group(self, group) -> GroupValue:
         if group not in self._decl["group_reads"]:
             raise ContractError(f"{self._name} read group {group} in the same round, which it did not declare")
-        return self._e._group_value(group, lagged=False)
+        value = self._e._group_value(group, lagged=False)
+        if self._recording:
+            self._w.group_records[group] = dict(value.members)
+        return value
 
     def read_group_lagged(self, group) -> GroupValue:
         if group not in self._decl["lagged_group"]:
             raise ContractError(f"{self._name} read group {group} from the previous round, which it did not declare")
-        return self._e._group_value(group, lagged=True)
+        value = self._e._group_value(group, lagged=True)
+        if self._recording:                                  # the cause record names each member of the sum
+            self._w.group_records[group] = dict(value.members)
+        return value
 
     def categories(self, field) -> tuple:
         """The class names of a category field this process declared."""
@@ -175,6 +197,11 @@ class Context:
         self._e._store_field(member, value, self._stage, self._name, self.round, self._replay)
         self._w.group_now.setdefault(group, {})[member] = self._w.fields[member]
         self._written.add(member)
+
+    def note(self, what: str, **details):
+        """Record a fact about this run in the world store, such as a solver that stopped at its cap.
+        It does not stop the run; the viewer and the "why" answers repeat it."""
+        self._w.notice("process_note", slot=self._name, what=what, **details)
 
     # ---- cause records
     def driver(self, field, term, value):
@@ -250,7 +277,8 @@ class Engine:
             if missing:
                 raise ParameterError(f"models.yaml.shared lacks the constants {missing} that {slot} names")
             self.procs[slot], self.decls[slot] = proc, decl
-            self.constants[slot] = freeze(_resolve_level(cfg.get("constants") or {}, self.level, f"models.yaml.slots.{slot}.constants"))
+            where = f"models.yaml.slots.{slot}.constants"
+            self.constants[slot] = freeze(_resolve_files(_resolve_level(cfg.get("constants") or {}, self.level, where), p, where))
             self.shared_for[slot] = freeze({s: shared[s] for s in proc.shared})
         self._check_names()
 

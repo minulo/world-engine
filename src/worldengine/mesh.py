@@ -75,7 +75,7 @@ def _subdivide(xyz, faces):
     new_faces = np.concatenate([
         np.stack([a, ab, ca], axis=1), np.stack([b, bc, ab], axis=1),
         np.stack([c, ca, bc], axis=1), np.stack([ab, bc, ca], axis=1)])
-    return np.concatenate([xyz, mid]), new_faces
+    return np.concatenate([xyz, mid]), new_faces, np.stack([uniq // n, uniq % n], axis=1)
 
 
 class Mesh:
@@ -85,6 +85,7 @@ class Mesh:
     lat, lon       (n,)    degrees; longitude in (-180, 180]
     east, north    (n, 3)  local unit vectors (at the two pole cells the pair is fixed by convention)
     area           (n,)    cell area in steradians; the areas add up to 4 pi
+    parents        (n, 2)  the two cells of the next coarser mesh that the cell lies midway between
     nbr            (n, 6)  neighbour cells, counter-clockwise seen from outside, padded with -1
     nbr_count      (n,)    5 or 6
     nbr_edge       (n, 6)  index of the edge shared with each neighbour, padded with -1
@@ -99,8 +100,11 @@ class Mesh:
         if not (0 <= level <= LEVEL_MAX):
             raise ValueError(f"mesh level {level} is outside 0 to {LEVEL_MAX}")
         xyz, faces = _base_icosahedron()
+        parents = [np.stack([np.arange(xyz.shape[0])] * 2, axis=1)]
         for _ in range(level):
-            xyz, faces = _subdivide(xyz, faces)
+            xyz, faces, made_from = _subdivide(xyz, faces)
+            parents.append(made_from)
+        self.parents = np.concatenate(parents).astype(np.int32)   # the two coarser cells each cell lies between
         n = xyz.shape[0]
         assert n == cell_count(level)
         self.level, self.n = level, n
@@ -172,7 +176,7 @@ class Mesh:
         self.nbr_sign = np.where(valid, sign, 0.0)                # +1 where the edge normal points away from the cell
 
         self.area_spread = float(area.max() / area.min())
-        for arr in (self.xyz, self.faces, self.edge_cells, self.edge_dual, self.edge_dist, self.edge_normal,
+        for arr in (self.xyz, self.parents, self.faces, self.edge_cells, self.edge_dual, self.edge_dist, self.edge_normal,
                     self.area, self.east, self.north, self.lat, self.lon, self.nbr, self.nbr_edge,
                     self.nbr_count, self.nbr_dual, self.nbr_dist, self.nbr_sign):
             arr.flags.writeable = False

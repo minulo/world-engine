@@ -7,3 +7,150 @@ PlanetGeometry:
   coriolis_parameter:
     says: "The Coriolis parameter is {value}: twice the planet's spin rate times the sine of the latitude, {lat}."
     ends: "The chain ends here, at a planet parameter: the rotation period of {planet[rotation_period_s]} seconds."
+
+Tectonics:
+  plate_id:
+    says: "This cell rides on plate {value}."
+    ends: "The chain ends here, at a seeded starting condition: the outlines and motions of the plates are drawn from the world seed."
+  crust_type:
+    says: "The crust here is {value}."
+    ends: "The chain ends here, at a seeded starting condition: which crust each plate carries is drawn from the world seed."
+  convergence_rate:
+    says: "The nearest boundary of this cell's plate closes at {value} (a negative value means it opens)."
+    ends: "The chain ends here, at a seeded starting condition: the motions of the plates are drawn from the world seed."
+  ocean_crust_age:
+    says: "The ocean floor here is {value} old: its distance from the plate's nearest spreading ridge, at half the opening speed there."
+    follows: [convergence_rate]
+  crust_thickness:
+    says: "The crust here is {value} thick:"
+    form: sum
+    drivers:
+      normal_thickness: {base: true, says: "crust of its type is normally {v} thick", follows: [crust_type]}
+      seeded_variation: {says: "the seeded starting condition varies it by {v}"}
+      thickened_by_plates: {says: "plates closing nearby have thickened it by {v}", follows: [convergence_rate]}
+      event: {cell: true}
+
+Isostasy:
+  elevation:
+    says: "The solid surface stands at {value} relative to the reference level:"
+    form: sum
+    drivers:
+      from_crust_thickness: {says: "continental crust floating on denser rock gives {v}", follows: [crust_thickness]}
+      from_ocean_floor_age: {says: "the age of the ocean floor gives {v}", follows: [ocean_crust_age]}
+
+SeaLevel:
+  ocean_mask:
+    says: "Under water here: {value}."
+    follows: [elevation]
+    drivers:
+      reason:
+        names: ["the ground stands above sea level", "it was flooded from the main sea", "it lies in a separate body of water",
+                "it is low ground that a barrier keeps dry"]
+        says: "The reason: {v}"
+      barrier_cell: {cell: true}
+  height_above_sea:
+    says: "This cell lies {value} above sea level:"
+    form: sum
+    drivers:
+      ground_height: {says: "its surface stands at {v} relative to the reference level", follows: [elevation]}
+      sea_level: {says: "the sea level, found by pouring the planet's water in, shifts that by {v}", always: true}
+
+Insolation:
+  insolation:
+    says: "Sunlight at the top of the air averages {value} over the year here."
+    ends: "The chain ends here, at planet parameters: the latitude of {lat}, the axial tilt of {planet[axial_tilt_deg]} degrees and the star output of {planet[star_output_w_m2]} W/m²."
+
+Albedo:
+  albedo:
+    says: "Over the year, {value} of the sunlight is reflected here:"
+    form: sum
+    unit: ""
+    drivers:
+      from_cloud_and_sun_angle: {says: "cloud and the low sun reflect {v}"}
+      from_surface_type: {says: "the surface type reflects {v}", follows: [ocean_mask]}
+      from_snow_and_ice: {says: "snow and ice add {v}", follows: [surface_temperature]}
+
+EnergyBalance:
+  surface_temperature:
+    says: "The temperature here averages {value} over the year:"
+    form: sum
+    unit: C_from_K
+    drivers:
+      sunlight_against_heat_loss: {unit: C_from_K, says: "sunlight absorbed against heat lost to space would give {v}", follows: [insolation, albedo]}
+      spread_from_neighbours: {unit: K_difference, says: "heat spread from neighbouring cells changes it by {v}"}
+      seasonal_storage: {unit: K_difference, says: "heat stored and released through the year changes it by {v}"}
+      other_heat: {unit: K_difference, says: "other heat delivered to the surface changes it by {v}", group: surface_heat_flux}
+      cooling_from_height: {unit: K_difference, says: "its height changes it by {v}", follows: [height_above_sea]}
+
+Circulation:
+  sea_level_pressure:
+    says: "The pressure at sea level averages {value} here:"
+    form: sum
+    drivers:
+      mean_pressure: {base: true, says: "the planet's mean pressure is {v}"}
+      belt_part: {says: "the pressure belts of the overturning loop and the storm zone add {v}", follows: [subsidence]}
+      warm_or_cold_surface_part: {says: "a surface warmer or colder than its latitude adds {v}", follows: [surface_temperature]}
+  wind:
+    says: "The wind here averages {value} over the year:"
+    form: sum
+    drivers:
+      from_belts: {says: "the pressure belts drive {v} of it", follows: [sea_level_pressure]}
+      from_surface_temperature: {says: "warm and cold surfaces drive {v} of it", follows: [surface_temperature]}
+  subsidence:
+    says: "Air here sinks at {value} on average (a negative value means it rises)."
+    follows: [surface_temperature]
+    drivers:
+      branch:
+        names: ["It lies under no branch of the tropical overturning loop", "It lies under the rising branch of the tropical overturning loop",
+                "It lies under the sinking branch of the northern loop", "It lies under the sinking branch of the southern loop"]
+        says: "{v}"
+
+Moisture:
+  precipitation:
+    says: "Precipitation here averages {value}:"
+    form: sum
+    drivers:
+      from_moist_air: {says: "moist air rains {v}", follows: [wind], at: vapour_came_from}
+      from_rising_ground: {says: "air forced up rising ground adds {v}", follows: [height_above_sea]}
+      stopped_by_sinking_air: {says: "sinking air changes it by {v}", follows: [subsidence]}
+      vapour_came_from: {cell: true}
+  snowfall:
+    says: "Snowfall here averages {value} of water."
+    follows: [precipitation, surface_temperature]
+  column_water:
+    says: "The air column here holds {value} of water vapour on average."
+    follows: [wind, surface_temperature]
+
+Biomes:
+  biome:
+    says: "The biome here is {value}:"
+    drivers:
+      rule:
+        names: ["the cell is sea", "the warmest month is below freezing, so nothing grows", "Whittaker's chart places this climate here",
+                "the climate lies off Whittaker's chart, and this is the nearest biome on it",
+                "the sea here stays frozen all year: even its warmest month is below the freezing point of sea water"]
+        says: "{v}"
+        follows_by:
+          "the sea here stays frozen all year: even its warmest month is below the freezing point of sea water": [surface_temperature]
+          "the warmest month is below freezing, so nothing grows": [surface_temperature]
+      yearly_temperature: {unit: C_from_K, says: "the yearly mean temperature is {v}"}
+      yearly_precipitation: {unit: mm, says: "the yearly precipitation is {v}"}
+      limit:
+        names: [none, too_cold, too_dry]
+        says_by:
+          too_cold: "what limits plant life here is cold"
+          too_dry: "what limits plant life here is drought"
+          none: "neither cold nor drought limits plant life here"
+        follows_by:
+          too_cold: [surface_temperature]
+          too_dry: [precipitation]
+          none: [precipitation, surface_temperature]
+  climate_class:
+    says: "The Köppen-Geiger climate class here is {value}:"
+    follows: [surface_temperature, precipitation]
+    drivers:
+      group:
+        names: ["the cell is sea", "it is an arid climate: the year's precipitation is below ten times the dryness threshold",
+                "it is a tropical climate: the coldest month is 18 °C or warmer", "it is a temperate climate",
+                "it is a cold climate: the coldest month is at or below 0 °C", "it is a polar climate: the warmest month is 10 °C or colder"]
+        says: "{v}"

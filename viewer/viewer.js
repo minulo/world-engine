@@ -17,6 +17,7 @@ const MAPS = {
   diverging: ["#2b3f8f", "#5c86c9", "#a9c8e8", "#f2f2f2", "#f0b8a0", "#d6694d", "#9b1c1c"],
   terrain: ["#0a1f4d", "#1b4a8a", "#3f86c2", "#9fd0e6", "#5f9d58", "#b8b56a", "#b08a57", "#8a6a55", "#f4f4f4"],
 };
+const SPLIT_AT = { terrain: 4 };          // where a map breaks at zero: water colours below, land colours above
 const FIELD_MAP = {
   elevation: ["terrain", true], height_above_sea: ["terrain", true], surface_temperature: ["thermal", false],
   precipitation: ["rain", false], snowfall: ["rain", false], column_water: ["rain", false], ocean_evaporation: ["rain", false],
@@ -24,13 +25,17 @@ const FIELD_MAP = {
   latitude: ["diverging", true], longitude: ["diverging", true],
 };
 function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
-function lut(name) {
-  const stops = MAPS[name].map(hex), out = new Uint8Array(256 * 4);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255 * (stops.length - 1), k = Math.min(Math.floor(t), stops.length - 2), f = t - k;
-    for (let c = 0; c < 3; c++) out[i * 4 + c] = Math.round(stops[k][c] + f * (stops[k + 1][c] - stops[k][c]));
-    out[i * 4 + 3] = 255;
+function ramp(stops, out, from, count) {
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1) * (stops.length - 1), k = Math.min(Math.floor(t), stops.length - 2), f = t - k;
+    for (let c = 0; c < 3; c++) out[(from + i) * 4 + c] = Math.round(stops[k][c] + f * (stops[k + 1][c] - stops[k][c]));
+    out[(from + i) * 4 + 3] = 255;
   }
+}
+function lut(name, split) {
+  const stops = MAPS[name].map(hex), out = new Uint8Array(256 * 4);
+  if (split && SPLIT_AT[name]) { ramp(stops.slice(0, SPLIT_AT[name]), out, 0, 128); ramp(stops.slice(SPLIT_AT[name]), out, 128, 128); }
+  else ramp(stops, out, 0, 256);
   return out;
 }
 function palette(n, given) {
@@ -64,7 +69,8 @@ void main() {
   vec2 p = vec2(vPos.x * uAspect, vPos.y);
   float lat, lon, shade = 1.0;
   if (uFlat == 1) {
-    lon = (p.x / uZoom / 2.0 + uPan.x) * PI; lat = (p.y / uZoom + uPan.y) * PI / 2.0;
+    float fit = min(1.0, uAspect / 2.0);                 // the whole map fits the canvas at zoom 1
+    lon = (vPos.x * uAspect / 2.0 / fit / uZoom + uPan.x) * PI; lat = (vPos.y / fit / uZoom + uPan.y) * PI / 2.0;
     if (abs(lat) > PI / 2.0) { frag = vec4(uSpace, 1.0); return; }
     lon = mod(lon + PI, 2.0 * PI) - PI;
   } else {
@@ -83,7 +89,7 @@ void main() {
   else if (uCategorical == 1) c = texelFetch(uPal, ivec2(int(v + 0.5), 0), 0).rgb;
   else {
     float t;
-    if (uSplit == 1) t = v < 0.0 ? 0.5 - 0.5 * clamp(v / min(uLo, -1e-30), 0.0, 1.0) : 0.5 + 0.5 * clamp(v / max(uHi, 1e-30), 0.0, 1.0);
+    if (uSplit == 1) t = v <= 0.0 ? 0.498 - 0.498 * clamp(v / min(uLo, -1e-30), 0.0, 1.0) : 0.502 + 0.498 * clamp(v / max(uHi, 1e-30), 0.0, 1.0);
     else t = clamp((v - uLo) / max(uHi - uLo, 1e-30), 0.0, 1.0);
     c = texture(uLut, vec2(t, 0.5)).rgb;
   }
@@ -137,7 +143,8 @@ function draw() {
 function screenToLatLon(cx, cy) {
   const rect = canvas.getBoundingClientRect(), x = ((cx - rect.left) / rect.width * 2 - 1) * (rect.width / rect.height), y = 1 - (cy - rect.top) / rect.height * 2;
   if (state.flat) {
-    const lat = (y / state.zoom + state.panY) * 90; let lon = (x / state.zoom / 2 + state.panX) * 180;
+    const fit = Math.min(1, rect.width / rect.height / 2);
+    const lat = (y / fit / state.zoom + state.panY) * 90; let lon = (x / 2 / fit / state.zoom + state.panX) * 180;
     if (Math.abs(lat) > 90) return null;
     lon = ((lon + 180) % 360 + 360) % 360 - 180; return [lat, lon];
   }
@@ -209,7 +216,7 @@ async function selectField() {
     if (s.kind === "direction" && state.part) { const m = Math.max(Math.abs(lo), Math.abs(hi)); lo = -m; hi = m; split = true; }
     if (split) { lo = Math.min(lo, -1e-30); hi = Math.max(hi, 1e-30); }
     if (hi <= lo) hi = lo + 1;
-    const table = lut(split && mapName === "viridis" ? "diverging" : (s.kind === "direction" && state.part ? "diverging" : mapName));
+    const table = lut(split && mapName === "viridis" ? "diverging" : (s.kind === "direction" && state.part ? "diverging" : mapName), split);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, tex.lut);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, table);
     const bar = document.createElement("canvas"); bar.width = 256; bar.height = 1;
@@ -288,7 +295,8 @@ function wire() {
     if (!drag) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
     const k = 2 / canvas.clientHeight / state.zoom;
-    if (state.flat) { state.panX -= dx * k / 2; state.panY = Math.max(-1, Math.min(1, state.panY + dy * k)); }
+    if (state.flat) { const fit = Math.min(1, canvas.clientWidth / canvas.clientHeight / 2);
+      state.panX -= dx * k / fit; state.panY = Math.max(-1, Math.min(1, state.panY + dy * k / fit)); }
     else { state.lon0 -= dx * k * 60; state.lat0 = Math.max(-90, Math.min(90, state.lat0 + dy * k * 60)); }
     drag.x = e.clientX; drag.y = e.clientY; draw();
   });
@@ -312,7 +320,7 @@ async function start() {
   for (const [fam, names] of Object.entries(groups)) { const og = document.createElement("optgroup"); og.label = fam;
     for (const n of names) { const o = document.createElement("option"); o.value = n; o.textContent = n.replace(/_/g, " "); og.append(o); } sel.append(og); }
   const want = new URLSearchParams(location.search).get("field");
-  state.field = want && w.fields[want] ? want : ["biome", "height_above_sea", "elevation", "latitude"].find((n) => w.fields[n]) || Object.keys(w.fields)[0];
+  state.field = want && w.fields[want] ? want : ["biome", "elevation", "latitude"].find((n) => w.fields[n]) || Object.keys(w.fields)[0];
   sel.value = state.field;
   $("status").textContent = "preparing the map of cells…";
   const width = m.cells > 100000 ? 4096 : m.cells > 20000 ? 2048 : 1024;

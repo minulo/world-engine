@@ -135,14 +135,21 @@ def arc_distance_to_set(mesh: Mesh, members: np.ndarray):
     return 2.0 * np.arcsin(np.clip(0.5 * d, 0.0, 1.0)), idx[k]
 
 
-def zonal_mean(mesh: Mesh, f: np.ndarray, band_deg: float, mask: np.ndarray | None = None):
+def zonal_mean(mesh: Mesh, f: np.ndarray, band_deg: float, mask: np.ndarray | None = None, fill: bool = False):
     """Area-weighted mean of a field in latitude bands. Returns the band centres (degrees) and the means.
-    A band with no cell in the mask gives NaN."""
+    A band with no cell in the mask gives NaN, or, with fill, the value between its neighbours.
+    The number of bands is made odd, so that one band straddles the equator and north and south are treated alike."""
     nb = int(round(180.0 / band_deg))
+    nb += 1 - nb % 2
+    band_deg = 180.0 / nb
     b = np.clip(((mesh.lat + 90.0) / band_deg).astype(np.int64), 0, nb - 1)
     w = mesh.area if mask is None else mesh.area * mask
     num = np.bincount(b, weights=w * f, minlength=nb)
     den = np.bincount(b, weights=w, minlength=nb)
     with np.errstate(invalid="ignore", divide="ignore"):
         out = num / den
-    return -90.0 + band_deg * (np.arange(nb) + 0.5), out
+    centres = -90.0 + band_deg * (np.arange(nb) + 0.5)
+    if fill and np.isnan(out).any():
+        have = ~np.isnan(out)
+        out = np.interp(centres, centres[have], out[have])
+    return centres, out

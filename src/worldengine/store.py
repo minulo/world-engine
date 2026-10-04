@@ -133,6 +133,13 @@ def save(world, engine, path) -> Path:
         fg = dg.create_group(f)
         for term in sorted(world.drivers[f]):
             _put(fg, term, world.drivers[f][term])
+    gg = causes.create_group("groups")
+    for k, group in enumerate(sorted(world.group_records)):
+        mg = gg.create_group(group)
+        for j, member in enumerate(sorted(world.group_records[group])):
+            arr = mg.create_group(f"m{j}")
+            arr.attrs.update({"member": member})
+            _put(arr, "value", world.group_records[group][member])
     pg = causes.create_group("pushes")
     for k, pid in enumerate(sorted(world.push_records)):
         rec = world.push_records[pid]
@@ -176,6 +183,10 @@ class WorldView:
     def mesh_array(self, name) -> np.ndarray:
         raise NotImplementedError
 
+    def group_members(self, group) -> dict:
+        """The members of a group as its reader received them in the recorded pass: member -> array."""
+        raise NotImplementedError
+
 
 class MemoryView(WorldView):
     def __init__(self, world, engine):
@@ -199,6 +210,9 @@ class MemoryView(WorldView):
 
     def mesh_array(self, name):
         return getattr(self._w.mesh, name)
+
+    def group_members(self, group):
+        return dict(self._w.group_records.get(group, {}))
 
 
 class StoreView(WorldView):
@@ -231,6 +245,12 @@ class StoreView(WorldView):
 
     def mesh_array(self, name):
         return self._root["mesh"][name][...]
+
+    def group_members(self, group):
+        if group not in self._root["causes/groups"]:
+            return {}
+        g = self._root["causes/groups"][group]
+        return {g[k].attrs["member"]: g[k]["value"][...] for k in sorted(g.group_keys())}
 
     def fingerprints(self) -> dict:
         """Recomputed from the stored bytes, for comparison with the fingerprints kept at build time."""

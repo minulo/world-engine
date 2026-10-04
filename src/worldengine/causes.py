@@ -19,7 +19,10 @@ from __future__ import annotations
 import numpy as np
 
 MAX_DEPTH = 8
+MAX_STEPS = 16
 FOLLOW_TOP = 2
+WORTH_FOLLOWING = 0.1          # a driver smaller than this share of the largest one is not followed
+WORTH_SAYING = 0.002           # a driver smaller than this share of the largest one is not mentioned
 
 
 def _fmt(v, unit):
@@ -61,6 +64,13 @@ def cell_value(view, field, cell):
 
 def _driver_value(view, field, term, cell):
     a = view.driver(field, term)
+    if a.shape[-1] == 3 and a.ndim >= 2 and view.specs[field]["kind"] == "direction":
+        # a part of a direction: its share along the direction of the field itself, so that the parts add up to the speed
+        f = view.field(field)
+        part = a[cell] if a.ndim == 2 else a[:, cell].mean(axis=0)
+        whole = f[cell] if f.ndim == 2 else f[:, cell].mean(axis=0)
+        size = float(np.linalg.norm(whole))
+        return float(part @ whole / size) if size > 0 else 0.0
     v = a[cell] if a.ndim == 1 else a[:, cell]
     if a.dtype.kind in "iu":
         return int(v if not np.ndim(v) else np.bincount(v - v.min()).argmax() + v.min())
@@ -86,29 +96,45 @@ def explain(view, cell: int, field: str) -> dict:
     recorded = attrs.get("drivers") or {}
     push_meta = attrs.get("pushes") or {}
 
-    def visit(f, c, depth, lagged):
+    def here(c):
+        if c == cell:
+            return ""
+        return (f"At {abs(lat[c]):.1f}° {'N' if lat[c] >= 0 else 'S'}, {abs(lon[c]):.1f}° {'E' if lon[c] >= 0 else 'W'} "
+                f"(cell {int(c)}), where the cause lies: ")
+
+    def visit(f, c, depth, lagged, path):
         line = lineage.get(f)
         spec = specs[f]
         if line is None:
             chain.append({"field": f, "cell": int(c), "text": f"{f}: nothing in this world wrote it."})
             return
-        key = (f, int(c))
-        if f in seen:
+        if f in path:                                        # the walk has come round to a field it is in the middle of explaining
             chain.append({"field": f, "cell": int(c), "loop": True,
-                          "text": f"This leads back to {f}, already explained in step {seen[f]}: a feedback loop, "
+                          "text": f"This leads back to {f}, explained in step {seen[f]}: a feedback loop, "
                                   f"which the climate rounds repeat until it is steady."})
             return
+        if f in seen:
+            if not (chain and chain[-1].get("again") == f):
+                chain.append({"field": f, "cell": int(c), "again": f, "text": f"For {f}, see step {seen[f]}."})
+            return
+        if len(chain) >= MAX_STEPS:
+            if not chain[-1].get("cut"):
+                chain.append({"field": f, "cell": int(c), "end": True, "cut": True,
+                              "text": f"The walk stops here: the chain has reached {MAX_STEPS} steps. Ask about {f} to go on."})
+            return
         seen[f] = len(chain) + 1
+        path = path + (f,)
         writer = line["writer"]
         if writer not in slots_on_path:
             slots_on_path.append(writer)
         pat = (patterns.get(writer) or {}).get(f) or {}
-        unit = pat.get("unit", spec["unit"] if spec["kind"] == "number" else "")
+        unit = pat.get("unit", spec["unit"] if spec["kind"] in ("number", "direction") else "")
         value = cell_value(view, f, c)
-        shown = value if isinstance(value, str) else _fmt(value, unit)
-        terms = recorded.get(f, [])
-        dvals = {t: _driver_value(view, f, t, c) for t in terms}
+        shown = value.replace("_", " ") if isinstance(value, str) else _fmt(value, unit)
         dpat = pat.get("drivers") or {}
+        terms = [t for t in dpat if t in recorded.get(f, [])] + [t for t in recorded.get(f, []) if t not in dpat]
+        dvals = {t: _driver_value(view, f, t, c) for t in terms}
+        base = [t for t in terms if (dpat.get(t) or {}).get("base")]       # a fixed starting value, not a cause to weigh
         slots = _Safe(value=shown, lat=f"{abs(lat[c]):.1f}° {'north' if lat[c] >= 0 else 'south'}",
                       lon=f"{abs(lon[c]):.1f}° {'east' if lon[c] >= 0 else 'west'}", planet=attrs["planet"], field=f)
         names = {}
@@ -116,7 +142,7 @@ def explain(view, cell: int, field: str) -> dict:
             p = dpat.get(t) or {}
             if "names" in p:
                 names[t] = p["names"][v] if 0 <= v < len(p["names"]) else str(v)
-                slots[t] = names[t]
+                slots[t] = names[t].replace("_", " ")
             else:
                 slots[t] = _fmt(v, p.get("unit", unit))
         if pat.get("says"):
@@ -126,14 +152,27 @@ def explain(view, cell: int, field: str) -> dict:
             text = f"{f} is {shown}: {writer} ({line['model']}) computed it from {src}."
         parts, order = [], []
         if pat.get("form") == "sum":
-            order = sorted((t for t in dvals if not (dpat.get(t) or {}).get("names")), key=lambda t: -abs(dvals[t]))
+            order = sorted((t for t in dvals if not (dpat.get(t) or {}).get("names") and not (dpat.get(t) or {}).get("cell")),
+                           key=lambda t: -abs(dvals[t]))
+            largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
             for t in order:
                 p = dpat.get(t) or {}
-                if dvals[t] == 0.0 and not p.get("always"):
+                if abs(dvals[t]) <= WORTH_SAYING * largest and not p.get("always") and t not in base:
                     continue
-                parts.append((p.get("says") or (t.replace("_", " ") + " {v}")).format_map(_Safe(v=slots[t])))
+                said = (p.get("says") or (t.replace("_", " ") + " {v}")).format_map(_Safe(v=slots[t]))
+                if p.get("group"):                               # name each member of the sum that acts in this cell
+                    members = []
+                    for member, arr in sorted(view.group_members(p["group"]).items()):
+                        mv = float(np.mean(arr[c] if arr.ndim == 1 else arr[:, c]))
+                        if mv != 0.0:
+                            unit_g = (attrs.get("groups") or {}).get(p["group"], {}).get("unit", "")
+                            who = f"the push {member[5:]}" if member.startswith("push:") else member
+                            members.append(f"{who} {_fmt(mv, unit_g)}")
+                    if members:
+                        said += " (" + ", ".join(members) + ")"
+                parts.append(said)
         else:
-            order = list(dvals)
+            order = [t for t in dvals if not (dpat.get(t) or {}).get("cell")]
             for t in order:
                 p = dpat.get(t) or {}
                 if p.get("says"):
@@ -142,7 +181,7 @@ def explain(view, cell: int, field: str) -> dict:
                     parts.append(p["says_by"][names[t]].format_map(slots))
         if parts:
             text = text.rstrip() + " " + "; ".join(parts) + "."
-        step = {"field": f, "cell": int(c), "writer": writer, "model": line["model"], "value": shown, "text": text,
+        step = {"field": f, "cell": int(c), "writer": writer, "model": line["model"], "value": shown, "text": here(c) + text,
                 "drivers": {t: slots[t] for t in dvals}}
         if lagged:
             step["lagged"] = True
@@ -176,7 +215,13 @@ def explain(view, cell: int, field: str) -> dict:
             return
         # where to continue: the fields that the largest drivers name
         nexts = []
-        for t in order[:max(FOLLOW_TOP, 1)] if pat.get("form") == "sum" else order:
+        if pat.get("form") == "sum":
+            largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
+            worth = [t for t in order if t not in base and abs(dvals[t]) > 0.0 and abs(dvals[t]) >= WORTH_FOLLOWING * largest]
+            candidates = worth[:FOLLOW_TOP if depth <= 1 else 1]
+        else:
+            candidates = order
+        for t in candidates:
             p = dpat.get(t) or {}
             fol = list(p.get("follows", []))
             if "follows_by" in p and names.get(t) in p["follows_by"]:
@@ -192,15 +237,13 @@ def explain(view, cell: int, field: str) -> dict:
         if not nexts and not terms and not pat:
             nexts = [(g, c) for g in line["reads"]][:FOLLOW_TOP]
         for g, at in nexts[:3]:
-            if g.startswith("group:"):
-                continue
             if g in specs:
-                visit(g, int(at), depth + 1, g in line["reads_lagged"])
-        if not nexts:
+                visit(g, int(at), depth + 1, g in line["reads_lagged"], path)
+        if not nexts and not line["reads"] and not line["reads_lagged"] and not terms:
             chain.append({"field": f, "cell": int(c), "end": True,
                           "text": f"The chain ends here: {f} follows from the planet parameters and the mesh alone."})
 
-    visit(field, int(cell), 0, False)
+    visit(field, int(cell), 0, False, ())
     notices = []
     for nt in attrs.get("notices") or []:
         if nt["kind"] == "climate_not_settled":
