@@ -42,11 +42,12 @@ class PouredSea(Process):
         rows = []
         for b in ids:
             cells = np.flatnonzero(wet & (body == b))
-            rows.append((-float(area[cells].sum()), int(cells[np.argmin(height[cells])]), float(level[b]),
-                         float(area[cells].sum()), float((area[cells] * depth[cells]).sum()), int(cells.size), int(b)))
-        rows.sort()
-        main = rows[0][6] if rows else -1
-        sea_level = rows[0][2] if rows else 0.0             # with no water, heights are measured from the reference level
+            rows.append({"body": int(b), "surface_m": float(level[b]), "area_m2": float(area[cells].sum()),
+                         "volume_m3": float((area[cells] * depth[cells]).sum()), "cells": int(cells.size),
+                         "lowest_cell": int(cells[np.argmin(height[cells])])})
+        rows.sort(key=lambda r: (-r["area_m2"], r["lowest_cell"]))
+        main = rows[0]["body"] if rows else -1
+        sea_level = rows[0]["surface_m"] if rows else 0.0   # with no water, heights are measured from the reference level
         in_main = wet & (body == main)
         above = np.where(wet, surface, height) - sea_level
         if wet.any() and not wet.all():
@@ -59,9 +60,8 @@ class PouredSea(Process):
         ctx.write("sea_depth", depth)
         ctx.write("height_above_sea", above)
         ctx.write("coast_distance", coast)
-        ctx.write_table("table:seas", {
-            "surface_m": [r[2] for r in rows], "area_m2": [r[3] for r in rows], "volume_m3": [r[4] for r in rows],
-            "cells": [r[5] for r in rows], "lowest_cell": [r[1] for r in rows]})
+        ctx.write_table("table:seas", {name: [r[name] for r in rows]
+                                       for name in ("surface_m", "area_m2", "volume_m3", "cells", "lowest_cell")})
         if ctx.recording:
             reason = np.where(in_main, MAIN_SEA, np.where(wet, SEPARATE_WATER, ABOVE_SEA_LEVEL)).astype(np.int32)
             barrier = np.full(n, -1, dtype=np.int32)

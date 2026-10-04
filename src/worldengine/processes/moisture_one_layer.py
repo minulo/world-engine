@@ -77,7 +77,8 @@ class OneLayerMoisture(Process):
             fixed.append(ctx.memo[key])
 
         shape = (months, n)
-        water, evaporation, rain_moist, rain_lift, rain_stopped = (np.zeros(shape) for _ in range(5))
+        water, evaporation, rain_moist = np.zeros(shape), np.zeros(shape), np.zeros(shape)
+        rain_lift, rain_stopped = np.zeros(shape), np.zeros(shape)
         came_from = np.zeros(shape, dtype=np.int32)
         nb = np.where(mesh.nbr >= 0, mesh.nbr, 0)
         worst_change, most_cycles = 0.0, 0
@@ -93,16 +94,17 @@ class OneLayerMoisture(Process):
             for msh, (valid, side, mix, edge, cell_area, orders) in zip(meshes, fixed):
                 k = msh.n
                 across = op.edge_normal_speed(msh, wind[m][:k])[edge] * msh.nbr_sign      # outward speed across each side
+                finest_inflow = np.where(valid, side * np.maximum(-across, 0.0), 0.0)
                 coefficients.append((msh.nbr, msh.nbr_count, np.where(valid, side * np.maximum(across, 0.0), 0.0),
-                                     np.where(valid, side * np.maximum(-across, 0.0), 0.0), mix, cell_area,
+                                     finest_inflow, mix, cell_area,
                                      np.ascontiguousarray(evap[:k]), np.ascontiguousarray(w_sat[:k]), np.ascontiguousarray(rain_scale[:k]),
                                      law["steepness"], np.ascontiguousarray(shifted[:k]), np.ascontiguousarray(lift[:k]),
                                      np.ascontiguousarray(land_source[m][:k]), orders))
-            ladder = Ladder(meshes, [(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13]) for a in coefficients])
+            ladder = Ladder(meshes, coefficients)
             first_guess = np.full(meshes[0].n, law["humidity_at_one_mm_per_day"])        # the same first guess every month
             w, cycles, change = ladder.solve(first_guess, c["tolerance_kg_m2"], int(c["maximum_trips"]), int(c["newton_steps"]),
                                              int(c["coarsest_cycles"]))
-            in_coef = coefficients[-1][3]
+            in_coef = finest_inflow
             humidity = w / w_sat
             if change >= c["tolerance_kg_m2"]:
                 worst_change = max(worst_change, float(change))
