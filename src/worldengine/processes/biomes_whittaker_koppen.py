@@ -3,8 +3,9 @@
 Model (Established). A biome is a large region with its own characteristic climate and plant
 cover. Whittaker's chart assigns one from the mean yearly temperature and the yearly
 precipitation; the outlines are those of Figure 5.5 in Ricklefs 2008, as digitised by the R
-package plotbiomes. A cell whose warmest month is below freezing is ice, and has no plant cover;
-at sea that means water that stays frozen all year, judged by the freezing point of sea water.
+package plotbiomes. Land whose warmest month is below freezing is ice, and has no plant cover.
+Sea is shown as ice where Albedo lays ice on it: where the mean temperature of the year is below
+-10 C (North, Cahalan and Coakley 1981), so that the map and the reflected sunlight agree.
 The Köppen-Geiger class follows the rules of Peel, Finlayson and McMahon 2007 (their Table 1),
 which the maps of Beck et al. 2018 also use; the arid classes are identified first.
 
@@ -20,7 +21,7 @@ from ..library.units import ZERO_CELSIUS_IN_K
 from ..process import Process
 
 RULE_SEA, RULE_FROZEN, RULE_ON_CHART, RULE_NEAREST, RULE_FROZEN_SEA = 0, 1, 2, 3, 4
-LIMIT_NONE, LIMIT_COLD, LIMIT_DRY = 0, 1, 2
+LIMIT_NONE, LIMIT_COLD, LIMIT_DRY, LIMIT_NOT_LAND = range(4)
 GROUP_SEA, GROUP_ARID, GROUP_TROPICAL, GROUP_TEMPERATE, GROUP_COLD, GROUP_POLAR = 0, 1, 2, 3, 4, 5
 
 
@@ -73,8 +74,12 @@ def koppen(temperature_c, rain_mm, k):
     names[tropical & rainforest] = "Af"
     names[tropical & monsoon] = "Am"
     names[tropical & ~rainforest & ~monsoon] = "Aw"
-    dry_summer = (p_s_dry < k["dry_summer_mm"]) & (p_s_dry < p_w_wet / k["dry_summer_ratio"])
-    dry_winter = ~dry_summer & (p_w_dry < p_s_wet / k["dry_winter_ratio"])
+    summer_rule = (p_s_dry < k["dry_summer_mm"]) & (p_s_dry < p_w_wet / k["dry_summer_ratio"])
+    winter_rule = p_w_dry < p_s_wet / k["dry_winter_ratio"]
+    # a place that passes both rules has a dry summer if more rain falls in winter than in summer, a dry winter otherwise
+    # (Beck et al. 2018, Methods)
+    dry_summer = summer_rule & (~winter_rule | (total - p_summer > p_summer))
+    dry_winter = winter_rule & ~dry_summer
     hot_summer = t_hot >= k["hot_summer_c"]
     warm_summer = ~hot_summer & (warm_months >= k["warm_summer_months"])
     severe = ~hot_summer & ~warm_summer & (t_cold < k["severe_winter_c"])
@@ -95,7 +100,7 @@ class WhittakerKoppen(Process):
     stage = "climate"
     reads = ("surface_temperature", "precipitation", "ocean_mask")
     writes = ("climate_class", "biome", "vegetation_cover")
-    shared = ("freezing_point_k", "sea_freezing_point_k")
+    shared = ("freezing_point_k", "sea_ice_yearly_mean_below_k")
     model = "Whittaker's chart of yearly temperature against precipitation, with the Köppen-Geiger class"
     drivers = {"biome": ("rule", "limit", "yearly_temperature", "yearly_precipitation"), "climate_class": ("group",)}
 
@@ -145,7 +150,7 @@ class WhittakerKoppen(Process):
         out_biome = np.full(n, biome_names.index("ocean"), dtype=np.int64)
         out_class = np.full(n, class_names.index("ocean"), dtype=np.int64)
         out_biome[land], out_class[land] = biome, classes
-        frozen_sea = sea & (temperature.max(axis=0) < ctx.shared["sea_freezing_point_k"])       # sea that stays frozen all year
+        frozen_sea = sea & (temperature.mean(axis=0) < ctx.shared["sea_ice_yearly_mean_below_k"])   # the sea ice of the Albedo rule
         out_biome[frozen_sea] = biome_names.index("ice")
         ctx.write("biome", out_biome)
         ctx.write("climate_class", out_class)
@@ -155,7 +160,7 @@ class WhittakerKoppen(Process):
             rule_all = full(rule, RULE_SEA, np.int32)
             rule_all[frozen_sea] = RULE_FROZEN_SEA
             ctx.driver("biome", "rule", rule_all)
-            ctx.driver("biome", "limit", full(limit, LIMIT_NONE, np.int32))
+            ctx.driver("biome", "limit", full(limit, LIMIT_NOT_LAND, np.int32))
             ctx.driver("biome", "yearly_temperature", full(mat + ZERO_CELSIUS_IN_K, np.nan, np.float64))
             ctx.driver("biome", "yearly_precipitation", full(yearly_cm * c["mm_per_cm"], np.nan, np.float64))
             ctx.driver("climate_class", "group", full(group, GROUP_SEA, np.int32))

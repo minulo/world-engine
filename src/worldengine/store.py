@@ -11,6 +11,7 @@ import hashlib
 import importlib.metadata
 import json
 import math
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,7 @@ import zarr
 from . import __version__
 
 FORMAT = 1
+CHUNK_BYTES = 8_000_000         # the store is cut into pieces of about this size
 _PACKAGES = ("numpy", "scipy", "numba", "llvmlite", "zarr", "numcodecs", "PyYAML", "threadpoolctl")
 
 
@@ -60,12 +62,30 @@ def _clean(value):
     return value
 
 
-def _put(group, name, array):
+def chunk_shape(shape: tuple, itemsize: int, months_first: bool) -> tuple:
+    """How an array is cut into pieces in the store. An array with one slice per month is cut by month, so that the
+    viewer can fetch one month; any array still larger than CHUNK_BYTES is cut along its cells into equal blocks.
+    A piece never has a side of length zero (a table may have no rows)."""
+    chunks = [max(1, int(c)) for c in shape]
+    if not shape:
+        return ()
+    cells = 0
+    if months_first and len(shape) > 1:
+        chunks[0], cells = 1, 1
+    size = itemsize * math.prod(chunks)
+    if size > CHUNK_BYTES:
+        per_cell = max(1, size // chunks[cells])
+        chunks[cells] = max(1, min(chunks[cells], CHUNK_BYTES // per_cell))
+    return tuple(chunks)
+
+
+def _put(group, name, array, months=None, cells=None):
+    """Store one array. `months` and `cells` are the world's counts: an array laid out month by cell is cut by month."""
     a = np.ascontiguousarray(array)
     if a.dtype == np.bool_:
         a = a.astype(np.uint8)
-    chunks = a.shape if a.ndim == 1 or a.nbytes <= 8_000_000 else (1,) + a.shape[1:]
-    arr = group.create_array(name=name, shape=a.shape, dtype=a.dtype, chunks=chunks)
+    months_first = a.ndim >= 2 and months is not None and a.shape[0] == months and a.shape[1] == cells
+    arr = group.create_array(name=name, shape=a.shape, dtype=a.dtype, chunks=chunk_shape(a.shape, a.dtype.itemsize, months_first))
     arr[...] = a
 
 
@@ -99,21 +119,38 @@ def world_attributes(world, engine) -> dict:
         "meta": world.meta, "seed": engine.seed, "planet": engine.params["planet"],
         "parameters_text": engine.params.text, "fields": field_specs(engine),
         "groups": {g: {"unit": s.unit, "shape": s.shape, "description": s.description} for g, s in engine.registry.groups.items()},
+        "tables": {t: {"columns": dict(s.columns), "description": s.description} for t, s in engine.registry.tables.items()},
         "lineage": world.lineage, "notices": world.notices, "settle_log": world.settle_log[-3:],
         "explanations": engine.params["explanations"], "category_colors": category_colors(engine),
         "models": {slot: {k: cfg.get(k) for k in ("implementation", "model", "ignores", "wrong_where")} for slot, cfg in slots.items()},
         "drivers": {f: sorted(t) for f, t in world.drivers.items()},
         "additive": sorted({f for p in engine.procs.values() for f in p.additive}),
         "pushes": {pid: {k: v for k, v in rec.items() if not isinstance(v, np.ndarray)} for pid, rec in world.push_records.items()},
+        "push_activity": world.push_activity,
         "timings": world.timings, "round_times": world.round_times, "fingerprints": world.fingerprints(), "world_fingerprint": world.fingerprint(),
     })
 
 
 def save(world, engine, path) -> Path:
-    """Write a finished world. Refuses to overwrite an existing store."""
+    """Write a finished world. Refuses to overwrite an existing store. The store is written beside its final place
+    and moved there only when it is whole, so that a failed write leaves nothing behind that looks like a world."""
     path = Path(path)
     if path.exists():
         raise FileExistsError(f"{path} exists; a world store is written once and never changed")
+    partial = path.with_name(path.name + ".partial")
+    if partial.exists():
+        shutil.rmtree(partial)
+    try:
+        _write(world, engine, partial)
+        partial.rename(path)
+    except BaseException:
+        shutil.rmtree(partial, ignore_errors=True)
+        raise
+    return path
+
+
+def _write(world, engine, path):
+    months, cells = world.months, world.n
     root = zarr.open_group(store=str(path), mode="w")
     root.attrs.update(world_attributes(world, engine))
     mesh = root.create_group("mesh")
@@ -121,7 +158,7 @@ def save(world, engine, path) -> Path:
         _put(mesh, name, getattr(world.mesh, name))
     g = root.create_group("fields")
     for name in sorted(world.fields):
-        _put(g, name, world.fields[name])
+        _put(g, name, world.fields[name], months, cells)
     g = root.create_group("tables")
     for t in sorted(world.tables):
         tg = g.create_group(t)
@@ -132,14 +169,14 @@ def save(world, engine, path) -> Path:
     for f in sorted(world.drivers):
         fg = dg.create_group(f)
         for term in sorted(world.drivers[f]):
-            _put(fg, term, world.drivers[f][term])
+            _put(fg, term, world.drivers[f][term], months, cells)
     gg = causes.create_group("groups")
-    for k, group in enumerate(sorted(world.group_records)):
+    for group in sorted(world.group_records):
         mg = gg.create_group(group)
         for j, member in enumerate(sorted(world.group_records[group])):
             arr = mg.create_group(f"m{j}")
             arr.attrs.update({"member": member})
-            _put(arr, "value", world.group_records[group][member])
+            _put(arr, "value", world.group_records[group][member], months, cells)
     pg = causes.create_group("pushes")
     for k, pid in enumerate(sorted(world.push_records)):
         rec = world.push_records[pid]
@@ -147,8 +184,7 @@ def save(world, engine, path) -> Path:
         rg.attrs.update({"id": pid})
         _put(rg, "weight", rec["weight"])
         if "before" in rec:
-            _put(rg, "before", rec["before"])
-    return path
+            _put(rg, "before", rec["before"], months, cells)
 
 
 class WorldView:
@@ -223,6 +259,8 @@ class StoreView(WorldView):
         self._root = zarr.open_group(store=str(self.path), mode="r")
         self.attrs = dict(self._root.attrs)
         self._bool = {n for n, s in self.attrs["fields"].items() if s["kind"] == "boolean"}
+        self._bool_columns = {(t, c) for t, s in (self.attrs.get("tables") or {}).items()
+                              for c, kind in s["columns"].items() if kind == "bool"}
         self._push_group = {self._root["causes/pushes"][k].attrs["id"]: k for k in self._root["causes/pushes"].group_keys()}
 
     def field(self, name):
@@ -237,11 +275,14 @@ class StoreView(WorldView):
 
     def table(self, name):
         g = self._root["tables"][name]
-        return {c: g[c][...] for c in sorted(g.array_keys())}
+        return {c: g[c][...].astype(bool) if (name, c) in self._bool_columns else g[c][...] for c in sorted(g.array_keys())}
 
     def push_arrays(self, push_id):
         g = self._root["causes/pushes"][self._push_group[push_id]]
-        return {c: g[c][...] for c in g.array_keys()}
+        out = {c: g[c][...] for c in g.array_keys()}
+        if "before" in out and self.attrs["pushes"][push_id].get("field") in self._bool:
+            out["before"] = out["before"].astype(bool)
+        return out
 
     def mesh_array(self, name):
         return self._root["mesh"][name][...]

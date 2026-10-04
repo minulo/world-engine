@@ -41,10 +41,29 @@ def main(store, out_dir, fields, query=""):
             page.click("#viewflat")
             page.wait_for_timeout(300)
             page.screenshot(path=str(out / f"{name}_flat.png"))
+        # on the flat map, the place under the pointer must stay under it while the map is dragged
+        page.click("#viewflat")
+        box = page.locator("#gl").bounding_box()
+        ax, ay = box["x"] + box["width"] * 0.40, box["y"] + box["height"] * 0.45
+        bx, by = ax + 160, ay + 60
+        page.mouse.move(ax, ay)
+        page.wait_for_timeout(200)
+        before = page.inner_text("#status").split(" · ")[0]
+        page.mouse.down()
+        page.mouse.move((ax + bx) / 2, (ay + by) / 2, steps=4)
+        page.mouse.move(bx, by, steps=4)
+        page.mouse.up()
+        page.mouse.move(bx + 1, by)
+        page.mouse.move(bx, by)
+        page.wait_for_timeout(200)
+        after = page.inner_text("#status").split(" · ")[0]
+        print(f"drag on the flat map: under the pointer before {before!r}, after {after!r}")
+        if before != after:
+            problems.append(f"dragging the flat map moved the place under the pointer from {before} to {after}")
         page.click("#viewglobe")
         box = page.locator("#gl").bounding_box()
         page.mouse.click(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
-        page.wait_for_timeout(1200)
+        page.wait_for_function("document.querySelector('#why').innerText.length > 0", timeout=30000)
         print("cell:", page.inner_text("#celltitle"))
         print("why:", page.inner_text("#why")[:1500])
         print("banner:", page.inner_text("#banner") if page.is_visible("#banner") else "none")

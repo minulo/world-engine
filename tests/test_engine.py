@@ -108,6 +108,28 @@ def test_unlisted_draw_is_refused():
     assert "seeds.yaml does not list" in str(err.value)
 
 
+def test_asking_for_more_draws_leaves_the_earlier_ones_as_they_were():
+    """Adding a plate must not move the plates already drawn; adding a wave must not change the waves already there."""
+    from worldengine import draws
+    from worldengine.library.noise import WAVE_NUMBERS, wave_field
+    from worldengine.mesh import get_mesh
+    key = (7, "Tectonics", "plate_centres", "start")
+    assert np.array_equal(draws.sphere_points(*key, 14), draws.sphere_points(*key, 15)[:14])
+    assert np.array_equal(draws.normal(*key, 5), draws.normal(*key, 9)[:5])
+    assert np.array_equal(draws.uniform(*key, 5), draws.uniform(*key, 9)[:5])
+    assert not np.array_equal(draws.uniform(*key, 5), draws.uniform(7, "Tectonics", "plate_axes", "start", 5))
+    spread = draws.sphere_points(*key, 4000)
+    assert np.abs(spread.mean(axis=0)).max() < 0.05 and abs((spread[:, 2] ** 2).mean() - 1 / 3) < 0.02      # even over the sphere
+    bell = draws.normal(*key, 20000)
+    assert abs(bell.mean()) < 0.03 and abs(bell.std() - 1) < 0.03
+    # a wave field: wave k is made from row k of the numbers, so a longer list only adds waves
+    xyz = get_mesh(2).xyz
+    u = draws.uniform(*key, WAVE_NUMBERS * 6).reshape(6, WAVE_NUMBERS)
+    one = wave_field(xyz, u[:1], (2.0, 5.0))
+    again = wave_field(xyz, draws.uniform(*key, WAVE_NUMBERS * 9).reshape(9, WAVE_NUMBERS)[:1], (2.0, 5.0))
+    assert np.array_equal(one, again)
+
+
 def test_a_process_that_changes_its_answer_is_caught_by_the_cause_pass():
     with pytest.raises(EngineError) as err:
         toy(models=with_slot("Extra", "Unsteady", ["c"])).build()

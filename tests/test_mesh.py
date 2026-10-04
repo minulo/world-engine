@@ -75,6 +75,25 @@ def test_smoothing_keeps_the_mean_and_flattens():
     assert s.max() < 1.0 and s.min() > 0.0
 
 
+def test_a_wind_is_split_into_the_part_that_converges_and_the_part_that_turns():
+    """A wind that only circles has no converging part; a wind that only flows toward one latitude is all converging."""
+    m = get_mesh(5)
+    rms = lambda v: float(np.sqrt((np.einsum("ij,ij->i", v, v) * m.area).sum() / m.area.sum()))
+    lat = np.deg2rad(m.lat)
+    circling = np.cross(np.array([0.3, -0.2, 0.93]), m.xyz) * 7.0            # the surface turning about a tilted axis
+    assert rms(op.converging_part(m, circling)) < 0.01 * rms(circling)
+    toward_equator = (-5.0 * np.sin(2 * lat))[:, None] * m.north             # the gradient of 2.5 cos(2 lat)
+    part = op.converging_part(m, toward_equator)
+    assert rms(part - toward_equator) < 0.02 * rms(toward_equator)
+    both = circling + toward_equator
+    memo = {}
+    part = op.converging_part(m, both, memo)
+    assert rms(part - toward_equator) < 0.02 * rms(toward_equator)
+    assert rms((both - part) - circling) < 0.02 * rms(circling)
+    assert np.array_equal(part, op.converging_part(m, both, memo))           # the kept solver gives the same bits
+    assert np.array_equal(part, op.converging_part(m, both))                 # and so does a fresh one
+
+
 def test_zonal_mean_and_east_north():
     m = get_mesh(4)
     lat, mean = op.zonal_mean(m, m.lat, 10.0)

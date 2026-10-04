@@ -15,6 +15,10 @@ from scipy.spatial import cKDTree
 from .params import ParameterError
 
 _OPS = ("set", "add", "scale", "cap_max", "cap_min")
+_TESTS = {"is_one_of": ("category", "index", "boolean"), "is": ("category", "index", "boolean", "number"),
+          "above": ("number", "index"), "below": ("number", "index")}
+MIN_CORNERS = 3
+_PROBE = 1.0e-3            # how far beside a side the sense of an outline is probed, as a share of the side's length
 
 
 @dataclass
@@ -91,8 +95,12 @@ def parse(entries, registry) -> list[Push]:
                         conditions=_conditions(r.get("where"), where), edge_km=float(r.get("edge_km", 0.0)))
         if region.circle is None and region.outline is None and not region.conditions:
             raise ParameterError(f"{where}: the region needs a circle, an outline or a condition")
+        if region.outline is not None and len(region.outline) < MIN_CORNERS:
+            raise ParameterError(f"{where}: an outline needs at least {MIN_CORNERS} corners")
         when = e.get("when") or {}
         rounds = tuple(when["rounds"]) if "rounds" in when else None
+        if rounds is not None and rounds[0] > rounds[1]:
+            raise ParameterError(f"{where}: when.rounds gives the first round and then the last; {list(rounds)} runs backwards")
         for i, p in enumerate(e["pushes"]):
             ops = [o for o in _OPS if o in p]
             if len(ops) != 1:
@@ -121,21 +129,131 @@ def label_classes(pushes, registry) -> dict:
     return out
 
 
+def check(push: Push, registry, months: int) -> list:
+    """Everything about a push that can be judged before a world exists: what its conditions test, and whether its
+    amount fits its target. Returns the problems found, as sentences."""
+    problems = []
+    for c in push.region.conditions:
+        spec = registry.fields.get(c.field)
+        if spec is None:
+            continue                                        # named already by the caller
+        if spec.kind not in _TESTS[c.test]:
+            problems.append(f"push {push.id}: the test {c.test} cannot be made on {c.field}, a field of kind {spec.kind} "
+                            f"(it applies to: {', '.join(_TESTS[c.test])})")
+            continue
+        monthly = spec.shape == "month_cell"
+        if c.month is not None:
+            if not monthly:
+                problems.append(f"push {push.id}: the condition on {c.field} names a month, but that field has no months")
+            elif isinstance(c.month, bool) or not isinstance(c.month, int) or not (1 <= c.month <= months):
+                problems.append(f"push {push.id}: the condition on {c.field} names month {c.month!r}; months run from 1 to {months}")
+        elif monthly and c.test in ("is", "is_one_of"):
+            problems.append(f"push {push.id}: a condition on the monthly field {c.field} with {c.test} needs a month")
+        values = c.value if isinstance(c.value, list) else [c.value]
+        if c.test == "is_one_of" and not isinstance(c.value, list):
+            problems.append(f"push {push.id}: is_one_of on {c.field} takes a list")
+        if c.test != "is_one_of" and isinstance(c.value, list):
+            problems.append(f"push {push.id}: {c.test} on {c.field} takes one value, not a list")
+        for v in values:
+            if spec.kind == "category":
+                if v not in spec.categories:
+                    problems.append(f"push {push.id}: {v!r} is not a class of {c.field} (classes: {', '.join(spec.categories)})")
+            elif spec.kind == "boolean":
+                if not isinstance(v, bool):
+                    problems.append(f"push {push.id}: {c.field} is true or false; the condition gives {v!r}")
+            elif isinstance(v, bool) or not isinstance(v, (int, float)):
+                problems.append(f"push {push.id}: the condition on {c.field} needs a number, found {v!r}")
+    if push.on_group:
+        spec_kind, monthly, code = "number", (registry.groups[push.target].shape == "month_cell" if push.target in registry.groups else False), None
+    elif push.target in registry.fields:
+        spec = registry.fields[push.target]
+        spec_kind, monthly, code = spec.kind, spec.shape == "month_cell", spec.code
+    else:
+        return problems
+    if spec_kind == "index":
+        return problems                                     # the scheduler refuses a push on an index field
+    a = push.amount
+    number = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    if spec_kind == "direction":
+        if push.op == "scale":
+            if not number(a):
+                problems.append(f"push {push.id}: scale on a direction takes one number")
+        elif not (isinstance(a, dict) and set(a) == {"east", "north"} and number(a["east"]) and number(a["north"])):
+            problems.append(f"push {push.id}: a direction is given as its east and north parts, two numbers")
+        return problems
+    try:
+        amount_array(push, spec_kind, (months, 1) if monthly else (1,), months, None, code=code)
+    except ParameterError as e:
+        problems.append(str(e))
+    return problems
+
+
 def _unit(lat, lon):
     la, lo = np.deg2rad(lat), np.deg2rad(lon)
     return np.array([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)])
 
 
-def _inside_outline(xyz, outline) -> np.ndarray:
-    """Cells inside an outline given as [lat, lon] corners: the angles that the sides subtend at a
-    cell add up to a full turn inside and to nothing outside. The outline must be smaller than a hemisphere."""
-    pts = np.array([_unit(la, lo) for la, lo in outline])
+def _turns(xyz, pts) -> np.ndarray:
+    """The angles that the sides of an outline subtend at each point, added up: a full turn (plus or minus 2 pi) at a
+    point inside, nothing outside. On a sphere there is a third zone: the mirror image of the inside on the far side
+    of the planet, where the sum is a full turn the other way."""
     total = np.zeros(xyz.shape[0])
     for a, b in zip(pts, np.roll(pts, -1, axis=0)):
         pa, pb = xyz @ a, xyz @ b
         total += np.arctan2(xyz @ np.cross(a, b), (a @ b) - pa * pb)
-    centre = pts.sum(axis=0)
-    return (np.abs(total) > np.pi) & (xyz @ centre > 0.0)       # the far side of the sphere is outside
+    return total
+
+
+def _outline_sense(pts) -> float:
+    """+1 if the corners run counter-clockwise seen from outside the planet, -1 if clockwise.
+
+    Found by looking just beside the middle of each side, on both sides of it: one of the two points lies inside,
+    where the sum of turns is a full turn, counted positive for a counter-clockwise outline and negative for a
+    clockwise one; the other lies outside, where the sum is nothing. No guess about the size or the shape of the
+    outline is needed, only that its sides do not cross."""
+    left = []
+    for a, b in zip(pts, np.roll(pts, -1, axis=0)):
+        middle = a + b
+        size = np.linalg.norm(middle)
+        if size == 0.0 or np.allclose(a, b):                 # corners opposite each other, or the same corner twice
+            continue
+        middle /= size
+        sideways = np.cross(middle, b - a)                   # to the left of the direction of travel
+        sideways /= np.linalg.norm(sideways)
+        step = _PROBE * np.linalg.norm(b - a)
+        left.append(middle + step * sideways)
+        left.append(middle - step * sideways)
+    if not left:
+        return 1.0
+    probes = np.array(left)
+    probes /= np.linalg.norm(probes, axis=1, keepdims=True)
+    return 1.0 if _turns(probes, pts).sum() >= 0.0 else -1.0     # of each pair of probes one lies inside; its turn sets the sign
+
+
+def _inside_outline(xyz, outline) -> np.ndarray:
+    """Cells inside an outline given as [lat, lon] corners, in either order of travel. The outline must be smaller
+    than a hemisphere and its sides must not cross; each side is the shorter arc between two corners."""
+    pts = np.array([_unit(la, lo) for la, lo in outline])
+    return _outline_sense(pts) * _turns(xyz, pts) > np.pi   # the mirror image on the far side has the other sign
+
+
+def _outside_outline_m(xyz, outline, radius_m) -> np.ndarray:
+    """Distance from each point to the nearest side of an outline, in metres."""
+    pts = np.array([_unit(la, lo) for la, lo in outline])
+    best = np.full(xyz.shape[0], np.inf)
+    for a, b in zip(pts, np.roll(pts, -1, axis=0)):
+        normal = np.cross(a, b)
+        size = np.linalg.norm(normal)
+        to_a = np.arccos(np.clip(xyz @ a, -1.0, 1.0))
+        to_b = np.arccos(np.clip(xyz @ b, -1.0, 1.0))
+        d = np.minimum(to_a, to_b)
+        if size > 0.0:
+            normal /= size
+            foot = xyz - (xyz @ normal)[:, None] * normal                      # nearest point of the side's great circle
+            within = (np.cross(a, foot) @ normal >= 0.0) & (np.cross(foot, b) @ normal >= 0.0)   # ... if it lies between the corners
+            d = np.where(within, np.minimum(d, np.abs(np.arcsin(np.clip(xyz @ normal, -1.0, 1.0)))), d)
+        best = np.minimum(best, d)
+    return best * radius_m
 
 
 def region_weights(push_region: Region, mesh, radius_m: float, read_condition, number_like: bool) -> np.ndarray:
@@ -156,7 +274,7 @@ def region_weights(push_region: Region, mesh, radius_m: float, read_condition, n
         dist_out = np.maximum(d - c["radius_km"] * 1000.0, 0.0)
     if push_region.outline is not None:
         inside &= _inside_outline(mesh.xyz, push_region.outline)
-        dist_out = None
+        dist_out = _outside_outline_m(mesh.xyz, push_region.outline, radius_m) if push_region.circle is None else None
     for cond in push_region.conditions:
         v = np.asarray(read_condition(cond))
         if v.ndim == 2:                                 # a monthly field: one month, or the yearly mean
@@ -178,12 +296,16 @@ def region_weights(push_region: Region, mesh, radius_m: float, read_condition, n
         dist_out = None
     w = inside.astype(np.float64)
     edge = push_region.edge_km * 1000.0
-    if number_like and edge > 0.0 and inside.any() and not inside.all():
-        if dist_out is None:                            # distance to the nearest cell of the region
+    if number_like and edge > 0.0 and not inside.all():
+        # The fade is measured from the shape itself where the region is one circle or one outline: a shape smaller
+        # than a cell then still reaches the cells its edge covers. A region with a condition, or with two shapes,
+        # has no outline to measure from; there the fade is measured from the centre of the nearest cell inside.
+        if dist_out is None and inside.any():
             idx = np.flatnonzero(inside)
             chord, _ = cKDTree(mesh.xyz[idx]).query(mesh.xyz)
             dist_out = 2.0 * np.arcsin(np.clip(0.5 * chord, 0, 1)) * radius_m
-        w = np.where(inside, 1.0, np.clip(1.0 - dist_out / edge, 0.0, 1.0))
+        if dist_out is not None:
+            w = np.where(inside, 1.0, np.clip(1.0 - dist_out / edge, 0.0, 1.0))
     return w
 
 
@@ -207,6 +329,8 @@ def amount_array(push: Push, spec_kind: str, shape: tuple, months: int, mesh, co
     if isinstance(a, list):
         if len(shape) != 2 or len(a) != months:
             raise ParameterError(f"push {push.id}: one amount per month fits only a monthly target with {months} months")
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in a):
+            raise ParameterError(f"push {push.id}: the monthly amounts {a!r} are not all numbers")
         return np.broadcast_to(np.asarray(a, dtype=np.float64)[:, None], shape).copy()
     if isinstance(a, bool) or not isinstance(a, (int, float)):
         raise ParameterError(f"push {push.id}: the amount {a!r} is not a number")
@@ -237,4 +361,8 @@ def apply_op(op: str, old: np.ndarray, amount: np.ndarray, weight: np.ndarray, k
         w = weight[:, None] if old.ndim == 2 else weight[None, :, None]
     elif old.ndim == 2:
         w = weight[None, :]
-    return old + w * (new - old)
+    w = np.broadcast_to(w, old.shape)
+    # Full weight gives the pushed value itself and no weight the old one, exactly. In the fade the two are mixed;
+    # where the old value is missing there is nothing to mix with, and the pushed value is taken.
+    mixed = np.where(np.isnan(old), new, old + w * (new - old))
+    return np.where(w >= 1.0, new, np.where(w <= 0.0, old, mixed))

@@ -12,7 +12,10 @@ A pattern entry, under the slot and the field it writes:
     ends:     text saying why the chain ends here (a parameter, a seeded starting condition)
     follows:  fields the walk continues to when no driver says otherwise
     drivers:  per driver: says (slot {v}), follows (fields), at (a driver holding the cell to continue at),
-              names (for a driver that holds a class), follows_by (class name -> fields)
+              names (for a driver that holds a class), follows_by (class name -> fields),
+              cell (the driver holds a cell number: it is used by "at" and not spoken),
+              row_of (the driver holds a row of this table: says may then use {row} and one slot per column;
+              values maps a column's codes to words)
 """
 from __future__ import annotations
 
@@ -41,6 +44,12 @@ def _fmt(v, unit):
     return f"{text}{(' ' + unit) if unit else ''}"
 
 
+def class_name(categories, code) -> str:
+    """The name of a class, or a plain statement that the code names no class of the list."""
+    code = int(code)
+    return categories[code] if 0 <= code < len(categories) else f"no class (code {code})"
+
+
 def cell_value(view, field, cell):
     """The value shown for one cell: the yearly mean of a monthly number, the class name of a category,
     the speed of a direction."""
@@ -53,8 +62,8 @@ def cell_value(view, field, cell):
     v = a[cell] if a.ndim == 1 else a[:, cell]
     if kind == "category":
         if np.ndim(v):
-            v = np.bincount(v).argmax()
-        return spec["categories"][int(v)]
+            v = np.bincount(v - v.min()).argmax() + v.min()
+        return class_name(spec["categories"], v)
     if kind == "boolean":
         return bool(v if not np.ndim(v) else v.any())
     if kind == "index":
@@ -108,22 +117,23 @@ def explain(view, cell: int, field: str) -> dict:
         if line is None:
             chain.append({"field": f, "cell": int(c), "text": f"{f}: nothing in this world wrote it."})
             return
-        if f in path:                                        # the walk has come round to a field it is in the middle of explaining
+        key = (f, int(c))                                    # a step explains one field in one cell
+        if key in path:                                      # the walk has come round to a step it is in the middle of explaining
             chain.append({"field": f, "cell": int(c), "loop": True,
-                          "text": f"This leads back to {f}, explained in step {seen[f]}: a feedback loop, "
+                          "text": f"{here(c)}This leads back to {f}, explained in step {seen[key]}: a feedback loop, "
                                   f"which the climate rounds repeat until it is steady."})
             return
-        if f in seen:
-            if not (chain and chain[-1].get("again") == f):
-                chain.append({"field": f, "cell": int(c), "again": f, "text": f"For {f}, see step {seen[f]}."})
+        if key in seen:
+            if not (chain and chain[-1].get("again") == f and chain[-1]["cell"] == int(c)):
+                chain.append({"field": f, "cell": int(c), "again": f, "text": f"{here(c)}For {f}, see step {seen[key]}."})
             return
         if len(chain) >= MAX_STEPS:
             if not chain[-1].get("cut"):
                 chain.append({"field": f, "cell": int(c), "end": True, "cut": True,
                               "text": f"The walk stops here: the chain has reached {MAX_STEPS} steps. Ask about {f} to go on."})
             return
-        seen[f] = len(chain) + 1
-        path = path + (f,)
+        seen[key] = len(chain) + 1
+        path = path + (key,)
         writer = line["writer"]
         if writer not in slots_on_path:
             slots_on_path.append(writer)
@@ -152,7 +162,7 @@ def explain(view, cell: int, field: str) -> dict:
             text = f"{f} is {shown}: {writer} ({line['model']}) computed it from {src}."
         parts, order = [], []
         if pat.get("form") == "sum":
-            order = sorted((t for t in dvals if not (dpat.get(t) or {}).get("names") and not (dpat.get(t) or {}).get("cell")),
+            order = sorted((t for t in dvals if not any((dpat.get(t) or {}).get(k) for k in ("names", "cell", "row_of"))),
                            key=lambda t: -abs(dvals[t]))
             largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
             for t in order:
@@ -172,13 +182,24 @@ def explain(view, cell: int, field: str) -> dict:
                         said += " (" + ", ".join(members) + ")"
                 parts.append(said)
         else:
-            order = [t for t in dvals if not (dpat.get(t) or {}).get("cell")]
+            order = [t for t in dvals if not any((dpat.get(t) or {}).get(k) for k in ("cell", "row_of"))]
             for t in order:
                 p = dpat.get(t) or {}
-                if p.get("says"):
+                if p.get("says") and dvals[t] == dvals[t]:      # a driver whose value is missing here has nothing to say
                     parts.append(p["says"].format_map(_Safe(v=slots[t])))
                 if "says_by" in p and names.get(t) in p["says_by"]:
                     parts.append(p["says_by"][names[t]].format_map(slots))
+        for t in terms:                                      # a driver that names a row of a table: say what the row holds
+            p = dpat.get(t) or {}
+            if not p.get("row_of") or dvals[t] < 0:
+                continue
+            table = view.table(p["row_of"])
+            row = int(dvals[t])
+            if p.get("says") and all(row < len(column) for column in table.values()):
+                held = {name: table[name][row].item() for name in table}
+                for name, words in (p.get("values") or {}).items():     # (a stored world holds the codes as text)
+                    held[name] = words.get(held.get(name), words.get(str(held.get(name)), held.get(name)))
+                parts.append(p["says"].format_map(_Safe(row=row, **held)))
         if parts:
             text = text.rstrip() + " " + "; ".join(parts) + "."
         step = {"field": f, "cell": int(c), "writer": writer, "model": line["model"], "value": shown, "text": here(c) + text,
@@ -198,7 +219,7 @@ def explain(view, cell: int, field: str) -> dict:
             before = arr["before"]
             b = before[c] if before.ndim == 1 else before[:, c]
             if spec["kind"] == "category":
-                b_text = spec["categories"][int(b if not np.ndim(b) else np.bincount(b).argmax())]
+                b_text = class_name(spec["categories"], b if not np.ndim(b) else np.bincount(b - b.min()).argmax() + b.min())
             elif spec["kind"] == "direction":
                 b_text = _fmt(float(np.linalg.norm(b if b.ndim == 1 else b.mean(axis=0))), unit)
             else:
@@ -252,8 +273,10 @@ def explain(view, cell: int, field: str) -> dict:
         elif nt["kind"] == "model_outside_range" and nt["slot"] in slots_on_path:
             notices.append(f"{nt['slot']} ran outside the range in which its model is expected to hold: "
                            f"{nt['parameter']} is {nt['value']}, expected {nt['expected'][0]} to {nt['expected'][1]}.")
-        elif nt["kind"] == "field_outside_range" and nt["field"] in seen:
+        elif nt["kind"] == "field_outside_range" and any(f == nt["field"] for f, _ in seen):
             notices.append(f"{nt['field']} left its valid range somewhere on the planet.")
+        elif nt["kind"] == "process_note" and nt["slot"] in slots_on_path:
+            notices.append(f"{nt['slot']} noted: {nt['what']}.")
     return {"cell": int(cell), "lat": float(lat[cell]), "lon": float(lon[cell]), "field": field, "chain": chain, "notices": notices}
 
 

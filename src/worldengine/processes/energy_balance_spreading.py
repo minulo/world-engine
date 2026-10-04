@@ -14,7 +14,9 @@ surface at a fixed rate per kilometre, and the heat group enters as a known amou
 Ignores: the layers of the air, heat carried as water vapour, heat carried by wind and ocean
 (their effect is folded into D, which was fitted to the observed fall of temperature from
 equator to pole), sea ice as a lid on the sea, and the make-up of the air: A and B are fitted
-to Earth's air and clouds.
+to Earth's air and clouds. The yearly cycle is held as its mean and a few waves (two, as in
+the paper), so swings of the sunlight faster than that are left out: at the poles, where the
+polar night makes the year far from a smooth wave, up to 20 W/m2 of the monthly sunlight.
 Wrong where: it spreads heat over about 3,500 km, so anything narrower is smoothed away.
 Coasts facing the wind are not milder than coasts facing away. High plateaus are too cold.
 """
@@ -71,9 +73,15 @@ class SpreadingEnergyBalance(Process):
         cooling = -ctx.shared["lapse_rate_k_per_km"] * height / M_PER_KM
         ctx.write("surface_temperature", sea_level_c + ZERO_CELSIUS_IN_K + cooling)
         if ctx.recording:
-            balance = ZERO_CELSIUS_IN_K + (absorbed - a) / b
+            def kept(series):                                            # the part of a yearly cycle that the solution holds
+                held = np.fft.rfft(series, axis=0)
+                held[waves + 1:] = 0.0
+                return np.fft.irfft(held, n=months, axis=0)
+            # The drivers are those of the equation as it was solved: with the sunlight's yearly mean and its first waves.
+            # What is then left over is exactly the heat going into and out of storage, -(C / B) dT/dt.
+            balance = ZERO_CELSIUS_IN_K + (kept(absorbed) - a) / b
             moved = np.stack([spread * (lap @ sea_level_c[m]) / area / b for m in range(months)])
-            extra = other / b
+            extra = kept(np.broadcast_to(other, absorbed.shape)) / b
             ctx.driver("surface_temperature", "sunlight_against_heat_loss", balance)
             ctx.driver("surface_temperature", "spread_from_neighbours", moved)
             ctx.driver("surface_temperature", "other_heat", extra)

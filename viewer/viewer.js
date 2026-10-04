@@ -290,13 +290,13 @@ function wire() {
   canvas.addEventListener("pointermove", (e) => {
     const ll = screenToLatLon(e.clientX, e.clientY);
     if (ll && state.data) { const id = cellAt(ll[0], ll[1]), v = state.data[id], s = spec();
-      const shown = s.kind === "category" ? s.categories[v].replace(/_/g, " ") : s.kind === "boolean" ? (v ? "true" : "false") : fmt(v, s.unit);
+      const shown = s.kind === "category" ? (s.categories[v] || `no class (code ${v})`).replace(/_/g, " ") : s.kind === "boolean" ? (v ? "true" : "false") : fmt(v, s.unit);
       $("status").textContent = `${Math.abs(ll[0]).toFixed(1)}° ${ll[0] >= 0 ? "N" : "S"}, ${Math.abs(ll[1]).toFixed(1)}° ${ll[1] >= 0 ? "E" : "W"} · ${shown}`; }
     if (!drag) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
     const k = 2 / canvas.clientHeight / state.zoom;
     if (state.flat) { const fit = Math.min(1, canvas.clientWidth / canvas.clientHeight / 2);
-      state.panX -= dx * k / fit; state.panY = Math.max(-1, Math.min(1, state.panY + dy * k / fit)); }
+      state.panX -= dx * k / fit / 2; state.panY = Math.max(-1, Math.min(1, state.panY + dy * k / fit)); }   // the map spans two units of pan across, one up
     else { state.lon0 -= dx * k * 60; state.lat0 = Math.max(-90, Math.min(90, state.lat0 + dy * k * 60)); }
     drag.x = e.clientX; drag.y = e.clientY; draw();
   });

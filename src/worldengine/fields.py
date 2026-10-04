@@ -68,6 +68,9 @@ class FieldSpec:
         if self.kind in ("category", "index", "boolean") and a.dtype.kind == "f":
             raise ValueError(f"{self.name} is of kind {self.kind} and cannot take fractional values")
         out = np.array(a, dtype=self.dtype, order="C", copy=True)
+        if out.dtype.kind in "iu" and a.dtype.kind in "iu" and a.size and not np.array_equal(out, a):
+            raise ValueError(f"{self.name} is stored as {self.dtype}, which cannot hold every value given "
+                             f"(from {int(a.min())} to {int(a.max())}); they would be changed without a word")
         out.flags.writeable = False
         return out
 
@@ -76,13 +79,16 @@ class FieldSpec:
         if self.kind == "category":
             bad = (a < 0) | (a >= len(self.categories))
             return {"count": int(bad.sum())} if bad.any() else None
-        if self.kind in ("boolean", "index") or self.range is None and self.allow_missing:
+        if self.kind in ("boolean", "index"):
             return None
         finite = np.isfinite(a) if a.dtype.kind == "f" else np.ones(a.shape, dtype=bool)
-        missing = int((~finite).sum())
+        infinite = int(np.isinf(a).sum()) if a.dtype.kind == "f" else 0
+        missing = int((~finite).sum()) - infinite
         out = {}
         if missing and not self.allow_missing:
             out["missing"] = missing
+        if infinite:                                         # a missing value may be allowed; an endless one never is
+            out["infinite"] = infinite
         if self.range is not None and finite.any():
             lo, hi = self.range
             v = a[finite]
@@ -134,7 +140,14 @@ class Registry:
                 raise ParameterError(f"fields.yaml.fields.{name}: a label field must be of kind category")
             default = e.get("default", {"number": 0.0, "direction": 0.0, "boolean": False, "index": -1}.get(kind))
             if e.get("default") == "missing":
+                if kind not in ("number", "direction"):
+                    raise ParameterError(f"fields.yaml.fields.{name}: only a number or a direction can start as missing; "
+                                         f"a field of kind {kind} has no way to store a missing value")
                 default = float("nan")
+            elif kind == "boolean" and not isinstance(default, bool):
+                raise ParameterError(f"fields.yaml.fields.{name}: the default of a true-or-false field is true or false, found {default!r}")
+            elif kind in ("number", "direction", "index") and (isinstance(default, bool) or not isinstance(default, (int, float))):
+                raise ParameterError(f"fields.yaml.fields.{name}: the default {default!r} is not a number")
             if kind == "category":
                 cats = list(cats or [])
                 if label and "none" not in cats:

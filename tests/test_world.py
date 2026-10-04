@@ -187,6 +187,61 @@ def test_explain_returns_a_chain_that_ends_at_a_seed_or_a_parameter(plain):
         assert explain(view, cell, field)["chain"]
 
 
+def test_a_why_answer_never_points_to_a_step_about_another_cell(plain):
+    """A walk that follows the vapour to the cell it came from reaches the same field at another cell. "See step N"
+    used to send the reader to that other cell's step: 74 of 194 sampled answers for precipitation did so."""
+    e, w = plain
+    view = store.MemoryView(w, e)
+    seen_reference = seen_other_cell = 0
+    for cell in range(0, w.n, 53):
+        ans = explain(view, cell, "precipitation")
+        chain = ans["chain"]
+        seen_other_cell += any(step["cell"] != cell for step in chain)
+        for step in chain:
+            if "see step" in step["text"] or "explained in step" in step["text"]:
+                seen_reference += 1
+                number = int(step["text"].split("step ")[-1].split(":")[0].rstrip("."))
+                target = chain[number - 1]
+                assert (target["field"], target["cell"]) == (step["field"], step["cell"])
+            if step["cell"] != cell and "writer" in step:
+                assert step["text"].startswith("At ")                # a step about another cell says which cell
+    assert seen_other_cell > 20                                      # the test has something to see
+
+
+def test_the_sea_cell_answer_leads_to_why_it_is_sea_and_a_mountain_names_its_event(plain):
+    e, w = plain
+    view = store.MemoryView(w, e)
+    sea = int(np.flatnonzero(w.fields["ocean_mask"] & (np.abs(w.mesh.lat) < 30))[0])
+    text = as_text(explain(view, sea, "biome"))
+    assert "the cell is sea" in text and "undefined" not in text and "Under water here: true" in text
+    mountain = int(np.argmax(w.drivers["crust_thickness"]["thickened_by_plates"]))
+    text = as_text(explain(view, mountain, "crust_thickness"))
+    row = int(w.drivers["crust_thickness"]["event"][mountain])
+    events = w.tables["tectonic_events"]
+    assert row >= 0 and f"between plates {events['plate_a'][row]} and {events['plate_b'][row]}" in text
+    assert ("a collision of continents" in text) == (events["kind"][row] == 2)
+
+
+def test_no_column_of_air_holds_far_more_vapour_than_it_can_and_no_cell_rains_without_limit(plain):
+    """Before the review, vapour mixed into the thin cold columns over high ground: up to 3 times saturation, 72 m of
+    rain a year in one cell, and 43 % of all rain over land on 4 % of the land."""
+    from worldengine.processes.moisture_one_layer import saturation_vapour_density
+    e, w = plain
+    f = w.fields
+    c = e.constants["Moisture"]
+    holds = saturation_vapour_density(f["surface_temperature"].astype(np.float64), c["saturation"]) * c["vapour_scale_height_m"]
+    humidity = f["column_water"].astype(np.float64) / holds
+    assert humidity.max() < 1.5
+    yearly = f["precipitation"].astype(np.float64).sum(axis=0)
+    assert yearly.max() < 15000.0                                    # Earth's wettest places get about 12 m a year
+    land = ~f["ocean_mask"]
+    area = f["cell_area"]
+    high = land & (f["height_above_sea"] > 2000.0)
+    share_of_rain = (yearly * area)[high].sum() / (yearly * area)[land].sum()
+    share_of_land = area[high].sum() / area[land].sum()
+    assert high.sum() > 20 and share_of_rain < 4 * share_of_land     # high ground is wetter, but it does not hold the land's rain
+
+
 # ---------------------------------------------------------------------------------------------- pushes
 def test_the_frozen_region_example_works_in_reduced_form(plain, frozen):
     e0, w0 = plain
@@ -199,7 +254,7 @@ def test_the_frozen_region_example_works_in_reduced_form(plain, frozen):
     d = np.arccos(np.clip(m.xyz @ m.xyz[centre], -1, 1)) * 6371.0
     inside, far = d < 550.0, d > 3000.0
     t, t0 = w.fields["surface_temperature"].astype(np.float64), w0.fields["surface_temperature"].astype(np.float64)
-    assert t[:, inside].max() <= 268.15 + 1e-3                # the cap guarantees the freeze in every month
+    assert t[:, inside].max() <= 258.15 + 1e-3                # the cap guarantees the freeze in every month
     assert t0[:, inside].max() > 273.15                       # which the plain world does not have
     before = w.push_records["ever_winter:surface_temperature"]["before"].astype(np.float64)
     assert (before[:, inside] < t0[:, inside]).all()          # the heat sink alone already cools the region

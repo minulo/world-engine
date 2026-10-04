@@ -17,7 +17,7 @@ import numpy as np
 from .engine import Context, Engine, World, _resolve_files, _resolve_level
 from .fields import Registry
 from .mesh import get_mesh
-from .params import DEFAULT_DATA_DIR, Parameters, freeze
+from .params import DEFAULT_DATA_DIR, Parameters, _load_yaml, freeze, validate
 from .process import declaration
 
 
@@ -45,15 +45,19 @@ class Harness(Engine):
         self.level = level
         self.mesh = get_mesh(level)
         self._planet = _merge(self.params["planet"], planet)
+        schema_dir = self.params.data_dir / "schemas"
+        if not schema_dir.exists():
+            schema_dir = DEFAULT_DATA_DIR / "schemas"
+        validate(self._planet, _load_yaml(schema_dir / "planet.yaml")[1], "planet.yaml")     # as the engine would refuse it
         self.planet = freeze(self._planet)
         self.months = int(self._planet.get("months_per_year", 12))
         self.seed = seed
         self.allowed_draws = {k: tuple(v) for k, v in (self.params["seeds"].get("draws") or {}).items()}
         self.registry = Registry(self.params)
         self.threads = 1
-        self._limit_threads()
         self.constants, self.shared_for, self.decls, self.procs = {}, {}, {}, {}
         self.memo = {}
+        self.member_stage, self.table_stage, self.push_by_id = {}, {}, {}
 
     def run(self, slot, reads=None, lagged=None, groups=None, tables=None, lagged_tables=None, constants=None,
             shared=None, round_no=1, recording=True, start=False) -> Result:
@@ -79,31 +83,53 @@ class Harness(Engine):
         self.shared_for = {slot: freeze({s: all_shared[s] for s in proc.shared})}
         self.world = w = World(self.mesh, self.months)
         self.memo = {}                                       # nothing is carried from one run of the harness to the next
+        stage = decl["stage"]
         self.stage_of = {f: "elsewhere" for f in list(reads or {}) + list(lagged or {})}
-        self.stage_of.update({f: decl["stage"] for f in decl["writes"] + decl["modifies"] + list(decl["contributes"].values())})
-        self._fresh = {decl["stage"]: set()}
+        self.stage_of.update({f: stage for f in decl["writes"] + decl["modifies"] + list(decl["contributes"].values())})
+        self.member_stage = {(g, member): stage for g, member in decl["contributes"].items()}
+        # a table read from the previous round is looked up among the kept copies, where the test put it
+        self.table_stage = {t: stage for t in list(lagged_tables or {}) +
+                            [f[len("table:"):] for f in decl["writes"] if f.startswith("table:")]}
+        self._fresh = {stage: set()}
         for name, value in (reads or {}).items():
             w.fields[name] = self.registry.fields[name].cast(value, w.n, w.months)
             if name in decl["modifies"]:
-                self._fresh[decl["stage"]].add(name)
+                self._fresh[stage].add(name)
         for name, value in (lagged or {}).items():
             w.lagged[name] = self.registry.fields[name].cast(value, w.n, w.months)
-            self.stage_of[name] = decl["stage"]
-        for group, members in (groups or {}).items():
-            w.group_lagged[group] = dict(members)
-            w.group_now[group] = dict(members)
-        for name, cols in (tables or {}).items():
-            w.tables[name] = {c: np.asarray(v) for c, v in cols.items()}
+            self.stage_of[name] = stage
+        for group, members in (groups or {}).items():        # members as the engine would hand them: stored type, read-only
+            want = self.registry.groups[group].array_shape(w.n, w.months)
+            cast = {}
+            for member, value in members.items():
+                a = np.array(value, dtype=np.float32)
+                if a.shape != want:
+                    raise ValueError(f"member {member} of group {group} must have shape {want}, got {a.shape}")
+                a.flags.writeable = False
+                cast[member] = a
+            w.group_lagged[group] = dict(cast)
+            w.group_now[group] = dict(cast)
+        for name, cols in (tables or {}).items():            # tables through the engine's own door: typed, checked, read-only
+            self._store_table(name, cols, "the test", False)
         for name, cols in (lagged_tables or {}).items():
-            w.lagged_tables[name] = {c: np.asarray(v) for c, v in cols.items()}
+            now = w.tables.pop(name, None)
+            self._store_table(name, cols, "the test", False)
+            w.lagged_tables[name] = w.tables.pop(name)
+            if now is not None:
+                w.tables[name] = now
         step = self.params["stages"]["stages"]
-        length = next((s.get("round_length_my") for s in step if s["name"] == decl["stage"]), None)
-        if start:
-            ctx = Context(self, slot, proc, decl, decl["stage"], 0, "start", length, False, False)
-            proc.start(ctx)
-            for t in list(w.tables):
-                w.lagged_tables[t] = w.tables[t]
-        ctx = Context(self, slot, proc, decl, decl["stage"], round_no, round_no, length, recording, False)
-        proc.run(ctx)
-        ctx._finish()
+        length = next((s.get("round_length_my") for s in step if s["name"] == stage), None)
+        with self._limit_threads():
+            if start:
+                ctx = Context(self, slot, proc, decl, stage, 0, "start", length, False, False)
+                proc.start(ctx)
+                for name in sorted(ctx._written):            # what the start step filled is the state that round 1 reads
+                    t = name[len("table:"):]
+                    if name.startswith("table:"):
+                        if t in (lagged_tables or {}):
+                            raise ValueError(f"start=True fills table {t}; a test cannot also give it under lagged_tables")
+                        w.lagged_tables[t] = w.tables[t]
+            ctx = Context(self, slot, proc, decl, stage, round_no, round_no, length, recording, False)
+            proc.run(ctx)
+            ctx._finish()
         return Result(w)

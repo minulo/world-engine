@@ -6,8 +6,9 @@
 
 shared:
   lapse_rate_k_per_km: 6.5                     # cooling of air with height [UNVERIFIED: the standard atmosphere's value]
-  freezing_point_k: 273.15
-  sea_freezing_point_k: 271.35                 # sea water freezes near -1.8 C [UNVERIFIED: textbook value]
+  freezing_point_k: 273.15                     # snow lies on land in every month below this [DOCUMENTED: North, Cahalan and Coakley 1981, p. 102]
+  sea_ice_yearly_mean_below_k: 263.15          # ice lies on the sea where the mean temperature of the year is below this, -10 C
+                                               # [DOCUMENTED: the same paper, eq. 15 and p. 102: "the mean annual -10 C isotherm"]
 
 slots:
   PlanetGeometry:
@@ -47,6 +48,8 @@ slots:
       boundaries:
         transform_ratio: 0.5                   # closing or opening slower than this share of the sliding speed counts as sliding past [INFERRED]
         minimum_speed_m_per_year: 0.002
+        direction_reach_cells: 4.0             # the direction of a boundary is taken over the stretch within this many cell spacings of a cell
+                                               # [MEASURED: with 4, the direction of a straight boundary is off by at most 10 degrees; with 2, by 18]
       orogeny:
         subduction_thickening_m: 18000.0       # crust added behind a trench at the reference speed [PROVISIONAL: tuned, as the paper's uplift is]
         subduction_width_km: 600.0
@@ -56,7 +59,10 @@ slots:
         maximum_speed_factor: 1.2
         smoothing_km: 150.0                    # a belt has no sharp ends: the thickening is spread over this length [INFERRED]
         active_above_m: 500.0                  # thickening above this counts as mountain building acting now
-      ocean_age: {maximum_my: 180.0, minimum_half_rate_m_per_year: 0.005}   # [UNVERIFIED: Earth's oldest floor is about this old]
+      ocean_age:
+        maximum_my: 180.0                      # [UNVERIFIED: Earth's oldest floor is about this old]
+        minimum_half_rate_m_per_year: 0.005
+        equal_within_my: 0.1                   # two floors whose ages differ by less than this count as equally old [INFERRED]
       volcanism: {arc_distance_km: 200.0, arc_width_km: 150.0, ridge_width_km: 150.0}   # [INFERRED]
       zones: {ridge_km: 300.0, transform_km: 200.0}
     expected_range:
@@ -75,11 +81,15 @@ slots:
       continental_normal_thickness_m: 35000.0  # crust of this thickness stands at the reference level
       root_smoothing_km: 150.0                 # the root follows the thickness smoothed over this length [INFERRED]
       ocean_floor:
-        ridge_depth_m: 2500.0                  # [DOCUMENTED: Parsons and Sclater 1977, abstract]
-        deepening_m_per_root_my: 350.0         # [DOCUMENTED: the same]
-        young_limit_my: 70.0                   # [DOCUMENTED: the same]
-        old_floor_depth_m: 6400.0              # [DOCUMENTED: the same]
-        levelling_time_my: 62.8                # [UNVERIFIED: recalled from the paper's body, which I did not open]
+        # [DOCUMENTED: Parsons and Sclater 1977, abstract: d = 2500 + 350 sqrt(t) m for floor of 0 to 70 My, and
+        #  d = 6400 - 3200 exp(-t / 62.8) m for floor older than 20 My]
+        ridge_depth_m: 2500.0
+        deepening_m_per_root_my: 350.0
+        young_rule_until_my: 70.0              # the first rule holds up to this age
+        old_floor_depth_m: 6400.0
+        old_floor_amplitude_m: 3200.0
+        levelling_time_my: 62.8
+        old_rule_from_my: 20.0                 # the second rule holds from this age; the process changes rule where the two cross in between
         reference_offset_m: 1100.0             # [PROVISIONAL: set so that the default world's sea comes to rest near the reference
                                                #  level. The design's tuning on Earth's crust thickness and floor ages (Layer 5) is
                                                #  not done yet: the Earth data could not be fetched where this was built]
@@ -109,8 +119,8 @@ slots:
   Albedo:
     implementation: worldengine.processes.albedo_surface_table:SurfaceTableAlbedo
     standing: Rule
-    model: "A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection at low sun angles."
-    ignores: "Where clouds actually form, plant cover, dust, and the depth of snow."
+    model: "A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection at low sun angles. Ice lies on the sea where the year's mean temperature is below -10 C, and snow on land in every month below freezing (North, Cahalan and Coakley 1981)."
+    ignores: "Where clouds actually form, plant cover, dust, the depth of snow, and sea ice that comes and goes with the seasons."
     wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics. Clouds are the largest known gap in the climate stage."
     writes: [albedo]
     constants:
@@ -120,7 +130,7 @@ slots:
         sea: 0.07                              # [UNVERIFIED: typical value]
         land: 0.20                             # [UNVERIFIED: typical value for ground with some plants]
         ice: 0.658                             # [INFERRED: gives ice-covered cells the 0.62 of North et al. 1981]
-      ice_ramp_k: 2.0                          # width of the change from bare to ice-covered around the freezing point, so that the rounds settle [INFERRED]
+      ice_ramp_k: 2.0                          # width of the change from bare to ice-covered around each limit, so that the rounds settle [INFERRED]
 
   EnergyBalance:
     implementation: worldengine.processes.energy_balance_spreading:SpreadingEnergyBalance
@@ -193,26 +203,36 @@ slots:
   Moisture:
     implementation: worldengine.processes.moisture_one_layer:OneLayerMoisture
     standing: Adapted
-    model: "A one-layer water budget, as in the UVic model: vapour leaves the sea and travels with the wind. Rain rises steeply with the humidity of the column (Bretherton, Peters and Back 2004). Air forced up a slope rains, and rain is suppressed under sinking air."
+    model: "A one-layer water budget, as in the UVic model: vapour leaves the sea, travels with the wind and mixes sideways, in both cases at its own height, so that high ground holds back the vapour below its level. Rain rises steeply with the humidity of the column (Bretherton, Peters and Back 2004). Air forced up a slope rains, and rain is suppressed under sinking air."
     ignores: "The layers of the air, how thunderstorms organise, air blocked and turned aside by ranges, evaporation from land, passing storms."
-    wrong_where: "Rain totals in the tropics, ranges narrower than a cell, and hot land near 30 degrees in summer, where one layer of air tends to rain where Earth has desert."
+    wrong_where: "Land everywhere is too dry, because nothing evaporates from land until Hydrology exists: land gets only what the sea supplies. Rain totals in the tropics, ranges narrower than a cell, and hot land near 30 degrees in summer, where one layer of air tends to rain where Earth has desert."
     writes: [ocean_evaporation, column_water, precipitation, snowfall]
     constants:
       rain_law:                                # rain in mm a day = exp(steepness * (humidity - humidity_at_one_mm_per_day))
-        steepness: 11.4                        # [DOCUMENTED for the form: Bretherton, Peters and Back 2004, monthly data over tropical seas.
-        humidity_at_one_mm_per_day: 0.522      #  UNVERIFIED for these two numbers: the paper's page did not return them; recalled.
-                                               #  To check: the fit to monthly data in section 5 and Fig. 6 of that paper]
+        steepness: 11.4                        # [DOCUMENTED: Bretherton, Peters and Back 2004, eq. 2, the fit to monthly data over
+        humidity_at_one_mm_per_day: 0.522      #  tropical seas: P = exp(11.4 (r - 0.522)) mm a day, r the humidity of the whole column]
         reference_column_kg_m2: 60.0           # outside the tropics the rate is scaled by saturation column / this [INFERRED: my extension]
-      sinking_shift: 0.10                      # sinking air at the reference speed raises the humidity needed for a given rain by this [PROVISIONAL]
+      # The six numbers from here to rising_ground_efficiency were set together by hand on the default planet
+      # [CALIBRATED], after the review of build step 1 corrected the mixing and the evaporation wind. The aims, from
+      # Earth's yearly water budget as I recall it [UNVERIFIED: no Earth data could be fetched where this was built]:
+      # evaporation from the sea near 1,200 mm a year; the rain belt at the equator near 2,000 mm; the dry belts near
+      # 25 degrees and the storm belts near 50 degrees as close to 700 and 900 mm as one layer of air allows.
+      # They are due again when Earth data is at hand.
+      sinking_shift: 0.06                      # sinking air at the reference speed raises the humidity needed for a given rain by this
+      exchange_coefficient: 0.95e-3            # bulk coefficient of evaporation from the sea. Measured values are 1.1 to 1.5 thousandths
+                                               # [UNVERIFIED: typical values]; lower here because the humidity of the whole column stands
+                                               # in for that of the air at the surface, which is moister
+      gust_m_s: 4.0                            # wind that always stirs the sea surface, added to the surface wind [INFERRED]
+      mixing_m2_s: 4.0e+6                      # spreading of vapour by all stirring the model does not resolve, storms included
+      carrying_wind:                           # the wind that carries the column's vapour, made from the surface wind
+        share_of_turning_wind: 1.0             # of the part that circles without gathering (the trades and westerlies along their
+                                               # belts): that flow is deep, and carries the whole column
+        share_of_converging_wind: 0.25         # of the part that flows toward where the air rises: that flow is about a kilometre
+                                               # deep while vapour reaches higher, and the model's is about twice as fast as Earth's
+      rising_ground_efficiency: 0.3            # share of the vapour lifted over a slope that falls as rain
       newton_steps: 6
-      exchange_coefficient: 1.3e-3             # bulk coefficient of evaporation from the sea [UNVERIFIED: typical value]
-      gust_m_s: 4.0                            # wind that always stirs the sea surface [INFERRED]
-      vapour_scale_height_m: 2500.0            # depth of the layer that holds the vapour [UNVERIFIED: typical value]
-      mixing_m2_s: 3.0e+6                      # spreading of vapour by all stirring the model does not resolve, storms included
-                                               # [PROVISIONAL: such models use 1 to 3 million as I recall; the upper value is used until storms are added]
-      transport_wind_factor: 0.5               # wind that carries the vapour, as a multiple of the surface wind [PROVISIONAL: only
-                                               # the lowest air flows into the rain belt, so the whole column converges more slowly]
-      rising_ground_efficiency: 0.3            # share of the vapour lifted over a slope that falls as rain [PROVISIONAL: must be calibrated]
+      vapour_scale_height_m: 2500.0            # depth of the layer that holds the vapour [UNVERIFIED: typical value]; also the height
+                                               # over which vapour thins, for mixing between columns over ground of different height
       sinking_reference_mm_s: 3.0              # the sinking speed at which the shift above is reached in full [PROVISIONAL]
       coarser_meshes: 4                        # the budget is solved on a ladder of this many coarser meshes below the world's own
       maximum_trips: 30                        # cap on the trips down the ladder and back, on each mesh

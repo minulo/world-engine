@@ -1,5 +1,11 @@
 # Profiles (design, Layer 1 and Layer 3). Mesh level, the cap on climate rounds, blending and stopping tolerances.
 # The tolerances below are first values, set before any Earth test; from the first measured run on they are only tightened.
+#
+# run_time_limit_s: a build that takes longer still finishes, and the world carries a notice saying so.
+# snapshot_every_rounds, snapshot_fields: copies of chosen fields kept during the geological history. They are built
+#   in step 3, with the plate history; until then the engine refuses a profile that asks for them. The designed
+#   values are every 5 rounds, for elevation, ocean_mask, plate_id and crust_type.
+# climate_rerun_every_rounds: the rerun of the climate inside the history, built in step 9; refused until then.
 profiles:
   preview:
     mesh_level: 5                  # 10,242 cells, about 240 km apart
@@ -12,21 +18,18 @@ profiles:
       class_change_share: 0.002    # share of the area allowed to change class between rounds
       default_tolerance: {mean: 0.01, cell: 0.2}
     climate_rerun_every_rounds: null
-    snapshot_every_rounds: 5
-    snapshot_fields: [elevation, ocean_mask, plate_id, crust_type]
+    snapshot_every_rounds: null
   standard:
     mesh_level: 7                  # 163,842 cells, about 60 km apart
     math_threads: 1
     run_time_limit_s: 1800
     climate: *climate
     climate_rerun_every_rounds: null
-    snapshot_every_rounds: 5
-    snapshot_fields: [elevation, ocean_mask, plate_id, crust_type]
+    snapshot_every_rounds: null
   high_fidelity:
     mesh_level: 8                  # 655,362 cells, about 30 km apart, if build step 9 shows it fits
     math_threads: 1
     run_time_limit_s: 28800
     climate: *climate
-    climate_rerun_every_rounds: null   # the rerun of the climate inside the history is built in step 9
-    snapshot_every_rounds: 5
-    snapshot_fields: [elevation, ocean_mask, plate_id, crust_type]
+    climate_rerun_every_rounds: null
+    snapshot_every_rounds: null

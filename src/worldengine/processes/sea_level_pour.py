@@ -10,7 +10,8 @@ Ignores: tides, the sinking of the sea floor under the weight of water, and wate
 in lakes, in the ground and in the air.
 Wrong where: straits narrower than a cell open or close by accident. With little water all of
 it collects in the deepest hollows in a chain that starts at the lowest point, and the climate
-is not consulted.
+is not consulted. In such a chain the last hollow is only part filled: its dry ground lies
+below sea level with no barrier in the way, and the cause record says that the water ran out.
 """
 import numpy as np
 
@@ -18,7 +19,7 @@ from ..library import flood
 from ..library import operators as op
 from ..process import Process
 
-ABOVE_SEA_LEVEL, MAIN_SEA, SEPARATE_WATER, KEPT_DRY_BY_BARRIER = 0, 1, 2, 3
+ABOVE_SEA_LEVEL, MAIN_SEA, SEPARATE_WATER, KEPT_DRY_BY_BARRIER, WATER_RAN_OUT = range(5)
 
 
 class PouredSea(Process):
@@ -67,9 +68,14 @@ class PouredSea(Process):
             barrier = np.full(n, -1, dtype=np.int32)
             low = ~wet & (height < sea_level)
             if low.any() and in_main.any():
-                _, at = flood.barriers(height, mesh.nbr, mesh.nbr_count, in_main, sea_level)
-                reason[low] = KEPT_DRY_BY_BARRIER
-                barrier[low] = at[low]
+                # Dry ground below sea level has one of two causes. Either the sea would have to rise over higher
+                # ground to reach it, and that ground is the barrier. Or the way is open: the sea stands at its rim
+                # and spilled into this hollow, and the water ran out before the hollow filled.
+                reach, at = flood.barriers(height, mesh.nbr, mesh.nbr_count, in_main, sea_level)
+                behind = low & (reach > sea_level)
+                reason[behind] = KEPT_DRY_BY_BARRIER
+                barrier[behind] = at[behind]
+                reason[low & ~behind] = WATER_RAN_OUT
             ctx.driver("ocean_mask", "reason", reason)
             ctx.driver("ocean_mask", "barrier_cell", barrier)
             ctx.driver("height_above_sea", "ground_height", np.where(wet, surface, height))

@@ -17,7 +17,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from . import __version__
-from .causes import explain
+from .causes import class_name, explain
 from .store import StoreView, code_fingerprint, lock_fingerprint
 
 VIEWER_DIR = Path(__file__).resolve().parents[2] / "viewer"
@@ -147,7 +147,7 @@ class WorldService:
             if spec["kind"] == "direction":
                 v = np.stack([v @ east, v @ north], axis=-1)
             if spec["kind"] == "category":
-                v = [spec["categories"][int(x)] for x in np.atleast_1d(v)]
+                v = [class_name(spec["categories"], x) for x in np.atleast_1d(v)]
                 v = v[0] if spec["shape"] != "month_cell" else v
             else:
                 v = np.asarray(v, dtype=np.float64)

@@ -19,7 +19,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from ..library import operators as op
-from ..library.noise import wave_field
+from ..library.noise import WAVE_NUMBERS, wave_field
 from ..library.units import CM_PER_M, M_PER_KM, YEARS_PER_MY
 from ..process import Process
 
@@ -59,8 +59,9 @@ class SnapshotPlates(Process):
         angular = speed / ctx.planet["radius_m"] * YEARS_PER_MY                           # radians per My
         # outlines: each cell joins the nearest plate centre, seen from a position shifted by a smooth random field
         o = c["outline"]
-        u = ctx.draw.uniform("outline_waves", 3 * 4 * int(o["waves"])).reshape(3, -1)
-        shift = np.stack([wave_field(mesh.xyz, u[i], o["wave_number"]) for i in range(3)], axis=1)
+        dims = mesh.xyz.shape[1]                                 # one field of waves for each direction of the shift
+        u = ctx.draw.uniform("outline_waves", int(o["waves"]) * dims * WAVE_NUMBERS).reshape(int(o["waves"]), dims, WAVE_NUMBERS)
+        shift = np.stack([wave_field(mesh.xyz, u[:, i], o["wave_number"]) for i in range(dims)], axis=1)
         moved = mesh.xyz + o["amplitude_rad"] * shift
         moved /= np.linalg.norm(moved, axis=1, keepdims=True)
         plate = cKDTree(centres).query(moved)[1].astype(np.int32)
@@ -75,7 +76,7 @@ class SnapshotPlates(Process):
             if b.size:
                 depth[mine] = _arc(cKDTree(mesh.xyz[b]).query(mesh.xyz[mine])[0])
         bias = np.where(ctx.draw.uniform("continent_plates", k) < q["plate_share"], 1.0, -1.0)
-        field = wave_field(mesh.xyz, ctx.draw.uniform("continent_waves", 4 * int(q["waves"])), q["wave_number"])
+        field = wave_field(mesh.xyz, ctx.draw.uniform("continent_waves", WAVE_NUMBERS * int(q["waves"])), q["wave_number"])
         score = field + q["plate_bias"] * bias[plate] + q["interior_weight"] * depth / max(depth.max(), np.finfo(float).tiny)
         order = np.lexsort((np.arange(n), -score))                                     # ties broken by cell number
         share = np.cumsum(mesh.area[order]) / mesh.area.sum()
@@ -83,7 +84,8 @@ class SnapshotPlates(Process):
         ctype[order[share <= q["fraction"]]] = CONTINENTAL
         # thickness before any plate acts on it
         t = c["thickness"]
-        vary = wave_field(mesh.xyz, ctx.draw.uniform("thickness_waves", 4 * int(t["variation_waves"])), t["variation_wave_number"])
+        vary = wave_field(mesh.xyz, ctx.draw.uniform("thickness_waves", WAVE_NUMBERS * int(t["variation_waves"])),
+                          t["variation_wave_number"])
         thick = np.where(ctype == CONTINENTAL, t["continental_normal_m"] + t["continental_excess_m"] + t["variation_m"] * vary,
                          t["oceanic_m"])
         none = np.full(n, -1, dtype=np.int32)
@@ -108,6 +110,100 @@ class SnapshotPlates(Process):
         edge[j[cross]] = True
         return edge
 
+    @staticmethod
+    def _boundaries(mesh, plate, ctype, rotation, radius, k, b):
+        """Every cell that touches another plate: the plate it faces, whether the crust it faces is continental, the
+        kind of boundary, and the speed at which the two plates close there (negative where they part).
+
+        The direction of a boundary is not the direction of one side of one cell. On a mesh of six-sided cells a
+        straight boundary is a zigzag whose sides stand 30 to 60 degrees off it, and judging by single sides turns
+        plates that slide past each other into a row of false ridges and trenches. So the sides are added up, each
+        as its length times its outward direction, over the stretch of boundary within reach of the cell: the sum
+        over a run of sides points squarely across the straight line that joins the two ends of the run.
+        """
+        n = mesh.n
+        i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
+        cross = np.flatnonzero(plate[i] != plate[j])
+        cell = np.concatenate([i[cross], j[cross]]).astype(np.int64)             # each such side, seen from both of its cells
+        other = np.concatenate([j[cross], i[cross]]).astype(np.int64)
+        length = np.concatenate([mesh.edge_dual[cross], mesh.edge_dual[cross]])
+        outward = np.concatenate([mesh.edge_normal[cross], -mesh.edge_normal[cross]]) * length[:, None]
+        # the plate a cell faces: the one it shares the greatest length of side with (the lower number if equal)
+        uniq, inverse = np.unique(cell * k + plate[other], return_inverse=True)
+        shared = np.bincount(inverse, weights=length)
+        u_cell, u_plate = uniq // k, uniq % k
+        order = np.lexsort((u_plate, -shared, u_cell))
+        first = np.ones(order.size, dtype=bool)
+        first[1:] = u_cell[order][1:] != u_cell[order][:-1]
+        bcell = u_cell[order][first]
+        facing = np.full(n, -1, dtype=np.int64)
+        facing[bcell] = u_plate[order][first]
+        is_boundary = facing >= 0
+        toward = plate[other] == facing[cell]                                    # the sides a cell shares with the plate it faces
+        cell, other, length, outward = cell[toward], other[toward], length[toward], outward[toward]
+        # add up the sides of this plate against the faced one that lie within reach of the cell
+        middle = mesh.xyz[cell] + mesh.xyz[other]
+        middle /= np.linalg.norm(middle, axis=1, keepdims=True)
+        reach = 2 * np.sin(b["direction_reach_cells"] * mesh.spacing() / 2)       # as a straight-line distance on the unit sphere
+        found = cKDTree(mesh.xyz[bcell]).sparse_distance_matrix(cKDTree(middle), reach, output_type="coo_matrix")
+        at, side = bcell[found.row], found.col
+        same = (plate[cell[side]] == plate[at]) & (facing[cell[side]] == facing[at])
+        at, side = at[same], side[same]
+        order = np.lexsort((side, at))                                           # a fixed order, so the sums never vary
+        at, side = at[order], side[order]
+        x = mesh.xyz[bcell]
+        across = np.stack([np.bincount(at, weights=outward[side, axis], minlength=n)[bcell]
+                           for axis in range(outward.shape[1])], axis=1)
+        across -= np.einsum("ij,ij->i", across, x)[:, None] * x                 # lying in the surface at the cell
+        size = np.linalg.norm(across, axis=1)
+        known = size > np.sqrt(np.finfo(float).eps) * length.max()               # a sliver ringed by one plate has no direction
+        normal = np.where(known[:, None], across / np.maximum(size, np.finfo(float).tiny)[:, None], 0.0)
+        relative = np.cross(rotation[plate[bcell]] - rotation[facing[bcell]], x) * radius   # m per year, own plate against the faced one
+        closing = np.einsum("ij,ij->i", relative, normal)                        # positive where the plates close
+        sliding = np.linalg.norm(relative - closing[:, None] * normal, axis=1)
+        continental_side = np.bincount(cell, weights=length * (ctype[other] == CONTINENTAL), minlength=n)
+        faces_continent = np.zeros(n, dtype=bool)
+        faces_continent[bcell] = (continental_side + continental_side >= np.bincount(cell, weights=length, minlength=n))[bcell]
+        meeting = np.where((ctype[bcell] == CONTINENTAL) & faces_continent[bcell], COLLISION, TRENCH)
+        kinds = np.where(np.abs(closing) < b["transform_ratio"] * sliding, TRANSFORM, np.where(closing < 0, RIDGE, meeting))
+        kinds = np.where(np.abs(closing) + sliding < b["minimum_speed_m_per_year"], TRANSFORM, kinds)
+        b_kind = np.zeros(n, dtype=np.int16)
+        b_kind[bcell] = kinds
+        b_close = np.zeros(n)
+        b_close[bcell] = closing
+        return is_boundary, facing, faces_continent, b_kind, b_close
+
+    @staticmethod
+    def _diving(plate, facing, faces_continent, b_kind, ocean, age, k, equal_within_my):
+        """Which boundary cells lie on the side of a trench that dives.
+
+        The ocean floor dives under a continent. Between two ocean floors one plate dives along the whole of the
+        trench that the two plates share, so that a trench keeps its direction along its length:
+          * the plate whose floor already dives under the other plate's continent somewhere along that trench
+            (if both do, the one that does so along more of it);
+          * otherwise the plate whose floor at the trench is older (the higher plate number if the ages are equal).
+        The two sides of a trench can then disagree only at a place where the crust beside the trench changes from
+        continent to ocean and the direction of the trench truly turns over."""
+        is_boundary = facing >= 0
+        faced = np.maximum(facing, 0)
+        pair = plate.astype(np.int64) * k + faced            # [own plate, plate it faces]
+        at_trench = is_boundary & ocean & (b_kind == TRENCH)
+
+        def count(cells):
+            return np.bincount(pair[cells], minlength=k * k).reshape(k, k)
+
+        def mean_age(cells):
+            total = np.bincount(pair[cells], weights=age[cells], minlength=k * k).reshape(k, k)
+            return total / np.maximum(count(cells), 1)
+        under_continent = count(at_trench & faces_continent)
+        lead = under_continent - under_continent.T           # above zero: this plate's floor dives under the other's continent
+        floor_age = np.where(count(at_trench) > 0, mean_age(at_trench), mean_age(is_boundary & ocean))
+        gap = floor_age - floor_age.T
+        number = np.arange(k)
+        older = (gap > equal_within_my) | ((np.abs(gap) <= equal_within_my) & (number[:, None] > number[None, :]))
+        plate_dives = (lead > 0) | ((lead == 0) & older)
+        return at_trench & (faces_continent | plate_dives[plate, faced])
+
     # ------------------------------------------------------------------ the snapshot
     def run(self, ctx):
         c, mesh, n = ctx.const, ctx.mesh, ctx.mesh.n
@@ -122,32 +218,10 @@ class SnapshotPlates(Process):
         omega = plates["angular_speed_rad_per_my"] / YEARS_PER_MY                       # radians per year
         velocity = np.cross(axis[plate], mesh.xyz) * (omega[plate] * radius)[:, None]   # m per year
 
-        # every edge between two plates: closing speed and sliding speed
-        i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
-        cross = np.flatnonzero(plate[i] != plate[j])
-        ci, cj, normal = i[cross], j[cross], mesh.edge_normal[cross]
-        rel = velocity[ci] - velocity[cj]
-        closing = np.einsum("ij,ij->i", rel, normal)                                    # positive where the plates close
-        sliding = np.linalg.norm(rel - closing[:, None] * normal, axis=1)
-        b = c["boundaries"]
-        e_kind = np.where(np.abs(closing) < b["transform_ratio"] * sliding, TRANSFORM,
-                          np.where(closing < 0, RIDGE,
-                                   np.where((ctype[ci] == CONTINENTAL) & (ctype[cj] == CONTINENTAL), COLLISION, TRENCH)))
-        e_kind = np.where(np.abs(closing) + sliding < b["minimum_speed_m_per_year"], TRANSFORM, e_kind)
-
-        # boundary cells: each takes the kind and closing speed of its fastest cross-plate edge
-        speed = np.abs(closing) + sliding
-        cells = np.concatenate([ci, cj]); other = np.concatenate([cj, ci])
-        e_all = np.concatenate([np.arange(cross.size)] * 2)
-        order = np.lexsort((e_all, -speed[e_all], cells))
-        first = np.ones(order.size, dtype=bool)
-        first[1:] = cells[order][1:] != cells[order][:-1]
-        pick = order[first]
-        bcell, bedge, bother = cells[pick], e_all[pick], other[pick]
-        is_boundary = np.zeros(n, dtype=bool); is_boundary[bcell] = True
-        b_kind = np.zeros(n, dtype=np.int16); b_kind[bcell] = e_kind[bedge]
-        b_close = np.zeros(n); b_close[bcell] = closing[bedge]
-        b_other = np.full(n, -1, dtype=np.int64); b_other[bcell] = bother
+        # every cell that touches another plate: the plate it faces, and how the two plates meet there
+        rotation = axis * omega[:, None]                                                # radians per year, as a vector
+        is_boundary, facing, faces_continent, b_kind, b_close = self._boundaries(mesh, plate, ctype, rotation, radius, k,
+                                                                                 c["boundaries"])
 
         # every cell: its nearest boundary cell on its own plate
         near = np.full(n, -1, dtype=np.int64)
@@ -176,13 +250,8 @@ class SnapshotPlates(Process):
                 half = np.maximum(-b_close[rp[idx]] / 2, a["minimum_half_rate_m_per_year"])
                 age[mine] = np.minimum(_arc(d) * radius / half / YEARS_PER_MY, a["maximum_my"])
 
-        # at a trench the oceanic side dives; between two ocean floors the older one dives
-        partner = np.where(has, b_other[safe], 0)
-        own_c, other_c = ctype[safe] == CONTINENTAL, ctype[partner] == CONTINENTAL
-        own_age = np.where(np.isnan(age[safe]), 0.0, age[safe])
-        other_age = np.where(np.isnan(age[partner]), 0.0, age[partner])
-        older = (own_age > other_age) | ((own_age == other_age) & (plate[safe] > plate[partner]))
-        diving = (kind_near == TRENCH) & (~own_c) & (other_c | older)
+        b_diving = self._diving(plate, facing, faces_continent, b_kind, ocean, age, k, a["equal_within_my"])
+        diving = np.where(has, b_diving[safe], False)
         overriding = (kind_near == TRENCH) & ~diving
 
         # thicker crust where plates close: continents on the overriding side of a trench, and both sides of a collision
@@ -199,6 +268,7 @@ class SnapshotPlates(Process):
         x = np.clip(dist / (g["collision_width_km"] * M_PER_KM), 0.0, 1.0)
         col = (kind_near == COLLISION) & land
         thickening[col] = (g["collision_thickening_m"] * factor * (1 - x * x) ** 2)[col]
+        made = thickening > 0                                    # where a boundary thickens the crust directly
         # a mountain belt has no sharp ends: spread the thickening over a set length, inside continental crust
         if land.any():
             length = g["smoothing_km"] * M_PER_KM / radius
@@ -207,7 +277,8 @@ class SnapshotPlates(Process):
             thickening = np.where(land, op.smooth(mesh, thickening, length, ctx.memo) / np.maximum(weight, np.finfo(float).tiny), 0.0)
             thickening = np.maximum(thickening, 0.0)
         thickness = base + thickening
-        orogeny = np.where(thickening > g["active_above_m"], 0.0, np.nan)
+        active = thickening > g["active_above_m"]                # mountain building counts as acting now
+        orogeny = np.where(active, 0.0, np.nan)
 
         # zone of influence of each kind of boundary
         z = c["zones"]
@@ -221,19 +292,27 @@ class SnapshotPlates(Process):
         crest = np.exp(-(dist / (v["ridge_width_km"] * M_PER_KM)) ** 2)
         volcanism = np.where(overriding, arc, np.where(kind_near == RIDGE, crest, 0.0))
 
-        # events: one row for each pair of plates and kind of meeting
-        pa, pb = np.minimum(plate[ci], plate[cj]), np.maximum(plate[ci], plate[cj])
-        code = np.select([e_kind == TRENCH, e_kind == COLLISION, e_kind == RIDGE], [EVENT_SUBDUCTION, EVENT_COLLISION, EVENT_SPREADING], 0)
+        # events: one row for each pair of plates and kind of meeting, counting the cells along that boundary
+        bcell = np.flatnonzero(is_boundary)
+        code = np.select([b_kind[bcell] == TRENCH, b_kind[bcell] == COLLISION, b_kind[bcell] == RIDGE],
+                         [EVENT_SUBDUCTION, EVENT_COLLISION, EVENT_SPREADING], 0)
+        lower, higher = np.minimum(plate[bcell], facing[bcell]), np.maximum(plate[bcell], facing[bcell])
         keep = code > 0
-        key = (pa[keep] * k + pb[keep]) * EVENT_CODES + code[keep]
-        uniq, counts = np.unique(key, return_counts=True)
+        key = (lower[keep].astype(np.int64) * k + higher[keep]) * EVENT_CODES + code[keep]
+        uniq, row, counts = np.unique(key, return_inverse=True, return_counts=True)
         ev_kind, ev_pair = uniq % EVENT_CODES, uniq // EVENT_CODES
         ev_a, ev_b = ev_pair // k, ev_pair % k
-        event_of_pair = {(int(x), int(y), int(q)): r for r, (x, y, q) in enumerate(zip(ev_a, ev_b, ev_kind))}
-        event = np.full(n, -1, dtype=np.int32)
-        for cell in np.flatnonzero(thickening > 0):
-            p1, p2 = sorted((int(plate[safe[cell]]), int(plate[partner[cell]])))
-            event[cell] = event_of_pair.get((p1, p2, EVENT_COLLISION if kind_near[cell] == COLLISION else EVENT_SUBDUCTION), -1)
+        b_event = np.full(n, -1, dtype=np.int64)                 # the event that each boundary cell belongs to
+        b_event[bcell[keep]] = row
+        # The event behind a cell's thickening: that of the boundary cell that made it. Where the thickening was spread
+        # in from next door, it is the event of the nearest cell that a boundary thickened directly.
+        event = np.full(n, -1, dtype=np.int64)
+        event[made] = b_event[safe[made]]
+        spread = np.flatnonzero(active & ~made)
+        if spread.size and made.any():
+            source = np.flatnonzero(made)
+            event[spread] = event[source[cKDTree(mesh.xyz[source]).query(mesh.xyz[spread])[1]]]
+        event[~active] = -1
 
         normal_thickness = np.where(land, c["thickness"]["continental_normal_m"], c["thickness"]["oceanic_m"])
         ctx.write("plate_id", plate)

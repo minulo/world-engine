@@ -104,13 +104,33 @@ def validate(value, schema, name: str):
         raise ParameterError("; ".join(problems))
 
 
+class _OneKeyOnce(yaml.SafeLoader):
+    """The safe YAML loader, except that a key written twice in one map is an error. Plain YAML keeps the last
+    one and says nothing, so that a constant set twice in a long file would silently take its second value."""
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":   # the "<<" of an anchor: not a key of its own
+                continue
+            key = self.construct_object(key_node, deep=True)
+            try:
+                twice = key in seen
+            except TypeError:
+                continue
+            if twice:
+                raise yaml.constructor.ConstructorError(None, None, f"the key {key!r} is written twice in one map", key_node.start_mark)
+            seen.add(key)
+        return super().construct_mapping(node, deep)
+
+
 def _load_yaml(path: Path):
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ParameterError(f"{path.name}: the file is missing from {path.parent}") from None
     try:
-        return text, yaml.safe_load(text)
+        return text, yaml.load(text, Loader=_OneKeyOnce)
     except yaml.YAMLError as e:
         raise ParameterError(f"{path.name}: not valid YAML: {e}") from None
 

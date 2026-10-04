@@ -88,6 +88,163 @@ def test_continents_closing_thicken_the_crust_on_both_sides(h):
     assert np.allclose(total, f["crust_thickness"], atol=0.01)
 
 
+def split_planet(h, pole, axis_a, axis_b, speed_a, speed_b, continental=None):
+    """Two plates divided by the great circle whose pole is `pole`; plate 0 is the side the pole is on.
+    Each plate turns about its own axis at its own speed (radians per million years)."""
+    m = h.mesh
+    n = m.n
+    pole, axis_a, axis_b = (np.asarray(v, dtype=float) / np.linalg.norm(v) for v in (pole, axis_a, axis_b))
+    plate = np.where(m.xyz @ pole > 0, 0, 1).astype(np.int32)
+    ctype = np.zeros(n, dtype=np.int16) if continental is None else continental.astype(np.int16)
+    zero = np.zeros(n, dtype=np.float32)
+    none = np.full(n, -1, dtype=np.int32)
+    points = {"plate": plate, "x": m.xyz[:, 0], "y": m.xyz[:, 1], "z": m.xyz[:, 2], "crust_type": ctype,
+              "thickness_m": np.where(ctype == 1, 35000.0, 7000.0), "ocean_age_my": np.full(n, np.nan),
+              "orogeny_age_my": np.full(n, np.nan), "thickened_by_plates_m": zero, "removed_by_erosion_m": zero,
+              "source_a": none, "source_b": none, "source_c": none, "weight_a": zero, "weight_b": zero, "weight_c": zero}
+    plates = {"plate": [0, 1], "axis_x": [axis_a[0], axis_b[0]], "axis_y": [axis_a[1], axis_b[1]], "axis_z": [axis_a[2], axis_b[2]],
+              "angular_speed_rad_per_my": [speed_a, speed_b], "area_m2": [0.0, 0.0], "continental_share": [0.0, 0.0],
+              "carries_continent": [False, False], "centre_x": [0.0, 0.0], "centre_y": [0.0, 0.0], "centre_z": [1.0, -1.0]}
+    events = {"time_my": [], "kind": [], "plate_a": [], "plate_b": [], "cells": []}
+    return plate, {"crust_points": points, "plates": plates, "tectonic_events": events}
+
+
+def touching_another_plate(mesh, plate):
+    i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
+    cross = plate[i] != plate[j]
+    out = np.zeros(mesh.n, dtype=bool)
+    out[i[cross]] = True
+    out[j[cross]] = True
+    return out
+
+
+BOUNDARY_POLES = [(0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (1.0, 1.0, 1.0), (0.3, -0.8, 0.52), (-0.61, 0.2, 0.77)]
+
+
+@pytest.mark.parametrize("pole", BOUNDARY_POLES)
+def test_plates_sliding_past_each_other_make_a_transform_boundary_whichever_way_it_runs(h, pole):
+    """Both plates turn about the pole of the circle that divides them, in opposite senses: everywhere along the
+    boundary they slide past each other at 6.4 cm a year and neither close nor part. On a mesh of six-sided cells
+    the sides of the boundary cells stand 30 to 60 degrees off the boundary, so a rule that judges by single sides
+    reports false ridges and trenches here."""
+    g = geometry(h)
+    plate, tables = split_planet(h, pole, pole, pole, 0.005, -0.005)
+    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
+    f = out.fields
+    kinds = h.registry.fields["boundary_kind"].categories
+    edge = touching_another_plate(h.mesh, plate)
+    assert set(f["boundary_kind"][edge]) == {kinds.index("transform")}
+    assert np.abs(f["convergence_rate"][edge]).max() < 0.25 * 0.0637            # the closing reported is a small share of the sliding
+    assert f["volcanism"].max() == 0.0
+    assert np.allclose(f["crust_thickness"], 7000.0)
+    assert len(out.tables["tectonic_events"]["kind"]) == 0                        # sliding past makes no ridge, trench or collision
+
+
+@pytest.mark.parametrize("pole", BOUNDARY_POLES)
+def test_the_closing_speed_of_a_head_on_boundary_is_reported_to_within_three_percent(h, pole):
+    """Both plates turn about one axis lying in the plane of their boundary, in opposite senses: a quarter turn from
+    that axis they meet head on."""
+    g = geometry(h)
+    m = h.mesh
+    pole = np.asarray(pole) / np.linalg.norm(pole)
+    axis = np.cross(pole, [0.0, 1.0, 0.0] if abs(pole[1]) < 0.9 else [1.0, 0.0, 0.0])
+    axis /= np.linalg.norm(axis)
+    speed = 0.005
+    plate, tables = split_planet(h, pole, axis, axis, speed, -speed)
+    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
+    # the true closing speed at each cell: its own plate's velocity relative to the other, along the line to the other plate
+    own = np.where((plate == 0)[:, None], axis, -axis) * (2 * speed / 1e6)
+    relative = np.cross(own, m.xyz) * R
+    toward = np.where((plate == 0)[:, None], -pole, pole)
+    toward = toward - (toward * m.xyz).sum(axis=1)[:, None] * m.xyz
+    true = (relative * toward).sum(axis=1) / np.maximum(np.linalg.norm(toward, axis=1), 1e-12)
+    strong = touching_another_plate(m, plate) & (np.abs(true) > 0.03)
+    assert strong.sum() > 20
+    ratio = out.fields["convergence_rate"][strong] / true[strong]
+    assert ratio.min() > 0.97 and ratio.max() < 1.01
+
+
+def test_ocean_floor_dives_under_a_continent_and_the_belt_rises_on_the_continent_only():
+    h = Harness(level=5)                                                     # the belt is 600 km wide: it needs cells smaller than that
+    g = geometry(h)
+    m = h.mesh
+    for continent_plate in (0, 1):                                           # either plate may carry the continent
+        plate0 = m.xyz[:, 2] > 0
+        continental = plate0 if continent_plate == 0 else ~plate0
+        plate, tables = split_planet(h, (0, 0, 1), (1, 0, 0), (1, 0, 0), -0.005, 0.005, continental=continental)
+        out = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
+        f = out.fields
+        near = (np.abs(m.lat) < 6) & (np.abs(m.lon - 90) < 25)                # here the plates close head on
+        thickened = out.drivers["crust_thickness"]["thickened_by_plates"]
+        assert thickened[near & continental].max() > 5000.0
+        assert thickened[~continental].max() == 0.0
+        arc = (f["volcanism"] > 0.1) & (np.abs(m.lon - 90) < 25)              # (on the far side of the planet the plates part)
+        assert arc[near & continental].any() and not arc[~continental].any()  # the volcanic arc stands on the overriding plate
+
+
+def test_between_two_ocean_floors_one_plate_dives_along_the_whole_trench(h):
+    """Equal ages: the plate with the higher number dives, so the volcanic arc stands on plate 0 only."""
+    g = geometry(h)
+    m = h.mesh
+    plate, tables = split_planet(h, (0, 0, 1), (1, 0, 0), (1, 0, 0), -0.005, 0.005)
+    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
+    f = out.fields
+    kinds = h.registry.fields["boundary_kind"].categories
+    here = np.abs(m.lon - 90) < 25                                             # where the plates close head on
+    closing = here & touching_another_plate(m, plate) & (f["boundary_kind"] == kinds.index("trench"))
+    assert closing[plate == 0].any() and closing[plate == 1].any()
+    arc = here & (f["volcanism"] > 0.1)
+    assert arc[plate == 0].any() and not arc[plate == 1].any()
+
+
+def test_events_count_boundary_cells_and_a_cell_names_its_event_only_where_mountains_are_building(h):
+    g = geometry(h)
+    points, plates, events = two_plates(h, -0.005, 0.005)
+    points["crust_type"] = np.ones(h.mesh.n, dtype=np.int16)
+    points["thickness_m"] = np.full(h.mesh.n, 35000.0)
+    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]},
+                lagged_tables={"crust_points": points, "plates": plates, "tectonic_events": events})
+    ev = out.tables["tectonic_events"]
+    collision, spreading = 2, 4                                                # the plates close on one side of the planet and part on the other
+    assert list(ev["kind"]) == [collision, spreading] and list(ev["plate_a"]) == [0, 0] and list(ev["plate_b"]) == [1, 1]
+    # the count is of the cells along the boundary, not of the sides between them
+    edge = touching_another_plate(h.mesh, points["plate"])
+    kinds = h.registry.fields["boundary_kind"].categories
+    for row, name in enumerate(("collision", "ridge")):
+        assert int(ev["cells"][row]) == int((edge & (out.fields["boundary_kind"] == kinds.index(name))).sum())
+    assert int(ev["cells"].sum()) < int(edge.sum())                            # near the turning axis the plates slide past
+    d = out.drivers["crust_thickness"]
+    active = d["thickened_by_plates"] > 500.0
+    assert active.any() and np.array_equal(d["event"] >= 0, active)
+    assert set(d["event"][active]) == {0}                                      # row 0 of the table: the collision
+    assert np.all(np.isnan(out.fields["orogeny_age"][~active])) and np.all(out.fields["orogeny_age"][active] == 0.0)
+
+
+@pytest.mark.parametrize("seed", [20261004, 7, 11])
+def test_in_a_seeded_world_the_two_sides_of_a_trench_do_not_both_dive_or_both_override(seed):
+    """One side of a trench dives and the other overrides. The two sides may disagree only where the crust beside the
+    trench changes from continent to ocean and the trench truly turns over; that must stay rare."""
+    from worldengine.processes.tectonics_snapshot import TRENCH, SnapshotPlates
+    hh = Harness(level=5, seed=seed)
+    g = geometry(hh)
+    out = hh.run("Tectonics", reads={"cell_area": g["cell_area"]}, start=True)
+    m, f, pl = hh.mesh, out.fields, out.tables["plates"]
+    plate, ctype = f["plate_id"], f["crust_type"]
+    k = len(pl["plate"])
+    rotation = np.stack([pl["axis_x"], pl["axis_y"], pl["axis_z"]], axis=1) * (pl["angular_speed_rad_per_my"] / 1e6)[:, None]
+    c = hh.constants["Tectonics"]
+    _, facing, faces_continent, kind, _ = SnapshotPlates._boundaries(m, plate, ctype, rotation, R, k, c["boundaries"])
+    diving = SnapshotPlates._diving(plate, facing, faces_continent, kind, ctype == 0, f["ocean_crust_age"].astype(float), k,
+                                    c["ocean_age"]["equal_within_my"])
+    i, j = m.edge_cells[:, 0], m.edge_cells[:, 1]
+    trench = (plate[i] != plate[j]) & (kind[i] == TRENCH) & (kind[j] == TRENCH) & (facing[i] == plate[j]) & (facing[j] == plate[i])
+    assert trench.sum() > 100
+    alike = trench & (diving[i] == diving[j])
+    assert alike.sum() <= 0.01 * trench.sum()
+    turn_over = (faces_continent[i] != (ctype[j] == 1)) | (faces_continent[j] != (ctype[i] == 1))
+    assert not (alike & ~turn_over).any()
+
+
 def test_seeded_plates_are_the_same_at_every_mesh_level_and_differ_with_the_seed():
     def seeded(level, seed):
         hh = Harness(level=level, seed=seed)
@@ -113,9 +270,17 @@ def test_ocean_depth_follows_the_age_of_the_floor(h):
                                    "ocean_crust_age": age}, constants={"ocean_floor": {"reference_offset_m": 0.0}})
     depth = -out.fields["elevation"].astype(np.float64)
     assert abs(depth[0] - 2500.0) < 0.01
-    young = age <= 70.0
-    assert np.allclose(depth[young], 2500.0 + 350.0 * np.sqrt(age[young]), atol=0.5)
-    assert np.all(np.diff(depth) >= -1e-3) and depth[-1] < 6400.0 and depth[-1] > 5400.0
+    first = 2500.0 + 350.0 * np.sqrt(age)                              # Parsons and Sclater 1977: floor of 0 to 70 My
+    second = 6400.0 - 3200.0 * np.exp(-age / 62.8)                     # the same paper: floor older than 20 My
+    assert np.allclose(depth[age <= 20.0], first[age <= 20.0], atol=0.5)
+    assert np.allclose(depth[age >= 70.0], second[age >= 70.0], atol=0.5)
+    between = (age > 20.0) & (age < 70.0)                              # both rules hold here; the process uses one or the other
+    assert np.all(np.minimum(np.abs(depth - first), np.abs(depth - second))[between] < 0.5)
+    assert np.abs(np.diff(depth)).max() < 350.0 * np.sqrt(age[1]) + 0.5   # no step where the rule changes (the first step is the largest)
+    assert np.all(np.diff(depth) >= -1e-3)                             # older floor is never shallower
+    assert abs(depth[-1] - (6400.0 - 3200.0 * np.exp(-180.0 / 62.8))) < 0.5
+    changeover = age[np.flatnonzero(np.abs(depth - second) < np.abs(depth - first))[0]]
+    assert 25.0 < changeover < 28.0                                    # the two rules cross near 26 My
 
 
 def test_thicker_crust_stands_higher_by_about_fifteen_percent_of_the_added_thickness(h):
@@ -188,6 +353,40 @@ def test_low_ground_behind_a_barrier_stays_dry_and_the_barrier_is_named(h):
     assert set(reason[hollow]) == {3} and np.all(height[barrier[hollow]] == 500.0)
     reach, at = barriers(height, m.nbr, m.nbr_count, sea, -100.0)
     assert np.all(reach[hollow] == 500.0)
+
+
+def test_dry_ground_in_a_part_filled_hollow_is_put_down_to_the_water_running_out_not_to_a_barrier(h):
+    """A wide basin holds the lowest point. A sill at its rim leads to a small deep bowl. The water fills the basin
+    to the sill, spills into the bowl and runs out there. The dry sides of the bowl lie below sea level with the way
+    open, so no barrier can be named; a walled pit elsewhere is the case with a barrier."""
+    g = geometry(h)
+    m = h.mesh
+    def angle_from(lat, lon):
+        centre = np.array([np.cos(np.deg2rad(lat)) * np.cos(np.deg2rad(lon)), np.cos(np.deg2rad(lat)) * np.sin(np.deg2rad(lon)),
+                           np.sin(np.deg2rad(lat))])
+        return np.rad2deg(np.arccos(np.clip(m.xyz @ centre, -1, 1)))
+    basin, bowl_at, sill_at, pit_at = angle_from(0, 0), angle_from(0, 62), angle_from(0, 44), angle_from(0, 180)
+    height = np.full(m.n, 1000.0)
+    in_basin, in_bowl = basin < 40, bowl_at < 15
+    height[sill_at < 9] = -500.0                                              # the open way between the two
+    height[in_basin] = -3000.0
+    height[in_bowl] = -2500.0 + 2000.0 * (bowl_at[in_bowl] / 15.0) ** 2
+    in_pit = pit_at < 10
+    height[in_pit] = -800.0
+    area = g["cell_area"]
+    part_of_bowl = (area * np.maximum(-1500.0 - height, 0.0))[in_bowl].sum()   # fills the bowl to 1,500 m below the reference
+    volume = (area[in_basin] * 2500.0).sum() + part_of_bowl
+    hh = Harness(level=4, planet={"surface_water_volume_m3": float(volume)})
+    out = hh.run("SeaLevel", reads={"elevation": height, "cell_area": area})
+    f, d = out.fields, out.drivers["ocean_mask"]
+    seas = out.tables["seas"]
+    assert abs(seas["surface_m"][0] + 500.0) < 1.0 and abs(seas["surface_m"][1] + 1500.0) < 30.0
+    dry_bowl = in_bowl & ~f["ocean_mask"]
+    assert dry_bowl.sum() > 5 and np.all(f["height_above_sea"][dry_bowl] < 0)   # dry, and below the sea's surface
+    ran_out, behind_barrier = 4, 3
+    assert set(d["reason"][dry_bowl]) == {ran_out} and set(d["barrier_cell"][dry_bowl]) == {-1}
+    assert set(d["reason"][in_pit]) == {behind_barrier}
+    assert np.all(height[d["barrier_cell"][in_pit]] == 1000.0)                 # the pit's barrier is the wall around it
 
 
 def test_a_planet_without_water_has_no_sea(h):
@@ -264,6 +463,31 @@ def test_albedo_with_cloud_and_ice_gives_the_published_values_and_its_drivers_ad
     assert np.all(first_guess.drivers["albedo"]["from_snow_and_ice"] == 0.0)     # the first guess of fields.yaml is a planet without ice
 
 
+def test_ice_follows_the_two_published_rules_sea_ice_by_the_years_mean_and_snow_on_land_by_the_month(h):
+    """North, Cahalan and Coakley 1981, p. 102: an ice cap whose edge is the yearly mean of -10 C, and snow on land
+    wherever the month is below 0 C. Ice wherever any month was below freezing, sea included, made the default
+    planet several degrees too cold, and one seeded world froze over."""
+    g = geometry(h)
+    n = h.mesh.n
+    year = np.array([np.cos(2 * np.pi * (m - 6.5) / 12) for m in range(12)])[:, None]          # warmest in July
+    def ice_months(sea, mean_c, swing):
+        t = 273.15 + mean_c + swing * year * np.ones((1, n))
+        out = h.run("Albedo", reads={"ocean_mask": np.full(n, sea), "latitude": g["latitude"]}, lagged={"surface_temperature": t})
+        return (out.drivers["albedo"]["from_snow_and_ice"][:, 0] != 0.0), (t[:, 0] < 273.15)
+    ice, below = ice_months(True, -5.0, 12.0)            # sea with a mean of -5 C: no ice, though 8 months are below freezing
+    assert not ice.any() and below.sum() == 8
+    ice, below = ice_months(False, -5.0, 12.0)           # land with the same year: snow in exactly the months below freezing
+    assert np.array_equal(ice, below)
+    ice, below = ice_months(True, -15.0, 20.0)           # sea with a mean of -15 C: ice in every month, the warm ones included
+    assert ice.all() and not below.all()
+    ice, below = ice_months(False, -15.0, 20.0)          # land with a cold year and a warm summer: the snow melts in summer
+    assert np.array_equal(ice, below) and not ice.all()
+    ice, below = ice_months(False, -15.0, 5.0)           # land that never thaws is white all year: the ice sheet
+    assert ice.all()
+    assert ice_months(True, -9.5, 0.0)[0].all()          # inside the ramp around -10 C the sea ice is partial
+    assert not ice_months(True, -8.9, 0.0)[0].any()
+
+
 # ------------------------------------------------------------------------------------------ EnergyBalance
 def energy_inputs(h, sea=None, height=None):
     g = geometry(h)
@@ -305,6 +529,25 @@ def test_land_swings_more_than_sea_and_height_cools(h):
     assert swing[inland].mean() > 3 * swing[offshore].mean()          # a larger summer-to-winter swing inside continents
     flat = h.run("EnergyBalance", reads=energy_inputs(h, sea)).fields["surface_temperature"].astype(np.float64)
     assert np.allclose((flat - t)[:, height > 0], 6.5 * 3.0, atol=1e-3)   # 6.5 K per km
+
+
+def test_the_storage_driver_is_the_heat_going_into_and_out_of_storage_and_nothing_else(h):
+    """With real sunlight, whose yearly cycle at the poles is far from a smooth wave, the driver named seasonal storage
+    must equal -(C / B) dT/dt, with C the heat capacity of land or sea. It used to hold the dropped part of the sunlight too."""
+    m = h.mesh
+    sea = m.lon < 0
+    out = h.run("EnergyBalance", reads=energy_inputs(h, sea))
+    t = out.fields["surface_temperature"].astype(np.float64)
+    spectrum = np.fft.rfft(t, axis=0)
+    wave = np.arange(spectrum.shape[0])[:, None]
+    rate = np.fft.irfft(spectrum * 1j * wave * 2 * np.pi / 3.15576e7, n=12, axis=0)       # dT/dt in K per second
+    capacity = np.where(sea, 3.10e8, 1.055e7)
+    expected = -capacity * rate / 2.09
+    d = out.drivers["surface_temperature"]
+    assert np.abs(expected).max() > 5.0                                                    # the test has something to see
+    assert np.abs(d["seasonal_storage"] - expected).max() < 0.01
+    total = sum(v.astype(np.float64) for v in d.values())
+    assert np.allclose(total, t, atol=1e-3)
 
 
 def test_a_member_of_the_heat_group_shifts_the_mean_by_its_size_over_b(h):
@@ -382,34 +625,118 @@ def test_a_warm_patch_lowers_the_pressure_and_storm_growth_follows_the_temperatu
 
 
 # ------------------------------------------------------------------------------------------ Moisture
-def test_one_ridge_across_a_steady_wind_wet_on_the_side_facing_the_wind_dry_on_the_sheltered_side(h):
+def ridge_run(h, top_m, constants=None):
+    """A strip of land across a steady wind from the west, with a ridge of the given height along its middle."""
     g = geometry(h)
     m = h.mesh
     n = m.n
-    ridge = 2500.0 * np.exp(-(m.lon / 6.0) ** 2) * (np.abs(m.lat) < 35)
-    land = ridge > 50.0
-    wind = np.broadcast_to(6.0 * np.cos(np.deg2rad(m.lat))[:, None] * m.east, (12, n, 3))        # steady, from the west
+    shape = np.exp(-(m.lon / 6.0) ** 2) * (np.abs(m.lat) < 35)
+    land = 2500.0 * shape > 50.0                                       # the same land whatever the height of the ridge
+    ridge = top_m * shape
+    wind = np.broadcast_to(6.0 * np.cos(np.deg2rad(m.lat))[:, None] * m.east, (12, n, 3))
     temperature = np.broadcast_to(292.0 - 6.5 * ridge / 1000.0, (12, n))
     out = h.run("Moisture", reads={"wind": wind, "subsidence": np.zeros((12, n)), "surface_temperature": temperature,
-                                   "height_above_sea": ridge, "ocean_mask": ~land, "cell_area": g["cell_area"]})
+                                   "height_above_sea": ridge, "ocean_mask": ~land, "cell_area": g["cell_area"]}, constants=constants)
+    return out, ridge
+
+
+def test_one_ridge_across_a_steady_wind_wet_on_the_side_facing_the_wind_dry_on_the_sheltered_side(h):
+    """The known answer is the difference a ridge makes to the same strip of land: more rain where the air is forced
+    up, less behind it. The side facing the wind is also wetter than the open sea upwind, as on Earth, although in
+    this slice nothing evaporates from land."""
+    m = h.mesh
+    out, ridge = ridge_run(h, 2500.0)
+    flat, _ = ridge_run(h, 0.0)
     rain = out.fields["precipitation"].astype(np.float64).mean(axis=0)
+    rain_flat = flat.fields["precipitation"].astype(np.float64).mean(axis=0)
     band = np.abs(m.lat) < 25
     facing = band & (m.lon > -9) & (m.lon < -2)
     sheltered = band & (m.lon > 2) & (m.lon < 9)
     upwind_sea = band & (m.lon > -60) & (m.lon < -30)
-    assert rain[facing].mean() > 2 * rain[sheltered].mean()
-    assert rain[facing].mean() > 1.1 * rain[upwind_sea].mean() and rain[sheltered].mean() < 0.5 * rain[upwind_sea].mean()
+    assert rain[facing].mean() > 2 * rain_flat[facing].mean()          # rising ground makes rain
+    assert rain[sheltered].mean() < 0.5 * rain_flat[sheltered].mean()  # and leaves a rain shadow behind it
+    assert rain[facing].mean() > 4 * rain[sheltered].mean()
+    assert rain[facing].mean() > 1.2 * rain[upwind_sea].mean()         # the vapour that cannot cross rains out before the ridge
+    assert abs(rain[upwind_sea].mean() / rain_flat[upwind_sea].mean() - 1) < 0.01      # far upwind the ridge changes nothing
     d = out.drivers["precipitation"]
-    assert d["from_rising_ground"][0][facing].mean() > 0 and np.all(d["from_rising_ground"][0][sheltered & (m.lon > 4)] == 0)
     total = d["from_moist_air"].astype(np.float64) + d["from_rising_ground"] + d["stopped_by_sinking_air"]
-    assert np.allclose(total, out.fields["precipitation"], rtol=1e-4, atol=1e-3)
-    assert not out.notices
-    # over the globe, the water that evaporates equals the water that falls
-    e = (out.fields["ocean_evaporation"].astype(np.float64) * g["cell_area"]).sum()
-    p = (out.fields["precipitation"].astype(np.float64) * g["cell_area"]).sum()
-    assert abs(e / p - 1) < 2e-3
-    came = d["vapour_came_from"][0]
-    assert np.all(m.lon[came[facing]] < m.lon[facing] + 1e-9)          # on the windward side the vapour came from the west
+    assert np.allclose(total, out.fields["precipitation"], rtol=1e-4, atol=1e-2)
+    lift = d["from_rising_ground"].mean(axis=0)
+    assert lift[facing].mean() > 5.0 and lift[sheltered].max() < 1e-6    # forced ascent only where the wind blows uphill
+    assert flat.drivers["precipitation"]["from_rising_ground"].max() == 0.0
+    came_from = d["vapour_came_from"][0]
+    lee = np.flatnonzero(sheltered)
+    assert np.all(m.lon[came_from[lee]] < m.lon[lee])                  # the vapour came from the west, over the ridge
+
+
+def test_cold_high_ground_does_not_draw_in_vapour_from_the_air_below_it(h):
+    """Vapour mixes sideways between air at the same height. A rule that mixes whole columns pumps vapour from low,
+    unsaturated neighbours into the thin cold column over high ground, which then holds several times what it can
+    and rains without limit (measured before the fix: 3 times saturation, 72 m of rain a year in one cell)."""
+    m = h.mesh
+    out, ridge = ridge_run(h, 4000.0)
+    c = h.constants["Moisture"]
+    from worldengine.processes.moisture_one_layer import saturation_vapour_density
+    holds = saturation_vapour_density(292.0 - 6.5 * ridge / 1000.0, c["saturation"]) * c["vapour_scale_height_m"]
+    humidity = out.fields["column_water"].astype(np.float64) / holds
+    assert humidity.max() < 1.05                                       # no column holds more than it can
+    rain = out.fields["precipitation"].astype(np.float64).mean(axis=0)
+    high, sea = ridge > 2500.0, ridge == 0.0
+    assert high.sum() > 10 and rain[high].mean() < rain[sea].mean()    # the crest is not the wettest place on the planet
+    # With still air nothing is carried uphill. Water at any height then fills the air above it to the same humidity,
+    # and mixing moves next to nothing between a low column and the part of it that reaches above high ground. (Not
+    # exactly nothing: the vapour is taken to thin with height at a fixed rate, 2.5 km, and what air can hold thins
+    # a little faster, so the humidity over the crest ends up to a tenth higher.)
+    g = geometry(h)
+    n = m.n
+    shape = np.exp(-(m.lon / 6.0) ** 2) * (np.abs(m.lat) < 35)
+    still = h.run("Moisture", reads={"wind": np.zeros((12, n, 3)), "subsidence": np.zeros((12, n)),
+                                     "surface_temperature": np.broadcast_to(292.0 - 6.5 * ridge / 1000.0, (12, n)),
+                                     "height_above_sea": ridge, "ocean_mask": np.ones(n, dtype=bool), "cell_area": g["cell_area"]})
+    still_humidity = still.fields["column_water"].astype(np.float64)[0] / holds
+    assert still_humidity.max() < 1.12 * still_humidity[sea].mean()
+
+
+def test_evaporation_uses_the_wind_at_the_surface_not_the_slower_wind_that_carries_the_vapour(h):
+    """Over an all-sea planet with the same wind everywhere, nothing is carried anywhere: evaporation is the bulk
+    formula with the surface wind, whatever the share of that wind that carries the column's vapour."""
+    g = geometry(h)
+    m = h.mesh
+    n = m.n
+    reads = {"wind": np.broadcast_to(8.0 * m.east * np.cos(np.deg2rad(m.lat))[:, None], (12, n, 3)), "subsidence": np.zeros((12, n)),
+             "surface_temperature": np.full((12, n), 290.0), "height_above_sea": np.zeros(n), "ocean_mask": np.ones(n, dtype=bool),
+             "cell_area": g["cell_area"]}
+    full = h.run("Moisture", reads=reads, constants={"carrying_wind": {"share_of_turning_wind": 1.0}}).fields["ocean_evaporation"].astype(np.float64)
+    half = h.run("Moisture", reads=reads, constants={"carrying_wind": {"share_of_turning_wind": 0.5}}).fields["ocean_evaporation"].astype(np.float64)
+    assert np.allclose(full, half, rtol=2e-3)
+    gust = h.constants["Moisture"]["gust_m_s"]
+    equator, high = np.abs(m.lat) < 10, np.abs(m.lat) > 70
+    speed = lambda lat: np.sqrt((8.0 * np.cos(np.deg2rad(lat))) ** 2 + gust ** 2)
+    ratio = full[:, equator].mean() / full[:, high].mean()
+    assert ratio > 1.25                                                # more evaporation where the surface wind is stronger
+    assert ratio < speed(0.0) / speed(80.0)                            # by less than the ratio of the wind speeds: moister air evaporates less
+
+
+def test_wind_that_flows_toward_a_belt_gathers_rain_there_by_the_share_of_the_column_it_carries(h):
+    """A surface wind blowing toward the equator from both sides. The flow toward a rain belt is shallow, so it
+    carries a share of the column; a wind that circles the planet carries all of it, and gathers nothing anywhere."""
+    g = geometry(h)
+    m = h.mesh
+    n = m.n
+    lat = np.deg2rad(m.lat)
+    inflow = np.broadcast_to((-4.0 * np.sin(2 * lat))[:, None] * m.north, (12, n, 3))
+    reads = {"wind": inflow, "subsidence": np.zeros((12, n)), "surface_temperature": np.full((12, n), 295.0),
+             "height_above_sea": np.zeros(n), "ocean_mask": np.ones(n, dtype=bool), "cell_area": g["cell_area"]}
+    def belt_excess(share, wind=inflow):
+        out = h.run("Moisture", reads={**reads, "wind": wind}, constants={"carrying_wind": {"share_of_converging_wind": share}})
+        rain = out.fields["precipitation"].astype(np.float64)[0]
+        return rain[np.abs(m.lat) < 6].mean() - rain[np.abs(np.abs(m.lat) - 45) < 6].mean()
+    none = belt_excess(0.0)                    # nothing gathers; what differs is the evaporation, weaker in the calm at the equator
+    whole, quarter = belt_excess(1.0) - none, belt_excess(0.25) - none
+    assert quarter > 20.0                                              # mm a month gathered at the equator
+    assert 3.0 * quarter < whole < 5.5 * quarter                       # about four times as much for the whole column
+    circling = np.broadcast_to((6.0 * np.cos(lat))[:, None] * m.east, (12, n, 3))
+    assert abs(belt_excess(1.0, circling) - belt_excess(0.0, circling)) < 0.5        # a circling wind has no inflow to share out
 
 
 def test_sinking_air_brings_less_rain_and_vapour_from_land_adds_rain_downwind(h):
@@ -423,7 +750,8 @@ def test_sinking_air_brings_less_rain_and_vapour_from_land_adds_rain_downwind(h)
     sinking = np.where(np.abs(m.lat) < 20, 3.0, 0.0) * np.ones((12, 1))
     less = h.run("Moisture", reads={**reads, "subsidence": sinking})
     tropics = np.abs(m.lat) < 15
-    assert less.fields["precipitation"][0][tropics].mean() < 0.75 * plain[0][tropics].mean()
+    ratio = less.fields["precipitation"][0][tropics].mean() / plain[0][tropics].mean()
+    assert 0.5 < ratio < 0.9          # less rain under sinking air; not far less, because the moister air also evaporates less
     assert less.drivers["precipitation"]["stopped_by_sinking_air"][0][tropics].max() < 0
     source = np.where((np.abs(m.lat) < 10) & (np.abs(m.lon) < 10), 200.0, 0.0) * np.ones((12, 1))
     more = h.run("Moisture", reads=reads, groups={"moisture_source": {"push:test": source}}).fields["precipitation"].astype(np.float64)
@@ -457,12 +785,17 @@ def test_a_year_whose_warmest_month_is_below_freezing_is_ice_with_no_plant_cover
     assert set(out.drivers["biome"]["rule"]) == {1} and set(out.drivers["biome"]["limit"]) == {1}
 
 
-def test_sea_that_stays_frozen_all_year_is_ice_and_open_sea_is_ocean(h):
+def test_sea_is_shown_as_ice_where_the_albedo_rule_lays_ice_on_it(h):
+    """The mean temperature of the year below -10 C: the rule Albedo uses, so that the map and the reflected sunlight agree."""
     n = h.mesh.n
     sea = np.ones(n, dtype=bool)
     assert biome_run(h, [-20.0] * 12, [10.0] * 12, sea)[0] == "ice"
-    assert biome_run(h, [-20, -20, -15, -8, -3, 0, 2, 1, -2, -8, -14, -18], [10.0] * 12, sea)[0] == "ocean"   # it thaws in summer
-    assert biome_run(h, [-20.0] * 12, [10.0] * 12, sea)[1] == "ocean"
+    cold_year_mild_summer = [-28, -28, -24, -16, -8, -2, 1, 0, -6, -14, -22, -27]            # mean -14.3 C
+    assert biome_run(h, cold_year_mild_summer, [10.0] * 12, sea)[0] == "ice"
+    assert biome_run(h, [-8.0] * 12, [10.0] * 12, sea)[0] == "ocean"                         # frozen every month, yet above -10 C
+    assert biome_run(h, [-20.0] * 12, [10.0] * 12, sea)[1] == "ocean"                        # the climate class of sea stays "ocean"
+    out = biome_run(h, [-20.0] * 12, [10.0] * 12, sea)[2]
+    assert set(out.drivers["biome"]["rule"]) == {4} and set(out.drivers["biome"]["limit"]) == {3}
 
 
 SEASONS = lambda mean, swing: [mean - swing * np.cos(2 * np.pi * (m - 0.5) / 12) for m in range(12)]          # coldest in January
@@ -476,6 +809,10 @@ SEASONS = lambda mean, swing: [mean - swing * np.cos(2 * np.pi * (m - 0.5) / 12)
     (SEASONS(-3, 16), [50.0] * 12, "Dfc", "boreal_forest"),
     (SEASONS(-9, 14), [25.0] * 12, "ET", "tundra"),
     (SEASONS(26, 1), [300, 250, 200, 100, 30, 5, 5, 10, 60, 150, 250, 300], "Aw", None),     # a dry season in the tropics
+    # Both the dry-summer and the dry-winter rule pass. More rain falls in summer, so the winter is the dry season (Beck et al. 2018).
+    (SEASONS(16, 8), [10, 10, 30, 200, 250, 5, 300, 250, 200, 30, 10, 10], "Cwa", None),
+    # Both rules pass again, with more rain in winter: the summer is the dry season.
+    (SEASONS(16, 8), [100, 100, 0.3, 5, 5, 2, 5, 5, 5, 100, 100, 100], "Csa", None),
 ])
 def test_climate_classes_follow_the_published_rules(h, temps, rain, expected_class, expected_biome):
     biome, klass, _ = biome_run(h, temps, rain)

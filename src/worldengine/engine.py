@@ -12,6 +12,7 @@ import importlib
 import math
 import time
 from pathlib import Path
+from types import MappingProxyType
 
 import numpy as np
 
@@ -75,6 +76,7 @@ class World:
         self.group_const: dict[str, dict] = {}
         self.drivers: dict[str, dict] = {}
         self.push_records: dict[str, dict] = {}
+        self.push_activity: dict[str, dict] = {}             # push id -> the rounds in which it acted, and whether it touched a cell
         self.group_records: dict[str, dict] = {}
         self.written_round: dict[str, int] = {}
         self.notices: list[dict] = []
@@ -88,10 +90,24 @@ class World:
 
     def notice(self, kind, **details):
         entry = {"kind": kind, **details}
-        if kind == "field_outside_range":                    # one notice per field: the latest round's
-            self.notices = [n for n in self.notices if not (n["kind"] == kind and n.get("field") == details.get("field"))]
+        if kind == "field_outside_range":                    # one notice per field: that of the value the world ends with
+            self.clear_notices(kind, field=details.get("field"))
         if entry not in self.notices:
             self.notices.append(entry)
+
+    def clear_notices(self, kind, **match):
+        """Drop the notices of one kind whose details equal `match`: what they said is no longer true of the world."""
+        self.notices = [n for n in self.notices if not (n["kind"] == kind and all(n.get(k) == v for k, v in match.items()))]
+
+    def note(self, slot, stage, round_no, what, details):
+        """A process's own note. One entry per slot and wording, with the rounds it was raised in, so that a note
+        raised in every round of a long history stays one line."""
+        for n in self.notices:
+            if n["kind"] == "process_note" and n["slot"] == slot and n["what"] == what and n["stage"] == stage:
+                n.update(details, last_round=round_no, rounds=n["rounds"] + (round_no != n["last_round"]))
+                return
+        self.notices.append({"kind": "process_note", "slot": slot, "stage": stage, "what": what, **details,
+                             "first_round": round_no, "last_round": round_no, "rounds": 1})
 
     def fingerprints(self) -> dict:
         """SHA-256 of every field's and table column's stored bytes."""
@@ -125,7 +141,10 @@ class Context:
         self.round = round_no
         self.step_length = step_length
         self.draw = Draws(engine.seed, name, engine.allowed_draws.get(name, ()), when)
-        self.memo = engine.memo
+        # A place to keep what is costly to prepare and stays the same from round to round (a solver, a table).
+        # It is this process's own: no other process sees it. The key of an entry must hold everything the entry
+        # depends on, because the engine empties the memo only at the start of a build and of each climate run.
+        self.memo = engine.memo.setdefault(name, {})
         self.recording = recording
 
     # ---- reads
@@ -139,22 +158,23 @@ class Context:
             t = self._w.tables.get(self._table(name))
             if t is None:
                 raise EngineError(f"{self._name} read {name} before anything wrote it")
-            return t
+            return MappingProxyType(t)                       # read-only: the columns are read-only arrays, and so is the list of them
         self._e._require_fresh(name, self._stage, self._name)
         return self._w.fields[name]
 
     def read_lagged(self, name):
         if name not in self._decl["lagged"]:
             raise ContractError(f"{self._name} read {name} from the previous round, which it did not declare")
-        if name.startswith("table:"):
-            t = self._w.lagged_tables.get(self._table(name))
-            return t if t is not None else self._e._empty_table(self._table(name))
+        if name.startswith("table:"):                        # as for a field: the kept copy in its own stage, the stored table elsewhere
+            own = self._e.table_stage.get(self._table(name)) == self._stage
+            t = (self._w.lagged_tables if own else self._w.tables).get(self._table(name))
+            return MappingProxyType(t if t is not None else self._e._empty_table(self._table(name)))
         return self._e._lagged_value(name, self._stage)
 
     def read_group(self, group) -> GroupValue:
         if group not in self._decl["group_reads"]:
             raise ContractError(f"{self._name} read group {group} in the same round, which it did not declare")
-        value = self._e._group_value(group, lagged=False)
+        value = self._e._group_value(group, False, self._stage, self.round, self._recording)
         if self._recording:
             self._w.group_records[group] = dict(value.members)
         return value
@@ -162,7 +182,7 @@ class Context:
     def read_group_lagged(self, group) -> GroupValue:
         if group not in self._decl["lagged_group"]:
             raise ContractError(f"{self._name} read group {group} from the previous round, which it did not declare")
-        value = self._e._group_value(group, lagged=True)
+        value = self._e._group_value(group, True, self._stage, self.round, self._recording)
         if self._recording:                                  # the cause record names each member of the sum
             self._w.group_records[group] = dict(value.members)
         return value
@@ -201,8 +221,9 @@ class Context:
 
     def note(self, what: str, **details):
         """Record a fact about this run in the world store, such as a solver that stopped at its cap.
-        It does not stop the run; the viewer and the "why" answers repeat it."""
-        self._w.notice("process_note", slot=self._name, what=what, **details)
+        It does not stop the run; the viewer and the "why" answers repeat it. A note says something about
+        the round it is raised in: in the climate stage only the notes of the settled round are kept."""
+        self._w.note(self._name, self._stage, self.round, what, details)
 
     # ---- cause records
     def driver(self, field, term, value):
@@ -211,12 +232,12 @@ class Context:
             raise ContractError(f"{self._name} recorded a driver for {field}, which it does not write")
         if term not in self._proc.drivers.get(field, ()):
             raise ContractError(f"{self._name} recorded the driver {term} for {field}, which its driver list does not name")
-        if not self._recording:
-            return
-        a = np.asarray(value)
+        a = np.asarray(value)                                # the shape is checked in every round, so that a mistake shows at once
         want = self._e.registry.fields[field].array_shape(self._w.n, self._w.months)
         if a.shape not in (want, (self._w.n,), (self._w.months, self._w.n)):
             raise ValueError(f"driver {term} of {field} has shape {a.shape}; expected {want} or one value per cell")
+        if not self._recording:
+            return
         a = a.astype(np.float32 if a.dtype.kind == "f" else np.int32)
         a.flags.writeable = False
         self._w.drivers.setdefault(field, {})[term] = a
@@ -251,7 +272,6 @@ class Engine:
         self.seed = seed if seed is not None else p["seeds"]["world_seed"]
         self.allowed_draws = {k: tuple(v) for k, v in (p["seeds"].get("draws") or {}).items()}
         self.threads = int(self.profile.get("math_threads", 1))
-        self._limit_threads()
 
         self.registry = Registry(p)
         self.pushes = iv.parse(p["interventions"], self.registry)
@@ -289,7 +309,14 @@ class Engine:
             kind=self.registry.kind, structural=self.registry.structural,
             steps_of_dated={s: c.get("step", "day") for s, c in self.stage_cfg.items() if c["clock"] == "dated"})
         self.push_by_step = {PUSH % q.id: q for q in self.pushes}
+        self.push_by_id = {q.id: q for q in self.pushes}
         self.stage_of = {f: self.plan.steps[w]["stage"] for f, w in self.plan.producer.items()}
+        # the stage in which each member of a group is worked out
+        self.member_stage = {(g, self.plan.steps[m]["contributes"][g]): self.plan.steps[m]["stage"]
+                             for g, ms in self.plan.members.items() for m in ms}
+        self.table_stage = {f[len("table:"):]: self.plan.steps[w]["stage"] for f, w in self.plan.producer.items()
+                            if f.startswith("table:")}
+        self._check_settings()
         steps = self.plan.steps.values()
         self.lagged_fields = sorted({f for d in steps for f in d["lagged"] if not f.startswith("table:")})
         self.lagged_tables = sorted({f[len("table:"):] for d in steps for f in d["lagged"] if f.startswith("table:")})
@@ -302,16 +329,13 @@ class Engine:
 
     # ------------------------------------------------------------------ set-up helpers
     def _limit_threads(self):
-        try:
-            from threadpoolctl import threadpool_limits
-            self._thread_limit = threadpool_limits(limits=self.threads)
-        except ImportError:                                  # the lock file pins threadpoolctl; without it we say so
-            self._thread_limit = None
-        try:
-            import numba
-            numba.set_num_threads(max(1, min(self.threads, numba.config.NUMBA_NUM_THREADS)))
-        except Exception:
-            pass
+        """The thread count of the mathematics libraries for the length of a build (design, Layer 8). The limit is
+        taken when a build or a harness run starts and handed back when it ends, so that two engines in one
+        interpreter do not set each other's count."""
+        import numba
+        from threadpoolctl import threadpool_limits
+        numba.set_num_threads(max(1, min(self.threads, numba.config.NUMBA_NUM_THREADS)))
+        return threadpool_limits(limits=self.threads)
 
     @staticmethod
     def _load_implementation(slot, path) -> Process:
@@ -336,12 +360,50 @@ class Engine:
                     problems.append(f"{slot} names the field {f}, which fields.yaml does not declare")
             if d["stage"] not in self.stage_list:
                 problems.append(f"{slot} names stage {d['stage']}, which stages.yaml does not contain")
+            for g, member in d["contributes"].items():        # a member has the layout of its group
+                if g in self.registry.groups and member in self.registry.fields:
+                    fs, gs = self.registry.fields[member], self.registry.groups[g]
+                    if fs.kind != "number" or fs.shape != gs.shape:
+                        problems.append(f"{slot} adds {member} ({fs.kind}, {fs.shape}) to group {g}, which holds a number "
+                                        f"per {gs.shape}; a member must have the layout of its group")
         for q in self.pushes:
             if not q.on_group and q.target not in self.registry.fields and not q.target.startswith("table:"):
                 problems.append(f"push {q.id} targets {q.target}, which fields.yaml does not declare")
             for c in q.region.conditions:
                 if c.field not in self.registry.fields:
                     problems.append(f"push {q.id} tests {c.field}, which fields.yaml does not declare")
+            problems += iv.check(q, self.registry, self.months)
+        if problems:
+            raise ParameterError("; ".join(problems))
+
+    def _check_settings(self):
+        """Settings that name something not built yet, or that mean nothing where they stand, are refused, not ignored."""
+        problems = []
+        for name, cfg in self.stage_cfg.items():
+            if "step" in cfg and cfg["clock"] != "dated":
+                problems.append(f"stages.yaml: stage {name} gives a step, which only a stage that steps through dates takes")
+            for key in ("round_length_my", "history_length_my"):
+                if key in cfg and cfg["clock"] != "geological":
+                    problems.append(f"stages.yaml: stage {name} gives {key}, which only a stage on the geological clock takes")
+            if cfg["clock"] == "geological" and not ("round_length_my" in cfg and "history_length_my" in cfg):
+                problems.append(f"stages.yaml: stage {name} runs on the geological clock and needs round_length_my and history_length_my")
+        if self.profile.get("snapshot_every_rounds") is not None or self.profile.get("snapshot_fields"):
+            problems.append(f"profiles.yaml: profile {self.profile_name} asks for snapshots of the geological history; "
+                            f"they are built in step 3, with the plate history")
+        for q in self.pushes:                                # when.rounds counts geological rounds
+            if q.rounds is None:
+                continue
+            if q.on_group:
+                stages = {st for (g, _), st in self.member_stage.items() if g == q.target} | \
+                         {d["stage"] for d in self.plan.steps.values() if q.target in d["lagged_group"] + d["group_reads"]}
+            else:
+                stages = {self.stage_of.get(q.target)}
+            late = sorted(st for st in stages if st is not None and self.clocks[st] != "geological")
+            if late:
+                problems.append(f"push {q.id} is limited to geological rounds {q.rounds[0]} to {q.rounds[1]}, but its target "
+                                f"belongs to stage {', '.join(late)}, which does not run on the geological clock; a push "
+                                f"limited to part of the history can act on the climate only once the climate is rerun "
+                                f"inside the history (build step 9)")
         if problems:
             raise ParameterError("; ".join(problems))
 
@@ -371,11 +433,23 @@ class Engine:
     def _empty_table(self, name):
         return {c: np.zeros(0, dtype=t) for c, t in self.registry.tables[name].columns.items()}
 
-    def _group_value(self, group, lagged) -> GroupValue:
+    def _group_value(self, group, lagged, stage, round_no, recording=False) -> GroupValue:
+        """A group as a reader in `stage` receives it. A read from the previous round gets the kept copy of the
+        members worked out in the reader's own stage, and the stored value of the members of every other stage,
+        exactly as a field read from the previous round does."""
         w = self.world
         spec = self.registry.groups[group]
-        members = dict((w.group_lagged if lagged else w.group_now).get(group, {}))
-        members.update(w.group_const.get(group, {}))
+        members = {k: v for k, v in w.group_now.get(group, {}).items()
+                   if not lagged or self.member_stage.get((group, k)) != stage}
+        if lagged:
+            members.update({k: v for k, v in w.group_lagged.get(group, {}).items() if self.member_stage.get((group, k)) == stage})
+        at = round_no - 1 if lagged else round_no            # the round whose sum the reader is given
+        for key, value in w.group_const.get(group, {}).items():
+            q = self.push_by_id[key[len("push:"):]]
+            if self._push_active(q, stage, at):
+                members[key] = value
+                if recording:
+                    self._acted(q, stage, round_no, self._weights[q.id])
         total = np.zeros(spec.array_shape(w.n, w.months))
         for k in sorted(members):
             total = total + members[k]
@@ -389,6 +463,8 @@ class Engine:
         bad = spec.outside_range(a)
         if bad:
             w.notice("field_outside_range", field=name, writer=writer, **bad)
+        else:                                                # a notice from an earlier round or an earlier step no longer holds
+            w.clear_notices("field_outside_range", field=name)
         w.fields[name] = a
         w.written_round[name] = round_no
         self._fresh.setdefault(stage, set()).add(name)
@@ -399,9 +475,14 @@ class Engine:
             raise ContractError(f"{writer} wrote table {name} with columns {sorted(columns)}; tables.yaml lists {sorted(spec.columns)}")
         out, length = {}, None
         for c, t in spec.columns.items():
-            a = np.array(columns[c], dtype=t, copy=True)
+            given = np.asarray(columns[c])
+            with np.errstate(invalid="ignore"):              # a value too large for the type is caught just below
+                a = np.array(given, dtype=t, copy=True)
             if a.ndim != 1 or (length is not None and a.size != length):
                 raise ContractError(f"{writer} wrote table {name}: every column must be one list of the same length")
+            if a.dtype.kind in "iub" and given.dtype.kind in "iuf" and a.size and not np.array_equal(a.astype(given.dtype), given):
+                raise ContractError(f"{writer} wrote table {name}: column {c} holds values that do not fit its type {t} "
+                                    f"(a fraction, or a number too large); they would be changed without a word")
             length = a.size
             a.flags.writeable = False
             out[c] = a
@@ -434,62 +515,99 @@ class Engine:
         return wts
 
     def _push_active(self, q, stage, round_no):
-        if q.rounds is None or self.clocks[stage] != "geological":
+        """A push limited to rounds counts the rounds of the geological clock (elsewhere such a limit is refused on loading)."""
+        if q.rounds is None or stage is None or self.clocks[stage] != "geological":
             return True
         return q.rounds[0] <= round_no <= q.rounds[1]
 
+    def _acted(self, q, stage, round_no, wts):
+        """Keep, for the cause record, the rounds in which a push acted and whether it ever touched a cell."""
+        a = self.world.push_activity.setdefault(q.id, {"stage": stage, "first_round": round_no, "last_round": None,
+                                                        "rounds": 0, "touched": False})
+        if a["last_round"] != round_no:                      # the cause pass runs a round a second time: count it once
+            a["rounds"] += 1
+            a["last_round"] = round_no
+        a["touched"] = bool(a["touched"] or wts.any())
+
+    def _push_record(self, q, wts, **more):
+        return {**more, "weight": wts.astype(np.float32), "physical": q.physical, "reason": q.reason,
+                "entry": q.entry_id, "op": q.op}
+
     def _apply_push(self, step, stage, round_no, recording, replay):
+        """One push in its place in the order. The record a push leaves describes the round the world ends with: a
+        push that is outside its rounds in that round leaves none, because it did not act on the stored value."""
         q = self.push_by_step[step]
         w = self.world
+        active = self._push_active(q, stage, round_no)
         if q.on_group:                                       # a member worked out every round, in its place in the order
             spec = self.registry.groups[q.target]
             shape = spec.array_shape(w.n, w.months)
-            wts = self._push_weights(q, stage) if self._push_active(q, stage, round_no) else np.zeros(w.n)
+            wts = self._push_weights(q, stage) if active else np.zeros(w.n)
             amount = iv.amount_array(q, "number", shape, w.months, self.mesh)
             member = (amount * wts).astype(np.float32)
             member.flags.writeable = False
             w.group_now.setdefault(q.target, {})["push:" + q.id] = member
-            if recording and not wts.any():
-                w.notice("push_touched_nothing", push=q.id)
+            if recording:
+                w.push_records.pop(q.id, None)
+                if active:
+                    w.push_records[q.id] = self._push_record(q, wts, group=q.target)
+                    self._acted(q, stage, round_no, wts)
             return
         spec = self.registry.fields[q.target]
         old = w.fields[q.target]
         self._require_fresh(q.target, stage, step)
-        if not self._push_active(q, stage, round_no):
+        if not active:
+            if recording:
+                w.push_records.pop(q.id, None)
             return
         wts = self._push_weights(q, stage)
         amount = iv.amount_array(q, spec.kind, old.shape, w.months, self.mesh, code=spec.code)
         new = iv.apply_op(q.op, old, amount, wts, spec.kind)
-        w.push_records[q.id] = {"field": q.target, "before": old, "weight": wts.astype(np.float32),
-                                "physical": q.physical, "reason": q.reason, "entry": q.entry_id, "op": q.op}
-        if recording and not wts.any():
-            w.notice("push_touched_nothing", push=q.id)
+        if recording:
+            w.push_records[q.id] = self._push_record(q, wts, field=q.target, before=old)
+            self._acted(q, stage, round_no, wts)
         self._store_field(q.target, new, stage, step, round_no, replay)
 
     def _constant_group_pushes(self):
+        """A push on a group with a fixed region is worked out once: it is the same in every round it acts in."""
         w = self.world
         for group, ids in self.plan.constant_members.items():
             spec = self.registry.groups[group]
             for pid in ids:
-                q = next(x for x in self.pushes if x.id == pid)
+                q = self.push_by_id[pid]
                 wts = self._push_weights(q, None)
                 amount = iv.amount_array(q, "number", spec.array_shape(w.n, w.months), w.months, self.mesh)
                 member = (amount * wts).astype(np.float32)
                 member.flags.writeable = False
                 w.group_const.setdefault(group, {})["push:" + pid] = member
-                w.push_records[pid] = {"group": group, "weight": wts.astype(np.float32), "physical": q.physical,
-                                       "reason": q.reason, "entry": q.entry_id, "op": q.op}
-                if not wts.any():
-                    w.notice("push_touched_nothing", push=pid)
+
+    def _finish_push_records(self):
+        """After the last stage: the records of the group pushes with a fixed region, and a notice for every push
+        that never touched a cell."""
+        w = self.world
+        read = {g for d in self.plan.steps.values() for g in d["lagged_group"] + d["group_reads"]}
+        for group, members in w.group_const.items():
+            for key in members:
+                if key in w.group_records.get(group, {}):    # the sum that the reader was last given held this push
+                    q = self.push_by_id[key[len("push:"):]]
+                    w.push_records[q.id] = self._push_record(q, self._weights[q.id], group=group)
+        for q in self.pushes:
+            act = w.push_activity.get(q.id)
+            if act is None:
+                why = f"no process reads group {q.target}" if q.on_group and q.target not in read else \
+                    "it was in no round that it applies to"
+                w.notice("push_touched_nothing", push=q.id, why=why)
+            elif not act["touched"]:
+                w.notice("push_touched_nothing", push=q.id)
 
     # ------------------------------------------------------------------ rounds
     def _run_round(self, stage, round_no, recording, replay=False, starting=False):
         w = self.world
         cfg = self.stage_cfg[stage]
         self._fresh[stage] = set()
-        for g in list(w.group_now):
-            if any(self.plan.steps[m]["stage"] == stage for m in self.plan.members.get(g, [])):
-                w.group_now[g] = {}
+        for g, members in w.group_now.items():               # this stage's members are worked out afresh; other stages' stay
+            for key in [k for k in members if self.member_stage.get((g, k)) == stage]:
+                del members[key]
         when = "start" if starting else round_no
         spent = {}
         w.round_times.append({"stage": stage, "round": round_no, "cause_pass": bool(replay), "start_step": bool(starting), "seconds": spent})
@@ -514,9 +632,12 @@ class Engine:
             w.timings[step] = w.timings.get(step, 0.0) + spent[step]
 
     def _blend(self, old, new, weight, kind):
+        """The copy kept for the next round: old + weight * (new - old). Where the old value is missing the new one
+        is taken whole, so that a missing value cannot stay in the copy for ever."""
         if weight >= 1.0 or kind not in ("number", "direction"):
             return new
-        out = (old.astype(np.float64) + weight * (new.astype(np.float64) - old)).astype(new.dtype)
+        old64, new64 = old.astype(np.float64), new.astype(np.float64)
+        out = np.where(np.isnan(old64), new64, old64 + weight * (new64 - old64)).astype(new.dtype)
         out.flags.writeable = False
         return out
 
@@ -531,11 +652,11 @@ class Engine:
             if old is None:
                 old = spec.default_array(w.n, w.months)
             w.lagged[f] = self._blend(old, w.fields[f], weight, spec.kind)
-        for g in self.lagged_groups:
-            now = w.group_now.get(g, {})
+        for g in self.lagged_groups:                         # the members worked out in this stage; others are read as stored
+            now = {k: v for k, v in w.group_now.get(g, {}).items() if self.member_stage.get((g, k)) == stage}
             prev = w.group_lagged.get(g, {})
-            merged = {}
-            for m in sorted(set(now) | set(prev)):
+            merged = {k: v for k, v in prev.items() if self.member_stage.get((g, k)) != stage}
+            for m in sorted(set(now) | {k for k in prev if self.member_stage.get((g, k)) == stage}):
                 new = now.get(m)
                 old = prev.get(m)
                 if new is None:
@@ -546,11 +667,14 @@ class Engine:
             if merged:
                 w.group_lagged[g] = merged
         for t in self.lagged_tables:
-            if t in w.tables:
+            if t in w.tables and self.table_stage.get(t) == stage:
                 w.lagged_tables[t] = w.tables[t]
 
     def _gaps(self, stage, previous_classes, tol):
-        """How far this round's values lie from the copies it was given (design, Layer 3: settled means two things)."""
+        """How far this round's values lie from the copies it was given (design, Layer 3: settled means two things).
+        Everything the stage reads from its own previous round is tested: numbers and directions by their gap,
+        classes, true-or-false values and index numbers by the share of the area that changed, groups by the gap of
+        their sum, tables by whether they are the same."""
         w = self.world
         area = self.mesh.area / self.mesh.area.sum()
         report, settled = [], True
@@ -558,54 +682,83 @@ class Engine:
 
         def measure(name, new, old, spec_settle):
             nonlocal settled
-            gap = np.abs(new.astype(np.float64) - old.astype(np.float64))
+            new, old = new.astype(np.float64), old.astype(np.float64)
+            lost = np.isnan(new) != np.isnan(old)            # a value that is missing in one and present in the other
+            gap = np.where(np.isnan(new) | np.isnan(old), 0.0, np.abs(new - old))
             if gap.ndim == 3 or (gap.ndim == 2 and gap.shape[-1] == 3):
-                gap = np.sqrt((gap ** 2).sum(axis=-1))
-            per_cell = gap if gap.ndim == 1 else gap.max(axis=0)
+                gap, lost = np.sqrt((gap ** 2).sum(axis=-1)), lost.any(axis=-1)
+            per_cell, lost_cell = (gap, lost) if gap.ndim == 1 else (gap.max(axis=0), lost.any(axis=0))
             mean_gap = float((gap * area).sum() / (1 if gap.ndim == 1 else gap.shape[0]))
             t = spec_settle or default
-            share = float(area[per_cell > t["cell"]].sum())
+            share = float(area[(per_cell > t["cell"]) | lost_cell].sum())
             ok = mean_gap <= t["mean"] and share <= tol["cell_share"]
             settled &= ok
             report.append({"name": name, "mean_gap": mean_gap, "share_over_cell_tolerance": share, "ok": bool(ok)})
 
+        def changed(name, new, old):
+            nonlocal settled
+            if old is None:
+                share = 1.0
+            else:
+                diff = new != old
+                share = float(area[diff if diff.ndim == 1 else diff.any(axis=0)].sum())
+            ok = share <= tol["class_change_share"]
+            settled &= ok
+            report.append({"name": name, "share_changed_class": share, "ok": bool(ok)})
+
         for f in self.lagged_fields:
             spec = self.registry.fields[f]
-            if self.stage_of.get(f) != stage or spec.kind not in ("number", "direction") or f not in w.fields:
+            if self.stage_of.get(f) != stage or f not in w.fields or spec.kind == "category":
                 continue
-            measure(f, w.fields[f], self._lagged_value(f, stage), spec.settle)
+            if spec.kind in ("number", "direction"):
+                measure(f, w.fields[f], self._lagged_value(f, stage), spec.settle)
+            else:                                            # true-or-false and index fields: the share of the area that changed
+                changed(f, w.fields[f], self._lagged_value(f, stage))
         for g in self.lagged_groups:
             if not any(self.plan.steps[m]["stage"] == stage for m in self.plan.members.get(g, [])):
                 continue
             spec = self.registry.groups[g]
             zero = np.zeros(spec.array_shape(w.n, w.months))
-            now = sum((v for _, v in sorted(w.group_now.get(g, {}).items())), zero)
-            old = sum((v for _, v in sorted(w.group_lagged.get(g, {}).items())), zero)
-            measure("group:" + g, now, old, None)
+            mine = lambda members: sum((v for k, v in sorted(members.items()) if self.member_stage.get((g, k)) == stage), zero)
+            measure("group:" + g, mine(w.group_now.get(g, {})), mine(w.group_lagged.get(g, {})), None)
         for f, spec in self.registry.fields.items():
             if spec.kind != "category" or spec.is_label or self.stage_of.get(f) != stage or f not in w.fields:
                 continue
-            if f not in previous_classes:
-                changed = 1.0
-            else:
-                diff = w.fields[f] != previous_classes[f]
-                changed = float(area[diff if diff.ndim == 1 else diff.any(axis=0)].sum())
-            ok = changed <= tol["class_change_share"]
-            settled &= ok
-            report.append({"name": f, "share_changed_class": changed, "ok": bool(ok)})
+            changed(f, w.fields[f], previous_classes.get(f))
+        for t in self._loop_tables(stage):
+            now, old = w.tables.get(t), w.lagged_tables.get(t)
+            same = now is not None and old is not None and all(self._same_column(now[c], old[c], default["cell"]) for c in now)
+            settled &= same
+            report.append({"name": "table:" + t, "unchanged": bool(same), "ok": bool(same)})
         return settled, report
 
+    @staticmethod
+    def _same_column(a, b, tolerance):
+        if a.shape != b.shape:
+            return False
+        if a.dtype.kind != "f":
+            return bool(np.array_equal(a, b))
+        return bool(np.array_equal(np.isnan(a), np.isnan(b)) and np.all(np.abs(np.nan_to_num(a) - np.nan_to_num(b)) <= tolerance))
+
+    def _loop_tables(self, stage):
+        """Tables that a process of the stage reads from the previous round and that the stage itself writes."""
+        steps = [d for d in self.plan.steps.values() if d["stage"] == stage]
+        return sorted({f[len("table:"):] for d in steps for f in d["lagged"]
+                       if f.startswith("table:") and self.table_stage.get(f[len("table:"):]) == stage})
+
     def _has_loop(self, stage):
+        """True if anything the stage works out is read by the stage from its own previous round."""
         steps = [d for d in self.plan.steps.values() if d["stage"] == stage]
         return any(self.stage_of.get(f) == stage for d in steps for f in d["lagged"] if not f.startswith("table:")) or \
-            any(self.plan.steps[m]["stage"] == stage for d in steps for g in d["lagged_group"] for m in self.plan.members.get(g, []))
+            any(self.plan.steps[m]["stage"] == stage for d in steps for g in d["lagged_group"] for m in self.plan.members.get(g, [])) or \
+            bool(self._loop_tables(stage))
 
     def _start(self, stage):
         """Start steps fill state before round 1 (design, Layer 2): a table that a process carries from round to round."""
         if any(self.decls[s]["start"] for s in self.plan.order[stage] if s in self.decls):
             self._run_round(stage, 0, recording=False, starting=True)
             for t in self.lagged_tables:
-                if t in self.world.tables:
+                if t in self.world.tables and self.table_stage.get(t) == stage:
                     self.world.lagged_tables[t] = self.world.tables[t]
 
     def _run_once(self, stage):
@@ -634,8 +787,14 @@ class Engine:
         for f in self.lagged_fields:                         # every climate run starts from the same first guess
             if self.stage_of.get(f) == stage:
                 w.lagged.pop(f, None)
-        for g in self.lagged_groups:
+        for g in self.lagged_groups:                         # ... for the members and the tables of this stage too
+            kept = {k: v for k, v in w.group_lagged.get(g, {}).items() if self.member_stage.get((g, k)) != stage}
             w.group_lagged.pop(g, None)
+            if kept:
+                w.group_lagged[g] = kept
+        for t in self.lagged_tables:
+            if self.table_stage.get(t) == stage:
+                w.lagged_tables.pop(t, None)
         self.memo = {}
         self._start(stage)
         loop = self._has_loop(stage)
@@ -659,6 +818,11 @@ class Engine:
             w.notice("climate_not_settled", stage=stage, rounds=r)
         # The cause pass: the settled round is run once more with the same inputs, recording drivers.
         # It must leave every field as it was, and the engine checks that it did.
+        # Notes and range notices of the rounds before it described working steps; only those of this pass are kept.
+        w.clear_notices("process_note", stage=stage)
+        for f in self.stage_of:
+            if self.stage_of[f] == stage:
+                w.clear_notices("field_outside_range", field=f)
         before = {f: a for f, a in w.fields.items() if self.stage_of.get(f) == stage}
         tables_before = {t: dict(c) for t, c in w.tables.items()}
         self._run_round(stage, r, recording=True, replay=True)
@@ -690,21 +854,29 @@ class Engine:
             d = self.plan.steps[writer]
             proc = self.procs.get(writer)
             pushes = [q for q in self.pushes if not q.on_group and q.target == f]
+            groups = list(d["lagged_group"]) + list(d["group_reads"])
+            modifiers = [m for m in self.plan.modifiers.get(f, []) if m in self.procs]
+            describe = lambda q: {"id": q.id, "op": q.op, "amount": q.amount, "circle": q.region.circle,
+                                  "outline": q.region.outline, "edge_km": q.region.edge_km, "rounds": q.rounds,
+                                  "where": [[c.field, c.test, c.value, c.lagged, c.month] for c in q.region.conditions]}
             handed = {"constants": self.constants.get(writer, {}), "shared": self.shared_for.get(writer, {}),
-                      "planet": self.planet,
-                      "pushes": [{"id": q.id, "op": q.op, "amount": q.amount, "circle": q.region.circle,
-                                  "outline": q.region.outline, "edge_km": q.region.edge_km,
-                                  "where": [[c.field, c.test, c.value, c.lagged] for c in q.region.conditions]} for q in pushes]}
+                      "planet": self.planet, "pushes": [describe(q) for q in pushes],
+                      "group_pushes": [describe(q) for q in self.pushes if q.on_group and q.target in groups],
+                      "modifiers": {m: {"constants": self.constants.get(m, {}), "shared": self.shared_for.get(m, {})}
+                                    for m in modifiers}}
             w.lineage[f] = {
                 "writer": writer, "stage": d["stage"], "model": proc.model if proc else "the engine's default for a label field",
                 "version": proc.version if proc else __version__,
                 "fingerprint": fingerprint(handed), "reads": list(d["reads"]), "reads_lagged": list(d["lagged"]),
-                "groups": list(d["lagged_group"]) + list(d["group_reads"]),
-                "modified_by": [m for m in self.plan.modifiers.get(f, []) if m in self.procs],
+                "groups": groups, "modified_by": modifiers,
                 "pushes": [q.id for q in pushes], "round": w.written_round.get(f)}
 
     # ------------------------------------------------------------------ the build
     def build(self) -> World:
+        with self._limit_threads():
+            return self._build()
+
+    def _build(self) -> World:
         t0 = time.perf_counter()
         self.mesh = get_mesh(self.level)
         self.world = w = World(self.mesh, self.months)
@@ -714,7 +886,7 @@ class Engine:
         for stage in self.stage_list:
             clock = self.clocks[stage]
             steps = visible(self.plan.order[stage])
-            if not steps and not any(s == stage for s in self.registry.labels.values()):
+            if not self.plan.order[stage]:                   # no process, no push and no label field: nothing to run
                 continue
             self.log(f"stage {stage} ({clock}): {' -> '.join(steps) or 'no process'}")
             if clock == "once":
@@ -724,10 +896,10 @@ class Engine:
             elif clock == "climate":
                 self._run_climate(stage)
             elif clock == "weather":
-                if steps:
-                    raise EngineError(f"stage {stage} runs on the weather clock, which is built in step 8")
+                raise EngineError(f"stage {stage} runs on the weather clock, which is built in step 8")
             else:
                 raise EngineError(f"stage {stage} steps through dates; that clock is built in step 8")
+        self._finish_push_records()
         self._lineage()
         w.meta = {
             "engine_version": __version__, "profile": self.profile_name, "mesh_level": self.level, "cells": w.n,
@@ -736,4 +908,7 @@ class Engine:
             "settled": dict(w.settled), "parameters_fingerprint": self.params.fingerprint(),
             "mesh": self.mesh.describe(), "build_seconds": time.perf_counter() - t0,
         }
+        limit = self.profile.get("run_time_limit_s")
+        if limit is not None and w.meta["build_seconds"] > limit:
+            w.notice("run_time_over_limit", profile=self.profile_name, seconds=round(w.meta["build_seconds"], 1), limit_s=limit)
         return w

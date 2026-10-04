@@ -63,7 +63,7 @@ def main(path):
     names = v.specs["biome"]["categories"]
     b = np.bincount(f["biome"], weights=area, minlength=len(names)) / total
     print("biomes, share of the surface:", {n: round(float(s), 3) for n, s in zip(names, b) if s > 0})
-    print(f"  sea frozen all year: {share(wet & (f['biome'] == names.index('ice'))):.3f} of the surface")
+    print(f"  sea under ice: {share(wet & (f['biome'] == names.index('ice'))):.3f} of the surface")
     kn = v.specs["climate_class"]["categories"]
     k = np.bincount(f["climate_class"], weights=area * land, minlength=len(kn)) / (area * land).sum()
     groups = {}

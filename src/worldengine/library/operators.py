@@ -17,6 +17,8 @@ from scipy.spatial import cKDTree
 
 from ..mesh import Mesh
 
+_POTENTIAL_SHIFT = 1.0e-6
+
 
 def laplacian_matrix(mesh: Mesh) -> sp.csr_matrix:
     """Area-integrated Laplacian: (L f)[i] = sum over neighbours j of (dual / dist) * (f[j] - f[i])."""
@@ -109,6 +111,27 @@ def smooth(mesh: Mesh, f: np.ndarray, length: float, memo: dict | None = None) -
     return lu.solve(mesh.area * np.asarray(f, dtype=np.float64))
 
 
+def converging_part(mesh: Mesh, v: np.ndarray, memo: dict | None = None) -> np.ndarray:
+    """The part of a tangent vector field (n, 3) that converges and spreads, as opposed to the part that turns.
+
+    Any wind field is the sum of two parts (the Helmholtz split). One flows toward the places where air gathers
+    and away from where it spreads: it is the gradient of a potential chi with Laplacian(chi) = divergence(v).
+    The other circles without gathering anywhere. This returns the first; v minus it is the second.
+    One direct solve; the prepared solver is kept in `memo` if one is given.
+    """
+    key = ("potential", mesh.level)
+    lu = memo.get(key) if memo is not None else None
+    if lu is None:
+        # The Laplacian alone cannot be inverted (a constant has none). A shift far below its smallest rate of 2
+        # fixes the mean of chi at zero and changes the answer by less than one part in a million.
+        m = laplacian_matrix(mesh) - _POTENTIAL_SHIFT * sp.diags(mesh.area)
+        lu = spla.splu(m.tocsc())
+        if memo is not None:
+            memo[key] = lu
+    chi = lu.solve(mesh.area * divergence(mesh, np.asarray(v, dtype=np.float64)))
+    return gradient(mesh, chi)
+
+
 def area_mean(mesh: Mesh, f: np.ndarray, mask: np.ndarray | None = None) -> float:
     w = mesh.area if mask is None else mesh.area * mask
     return float((f * w).sum() / w.sum())
@@ -144,6 +167,7 @@ def zonal_mean(mesh: Mesh, f: np.ndarray, band_deg: float, mask: np.ndarray | No
     band_deg = 180.0 / nb
     b = np.clip(((mesh.lat + 90.0) / band_deg).astype(np.int64), 0, nb - 1)
     w = mesh.area if mask is None else mesh.area * mask
+    f = np.where(w > 0, f, 0.0)                              # a missing value outside the mask must not reach the sum
     num = np.bincount(b, weights=w * f, minlength=nb)
     den = np.bincount(b, weights=w, minlength=nb)
     with np.errstate(invalid="ignore", divide="ignore"):

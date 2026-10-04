@@ -28,7 +28,10 @@ Tectonics:
       normal_thickness: {base: true, says: "crust of its type is normally {v} thick", follows: [crust_type]}
       seeded_variation: {says: "the seeded starting condition varies it by {v}"}
       thickened_by_plates: {says: "plates closing nearby have thickened it by {v}", follows: [convergence_rate]}
-      event: {cell: true}
+      event:
+        row_of: tectonic_events
+        values: {kind: {1: "a trench where one plate dives under the other", 2: "a collision of continents", 4: "a spreading ridge"}}
+        says: "the event behind the thickening is {kind}, between plates {plate_a} and {plate_b} (row {row} of the table of tectonic events)"
 
 Isostasy:
   elevation:
@@ -45,7 +48,8 @@ SeaLevel:
     drivers:
       reason:
         names: ["the ground stands above sea level", "it was flooded from the main sea", "it lies in a separate body of water",
-                "it is low ground that a barrier keeps dry"]
+                "it is low ground that a barrier keeps dry",
+                "it is low ground in a hollow that the sea spilled into, and the water ran out before the hollow filled"]
         says: "The reason: {v}"
       barrier_cell: {cell: true}
   height_above_sea:
@@ -128,15 +132,17 @@ Biomes:
       rule:
         names: ["the cell is sea", "the warmest month is below freezing, so nothing grows", "Whittaker's chart places this climate here",
                 "the climate lies off Whittaker's chart, and this is the nearest biome on it",
-                "the sea here stays frozen all year: even its warmest month is below the freezing point of sea water"]
+                "ice lies on the sea here: the mean temperature of the year is below -10 °C"]
         says: "{v}"
         follows_by:
-          "the sea here stays frozen all year: even its warmest month is below the freezing point of sea water": [surface_temperature]
+          "the cell is sea": [ocean_mask]
+          "ice lies on the sea here: the mean temperature of the year is below -10 °C": [surface_temperature, ocean_mask]
           "the warmest month is below freezing, so nothing grows": [surface_temperature]
+      # on sea the two yearly values are missing, and a missing value is not mentioned
       yearly_temperature: {unit: C_from_K, says: "the yearly mean temperature is {v}"}
       yearly_precipitation: {unit: mm, says: "the yearly precipitation is {v}"}
       limit:
-        names: [none, too_cold, too_dry]
+        names: [none, too_cold, too_dry, not_land]
         says_by:
           too_cold: "what limits plant life here is cold"
           too_dry: "what limits plant life here is drought"

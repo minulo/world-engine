@@ -10,4 +10,5 @@
     - group: surface_heat_flux      # push the cause: a heat sink
       add: -120.0                   # W/m2, every month
     - field: surface_temperature    # guarantee the outcome in the climate
-      cap_max: 268.15               # kelvin, which is -5 degrees C
+      cap_max: 258.15               # kelvin, which is -15 degrees C: cold enough for ice to lie on the sea as well,
+                                    # which takes a yearly mean below -10 degrees C (the rule of Albedo and Biomes)
