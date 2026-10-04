@@ -7,6 +7,7 @@ and the cause records. Processes never call each other; they meet only here.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import importlib
 import math
@@ -28,6 +29,10 @@ from .scheduler import DEFAULT, PUSH, Plan, schedule, visible
 
 class EngineError(Exception):
     """The engine cannot do what was asked; the message says why."""
+
+
+NOTE_KEYS = frozenset({"kind", "slot", "stage", "what", "first_round", "last_round", "rounds"})     # what every note holds
+START_ROUND = 0                 # the round number a start step runs under, before round 1
 
 
 def _resolve_level(value, level, where):
@@ -223,6 +228,10 @@ class Context:
         """Record a fact about this run in the world store, such as a solver that stopped at its cap.
         It does not stop the run; the viewer and the "why" answers repeat it. A note says something about
         the round it is raised in: in the climate stage only the notes of the settled round are kept."""
+        taken = sorted(set(details) & NOTE_KEYS)
+        if taken:
+            raise ContractError(f"{self._name}: a note cannot carry a detail named {', '.join(taken)}; the engine uses "
+                                f"those names itself ({', '.join(sorted(NOTE_KEYS))})")
         self._w.note(self._name, self._stage, self.round, what, details)
 
     # ---- cause records
@@ -277,6 +286,9 @@ class Engine:
         self.pushes = iv.parse(p["interventions"], self.registry)
         self.registry.with_label_classes(iv.label_classes(self.pushes, self.registry))
         self.stage_list = [s["name"] for s in p["stages"]["stages"]]
+        twice = sorted({name for name in self.stage_list if self.stage_list.count(name) > 1})
+        if twice:
+            raise ParameterError(f"stages.yaml names the stage {', '.join(twice)} more than once; every stage needs its own name")
         self.stage_cfg = {s["name"]: s for s in p["stages"]["stages"]}
         self.clocks = {s["name"]: s["clock"] for s in p["stages"]["stages"]}
 
@@ -326,16 +338,26 @@ class Engine:
         self.memo: dict = {}
         self._fresh: dict[str, set] = {}
         self._weights: dict[str, np.ndarray] = {}
+        self._received: set = set()                          # pushes on groups that some reader was given, in any round
+        self._last_given: dict = {}                          # (group, read from the previous round) -> pushes in the last recorded sum
+        self._applied: dict[str, np.ndarray] = {}            # push with a condition -> the weights of its last round in force
+        self._rounds_in_force: dict[str, set] = {}
 
     # ------------------------------------------------------------------ set-up helpers
+    @contextlib.contextmanager
     def _limit_threads(self):
         """The thread count of the mathematics libraries for the length of a build (design, Layer 8). The limit is
         taken when a build or a harness run starts and handed back when it ends, so that two engines in one
-        interpreter do not set each other's count."""
+        interpreter do not set each other's count. That holds for the compiled loops (numba) as for the libraries."""
         import numba
         from threadpoolctl import threadpool_limits
+        before = numba.get_num_threads()
         numba.set_num_threads(max(1, min(self.threads, numba.config.NUMBA_NUM_THREADS)))
-        return threadpool_limits(limits=self.threads)
+        try:
+            with threadpool_limits(limits=self.threads):
+                yield
+        finally:
+            numba.set_num_threads(before)
 
     @staticmethod
     def _load_implementation(slot, path) -> Process:
@@ -351,6 +373,11 @@ class Engine:
     def _check_names(self):
         """Every declared name must have a dictionary entry, so that a misspelled name cannot pass silently."""
         problems = []
+        for slot in self.procs:                              # the key of a random draw is seed|slot|purpose|round
+            for name in (slot, *self.allowed_draws.get(slot, ())):
+                if "|" in name:
+                    problems.append(f"the name {name!r} contains the bar |, which separates the parts of a draw's key; "
+                                    f"with it two different draws could get the same key")
         for slot, d in self.decls.items():
             for f in d["reads"] + d["lagged"] + d["writes"] + d["modifies"] + list(d["contributes"].values()):
                 if f.startswith("table:"):
@@ -382,6 +409,14 @@ class Engine:
         for name, cfg in self.stage_cfg.items():
             if "step" in cfg and cfg["clock"] != "dated":
                 problems.append(f"stages.yaml: stage {name} gives a step, which only a stage that steps through dates takes")
+            if "first_date" in cfg and cfg["clock"] != "dated":
+                problems.append(f"stages.yaml: stage {name} gives a first date, which only a stage that steps through dates takes")
+            if cfg["clock"] in ("weather", "dated") and visible(self.plan.order[name]):
+                problems.append(f"stages.yaml: stage {name} runs on the {cfg['clock']} clock, which is built in step 8; until then "
+                                f"it must stay empty, but it holds {', '.join(visible(self.plan.order[name]))}")
+            elif cfg["clock"] in ("weather", "dated") and self.plan.order[name]:
+                problems.append(f"stages.yaml: stage {name} runs on the {cfg['clock']} clock, which is built in step 8; until then "
+                                f"no label field may belong to it")
             for key in ("round_length_my", "history_length_my"):
                 if key in cfg and cfg["clock"] != "geological":
                     problems.append(f"stages.yaml: stage {name} gives {key}, which only a stage on the geological clock takes")
@@ -390,6 +425,9 @@ class Engine:
         if self.profile.get("snapshot_every_rounds") is not None or self.profile.get("snapshot_fields"):
             problems.append(f"profiles.yaml: profile {self.profile_name} asks for snapshots of the geological history; "
                             f"they are built in step 3, with the plate history")
+        if self.profile.get("climate_rerun_every_rounds") is not None:
+            problems.append(f"profiles.yaml: profile {self.profile_name} reruns the climate inside the geological history; "
+                            f"that link is built in step 9")
         for q in self.pushes:                                # when.rounds counts geological rounds
             if q.rounds is None:
                 continue
@@ -444,12 +482,22 @@ class Engine:
         if lagged:
             members.update({k: v for k, v in w.group_lagged.get(group, {}).items() if self.member_stage.get((group, k)) == stage})
         at = round_no - 1 if lagged else round_no            # the round whose sum the reader is given
+        given = set()                                        # the pushes that this sum holds
+        for key in members:                                  # a push with a condition is a member worked out in its place
+            q = self.push_by_id.get(key[len("push:"):]) if key.startswith("push:") else None
+            if q is not None:                                # (a test harness may hand over a member under such a name)
+                made_in = self.member_stage.get((group, key))
+                made_at = at if made_in == stage else w.rounds_used.get(made_in, 0)     # another stage's member is read as stored
+                if made_at >= 1 and self._push_active(q, made_in, made_at):
+                    given.add(q.id)
         for key, value in w.group_const.get(group, {}).items():
             q = self.push_by_id[key[len("push:"):]]
             if self._push_active(q, stage, at):
                 members[key] = value
-                if recording:
-                    self._acted(q, stage, round_no, self._weights[q.id])
+                given.add(q.id)
+        self._received |= given
+        if recording:
+            self._last_given[(group, lagged)] = given
         total = np.zeros(spec.array_shape(w.n, w.months))
         for k in sorted(members):
             total = total + members[k]
@@ -459,7 +507,10 @@ class Engine:
     def _store_field(self, name, value, stage, writer, round_no, replay):
         spec = self.registry.fields[name]
         w = self.world
-        a = spec.cast(value, w.n, w.months)
+        try:
+            a = spec.cast(value, w.n, w.months)
+        except ValueError as e:
+            raise ValueError(f"{writer}: {e}") from None
         bad = spec.outside_range(a)
         if bad:
             w.notice("field_outside_range", field=name, writer=writer, **bad)
@@ -476,13 +527,18 @@ class Engine:
         out, length = {}, None
         for c, t in spec.columns.items():
             given = np.asarray(columns[c])
-            with np.errstate(invalid="ignore"):              # a value too large for the type is caught just below
+            if given.dtype.kind not in "biuf":               # text, None, complex numbers, mixed lists
+                raise ContractError(f"{writer} wrote table {name}: column {c} holds values of type {given.dtype}; a column "
+                                    f"takes numbers or true and false")
+            with np.errstate(invalid="ignore", over="ignore"):       # a value too large for the type is caught just below
                 a = np.array(given, dtype=t, copy=True)
             if a.ndim != 1 or (length is not None and a.size != length):
                 raise ContractError(f"{writer} wrote table {name}: every column must be one list of the same length")
             if a.dtype.kind in "iub" and given.dtype.kind in "iuf" and a.size and not np.array_equal(a.astype(given.dtype), given):
                 raise ContractError(f"{writer} wrote table {name}: column {c} holds values that do not fit its type {t} "
                                     f"(a fraction, or a number too large); they would be changed without a word")
+            if a.dtype.kind == "f" and a.size and np.isinf(a).any():
+                raise ContractError(f"{writer} wrote table {name}: column {c} holds an infinite value, or one too large for {t}")
             length = a.size
             a.flags.writeable = False
             out[c] = a
@@ -521,13 +577,13 @@ class Engine:
         return q.rounds[0] <= round_no <= q.rounds[1]
 
     def _acted(self, q, stage, round_no, wts):
-        """Keep, for the cause record, the rounds in which a push acted and whether it ever touched a cell."""
-        a = self.world.push_activity.setdefault(q.id, {"stage": stage, "first_round": round_no, "last_round": None,
+        """Keep the rounds in which a push was in force and whether it ever covered a cell. In force means: applied
+        to its field, or held in its group's sum, in that round; whether a process then read the sum is kept apart."""
+        seen = self._rounds_in_force.setdefault(q.id, set())
+        seen.add(round_no)                                   # the cause pass runs a round a second time: it counts once
+        a = self.world.push_activity.setdefault(q.id, {"stage": stage, "first_round": round_no, "last_round": round_no,
                                                         "rounds": 0, "touched": False})
-        if a["last_round"] != round_no:                      # the cause pass runs a round a second time: count it once
-            a["rounds"] += 1
-            a["last_round"] = round_no
-        a["touched"] = bool(a["touched"] or wts.any())
+        a.update(first_round=min(seen), last_round=max(seen), rounds=len(seen), touched=bool(a["touched"] or wts.any()))
 
     def _push_record(self, q, wts, **more):
         return {**more, "weight": wts.astype(np.float32), "physical": q.physical, "reason": q.reason,
@@ -547,11 +603,9 @@ class Engine:
             member = (amount * wts).astype(np.float32)
             member.flags.writeable = False
             w.group_now.setdefault(q.target, {})["push:" + q.id] = member
-            if recording:
-                w.push_records.pop(q.id, None)
-                if active:
-                    w.push_records[q.id] = self._push_record(q, wts, group=q.target)
-                    self._acted(q, stage, round_no, wts)
+            if active:                                       # its record is written at the end, if a reader was given it
+                self._applied[q.id] = wts
+                self._acted(q, stage, round_no, wts)
             return
         spec = self.registry.fields[q.target]
         old = w.fields[q.target]
@@ -563,9 +617,9 @@ class Engine:
         wts = self._push_weights(q, stage)
         amount = iv.amount_array(q, spec.kind, old.shape, w.months, self.mesh, code=spec.code)
         new = iv.apply_op(q.op, old, amount, wts, spec.kind)
+        self._acted(q, stage, round_no, wts)
         if recording:
             w.push_records[q.id] = self._push_record(q, wts, field=q.target, before=old)
-            self._acted(q, stage, round_no, wts)
         self._store_field(q.target, new, stage, step, round_no, replay)
 
     def _constant_group_pushes(self):
@@ -582,23 +636,46 @@ class Engine:
                 w.group_const.setdefault(group, {})["push:" + pid] = member
 
     def _finish_push_records(self):
-        """After the last stage: the records of the group pushes with a fixed region, and a notice for every push
-        that never touched a cell."""
+        """After the last stage: the records of the pushes on groups, and a notice for every push that changed nothing.
+
+        A push on a group leaves a record if the sum that a reader was last given held it: in the last round for a
+        read of the same round, in the round before for a read from the previous round. The record of a push with a
+        condition carries the weights of the last round it was in force. A push is reported as having changed
+        nothing if no process reads its group, if it was in force in no round, if no process read the group in a round
+        whose sum held it, or if its region covered no cell."""
         w = self.world
         read = {g for d in self.plan.steps.values() for g in d["lagged_group"] + d["group_reads"]}
-        for group, members in w.group_const.items():
-            for key in members:
-                if key in w.group_records.get(group, {}):    # the sum that the reader was last given held this push
-                    q = self.push_by_id[key[len("push:"):]]
-                    w.push_records[q.id] = self._push_record(q, self._weights[q.id], group=group)
+        last = {}
+        for (group, _), ids in self._last_given.items():
+            last.setdefault(group, set()).update(ids)
+        for q in self.pushes:
+            if not q.on_group:
+                continue
+            if q.region.fixed:                               # in force in every round of the first stage that uses the group
+                users = {st for (g, _), st in self.member_stage.items() if g == q.target} | \
+                        {d["stage"] for d in self.plan.steps.values() if q.target in d["lagged_group"] + d["group_reads"]}
+                for stage in sorted(users, key=self.stage_list.index):
+                    rounds = [r for r in range(1, w.rounds_used.get(stage, 0) + 1) if self._push_active(q, stage, r)]
+                    for r in rounds:
+                        self._acted(q, stage, r, self._weights[q.id])
+                    if rounds:
+                        break
+            if q.id in last.get(q.target, ()):
+                wts = self._weights[q.id] if q.region.fixed else self._applied[q.id]
+                w.push_records[q.id] = self._push_record(q, wts, group=q.target)
         for q in self.pushes:
             act = w.push_activity.get(q.id)
-            if act is None:
-                why = f"no process reads group {q.target}" if q.on_group and q.target not in read else \
-                    "it was in no round that it applies to"
-                w.notice("push_touched_nothing", push=q.id, why=why)
+            if q.on_group and q.target not in read:
+                why = f"no process reads group {q.target}"
+            elif act is None:
+                why = "it was in no round that it applies to"
+            elif q.on_group and q.id not in self._received:
+                why = f"no process read group {q.target} in a round whose sum held it"
             elif not act["touched"]:
-                w.notice("push_touched_nothing", push=q.id)
+                why = None                                   # its region covers no cell
+            else:
+                continue
+            w.notice("push_touched_nothing", push=q.id, **({"why": why} if why else {}))
 
     # ------------------------------------------------------------------ rounds
     def _run_round(self, stage, round_no, recording, replay=False, starting=False):
@@ -708,21 +785,22 @@ class Engine:
 
         for f in self.lagged_fields:
             spec = self.registry.fields[f]
-            if self.stage_of.get(f) != stage or f not in w.fields or spec.kind == "category":
+            if self.stage_of.get(f) != stage or f not in w.fields:
                 continue
             if spec.kind in ("number", "direction"):
                 measure(f, w.fields[f], self._lagged_value(f, stage), spec.settle)
-            else:                                            # true-or-false and index fields: the share of the area that changed
-                changed(f, w.fields[f], self._lagged_value(f, stage))
-        for g in self.lagged_groups:
+            else:                    # classes (label fields among them), true-or-false and index fields: the share of the
+                changed(f, w.fields[f], self._lagged_value(f, stage))      # area that differs from the copy the round was given
+        read_here = {g for d in self.plan.steps.values() if d["stage"] == stage for g in d["lagged_group"]}
+        for g in sorted(read_here):                          # a group that only another stage reads this way is not this stage's loop
             if not any(self.plan.steps[m]["stage"] == stage for m in self.plan.members.get(g, [])):
                 continue
             spec = self.registry.groups[g]
             zero = np.zeros(spec.array_shape(w.n, w.months))
             mine = lambda members: sum((v for k, v in sorted(members.items()) if self.member_stage.get((g, k)) == stage), zero)
             measure("group:" + g, mine(w.group_now.get(g, {})), mine(w.group_lagged.get(g, {})), None)
-        for f, spec in self.registry.fields.items():
-            if spec.kind != "category" or spec.is_label or self.stage_of.get(f) != stage or f not in w.fields:
+        for f, spec in self.registry.fields.items():         # the classes that nothing reads from the previous round
+            if spec.kind != "category" or spec.is_label or self.stage_of.get(f) != stage or f not in w.fields or f in self.lagged_fields:
                 continue
             changed(f, w.fields[f], previous_classes.get(f))
         for t in self._loop_tables(stage):
@@ -756,10 +834,13 @@ class Engine:
     def _start(self, stage):
         """Start steps fill state before round 1 (design, Layer 2): a table that a process carries from round to round."""
         if any(self.decls[s]["start"] for s in self.plan.order[stage] if s in self.decls):
-            self._run_round(stage, 0, recording=False, starting=True)
+            self._run_round(stage, START_ROUND, recording=False, starting=True)
             for t in self.lagged_tables:
                 if t in self.world.tables and self.table_stage.get(t) == stage:
                     self.world.lagged_tables[t] = self.world.tables[t]
+            for f in sorted(self._fresh.get(stage, ())):     # a field filled by a start step is round 1's "previous round"
+                if f in self.lagged_fields:
+                    self.world.lagged[f] = self.world.fields[f]
 
     def _run_once(self, stage):
         self._start(stage)
@@ -770,8 +851,6 @@ class Engine:
     def _run_geological(self, stage):
         cfg = self.stage_cfg[stage]
         rounds = max(1, math.ceil(cfg["history_length_my"] / cfg["round_length_my"] - 1e-9))
-        if self.profile.get("climate_rerun_every_rounds"):
-            raise EngineError("this profile reruns the climate inside the geological history; that link is built in step 9")
         self._start(stage)
         for r in range(1, rounds + 1):
             self._run_round(stage, r, recording=True)      # geological causes are recorded as the stage runs
@@ -819,7 +898,8 @@ class Engine:
         # The cause pass: the settled round is run once more with the same inputs, recording drivers.
         # It must leave every field as it was, and the engine checks that it did.
         # Notes and range notices of the rounds before it described working steps; only those of this pass are kept.
-        w.clear_notices("process_note", stage=stage)
+        w.notices = [n for n in w.notices if not (n["kind"] == "process_note" and n["stage"] == stage
+                                                    and n["last_round"] != START_ROUND)]      # a start step's note stays
         for f in self.stage_of:
             if self.stage_of[f] == stage:
                 w.clear_notices("field_outside_range", field=f)
@@ -859,11 +939,17 @@ class Engine:
             describe = lambda q: {"id": q.id, "op": q.op, "amount": q.amount, "circle": q.region.circle,
                                   "outline": q.region.outline, "edge_km": q.region.edge_km, "rounds": q.rounds,
                                   "where": [[c.field, c.test, c.value, c.lagged, c.month] for c in q.region.conditions]}
+            # groups that the writer or a modifier of the field reads: a push on any of them shaped the field
+            all_groups = set(groups) | {g for m in modifiers for g in self.plan.steps[m]["lagged_group"] + self.plan.steps[m]["group_reads"]}
+            draws = any(self.procs[x].draws for x in [writer, *modifiers] if x in self.procs)
             handed = {"constants": self.constants.get(writer, {}), "shared": self.shared_for.get(writer, {}),
                       "planet": self.planet, "pushes": [describe(q) for q in pushes],
-                      "group_pushes": [describe(q) for q in self.pushes if q.on_group and q.target in groups],
+                      "group_pushes": [describe(q) for q in self.pushes if q.on_group and q.target in all_groups],
                       "modifiers": {m: {"constants": self.constants.get(m, {}), "shared": self.shared_for.get(m, {})}
-                                    for m in modifiers}}
+                                    for m in modifiers},
+                      "mesh_level": self.level,
+                      "seed": self.seed if draws else None,          # the seed counts where a draw is made
+                      "climate": self.profile["climate"] if self.clocks[d["stage"]] == "climate" else None}
             w.lineage[f] = {
                 "writer": writer, "stage": d["stage"], "model": proc.model if proc else "the engine's default for a label field",
                 "version": proc.version if proc else __version__,
@@ -881,6 +967,7 @@ class Engine:
         self.mesh = get_mesh(self.level)
         self.world = w = World(self.mesh, self.months)
         self._fresh, self._weights, self.memo = {}, {}, {}
+        self._received, self._last_given, self._applied, self._rounds_in_force = set(), {}, {}, {}
         self._check_ranges()
         self._constant_group_pushes()
         for stage in self.stage_list:
@@ -895,10 +982,8 @@ class Engine:
                 self._run_geological(stage)
             elif clock == "climate":
                 self._run_climate(stage)
-            elif clock == "weather":
-                raise EngineError(f"stage {stage} runs on the weather clock, which is built in step 8")
-            else:
-                raise EngineError(f"stage {stage} steps through dates; that clock is built in step 8")
+            else:                                            # refused on loading: see _check_settings
+                raise EngineError(f"stage {stage} runs on the {clock} clock, which is built in step 8")
         self._finish_push_records()
         self._lineage()
         w.meta = {

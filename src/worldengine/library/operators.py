@@ -186,9 +186,16 @@ def arc_distance_to_set(mesh: Mesh, members: np.ndarray):
 
 
 def zonal_mean(mesh: Mesh, f: np.ndarray, band_deg: float, mask: np.ndarray | None = None, fill: bool = False):
-    """Area-weighted mean of a field in latitude bands. Returns the band centres (degrees) and the means.
+    """Area-weighted mean of a field in latitude bands. Returns the band centres (degrees) and the means; for a
+    field with one slice per month, the means of every month.
     A band with no cell in the mask gives NaN, or, with fill, the value between its neighbours.
     The number of bands is made odd, so that one band straddles the equator and north and south are treated alike."""
+    f = np.asarray(f)
+    if f.ndim == 2:                                          # one slice per month: the means of each month, (months, bands)
+        rows = [zonal_mean(mesh, row, band_deg, mask, fill) for row in f]
+        return rows[0][0], np.stack([means for _, means in rows])
+    if f.shape != (mesh.n,):
+        raise ValueError(f"zonal_mean takes one value per cell, or one per month and cell; got shape {f.shape}")
     nb = int(round(180.0 / band_deg))
     nb += 1 - nb % 2
     band_deg = 180.0 / nb

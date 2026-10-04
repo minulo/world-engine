@@ -20,7 +20,9 @@ Tectonics:
     ends: "The chain ends here, at a seeded starting condition: the motions of the plates are drawn from the world seed."
   ocean_crust_age:
     says: "The ocean floor here is {value} old: its distance from the plate's nearest spreading ridge, at half the opening speed there."
+    says_missing: "There is no ocean floor here, so its age has no value: the crust is continental."
     follows: [convergence_rate]
+    follows_missing: [crust_type]
   crust_thickness:
     says: "The crust here is {value} thick:"
     form: sum

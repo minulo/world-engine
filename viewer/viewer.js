@@ -4,6 +4,7 @@
 
 const $ = (id) => document.getElementById(id);
 const DATA_W = 1024;
+const NO_CLASS = [217, 26, 191];           // the colour of a class code that the field's list does not hold
 const state = {
   world: null, field: null, part: "", month: 1, flat: false, lon0: 0, lat0: 20, zoom: 0.92, panX: 0, panY: 0,
   idmap: null, idW: 0, idH: 0, data: null, stats: null, selected: -1, playing: null, cache: new Map(),
@@ -61,7 +62,7 @@ in vec2 aPos; out vec2 vPos; void main() { vPos = aPos; gl_Position = vec4(aPos,
 const FS = `#version 300 es
 precision highp float; precision highp int; precision highp usampler2D;
 uniform usampler2D uIds; uniform sampler2D uData; uniform sampler2D uLut; uniform sampler2D uPal;
-uniform int uFlat, uCategorical, uSplit, uSel, uReady; uniform ivec2 uIdSize; uniform mat3 uRot;
+uniform int uFlat, uCategorical, uClasses, uSplit, uSel, uReady; uniform ivec2 uIdSize; uniform mat3 uRot;
 uniform float uZoom, uLo, uHi, uAspect; uniform vec2 uPan; uniform vec3 uSpace;
 in vec2 vPos; out vec4 frag;
 const float PI = 3.141592653589793;
@@ -86,7 +87,10 @@ void main() {
   float v = texelFetch(uData, ivec2(id % ${DATA_W}, id / ${DATA_W}), 0).r;
   vec3 c;
   if (isnan(v)) c = vec3(0.45);
-  else if (uCategorical == 1) c = texelFetch(uPal, ivec2(int(v + 0.5), 0), 0).rgb;
+  else if (uCategorical == 1) {                           // a code outside the list of classes has a colour of its own
+    int k = int(floor(v + 0.5));
+    c = (k < 0 || k >= uClasses) ? vec3(${NO_CLASS.map((x) => (x / 255).toFixed(3)).join(", ")}) : texelFetch(uPal, ivec2(k, 0), 0).rgb;
+  }
   else {
     float t;
     if (uSplit == 1) t = v <= 0.0 ? 0.498 - 0.498 * clamp(v / min(uLo, -1e-30), 0.0, 1.0) : 0.502 + 0.498 * clamp(v / max(uHi, 1e-30), 0.0, 1.0);
@@ -108,7 +112,7 @@ function initGL() {
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(prog, "aPos"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  for (const n of ["uIds", "uData", "uLut", "uPal", "uFlat", "uCategorical", "uSplit", "uSel", "uReady", "uIdSize", "uRot", "uZoom",
+  for (const n of ["uIds", "uData", "uLut", "uPal", "uFlat", "uCategorical", "uClasses", "uSplit", "uSel", "uReady", "uIdSize", "uRot", "uZoom",
     "uLo", "uHi", "uAspect", "uPan", "uSpace"]) uni[n] = gl.getUniformLocation(prog, n);
   ["ids", "data", "lut", "pal"].forEach((n, i) => { tex[n] = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, tex[n]);
@@ -208,7 +212,12 @@ async function selectField() {
     const ul = document.createElement("ul");
     names.forEach((n, i) => { if (!present.has(i)) return; const li = document.createElement("li"), sw = document.createElement("span");
       sw.className = "sw"; sw.style.background = `rgb(${pal[i * 4]},${pal[i * 4 + 1]},${pal[i * 4 + 2]})`; li.append(sw, n.replace(/_/g, " ")); ul.append(li); });
+    if ([...present].some((v) => !Number.isNaN(v) && (v < 0 || v >= names.length))) {
+      const li = document.createElement("li"), sw = document.createElement("span");
+      sw.className = "sw"; sw.style.background = `rgb(${NO_CLASS.join(",")})`; li.append(sw, "no class (a code outside the list)"); ul.append(li);
+    }
     legend.append(ul);
+    gl.uniform1i(uni.uClasses, names.length);
   } else {
     state.stats = await getJSON("/api/stats?name=" + encodeURIComponent(state.field));
     lo = state.stats.low ?? 0; hi = state.stats.high ?? 1;

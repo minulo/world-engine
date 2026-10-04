@@ -15,17 +15,21 @@ import time
 from pathlib import Path
 
 import numpy as np
-import yaml
 
-from .params import DEFAULT_DATA_DIR, ParameterError
+from .params import DEFAULT_DATA_DIR, ParameterError, load_yaml_text
 from .scheduler import Refused
 
 
 def _engine(args, log=None):
     from .engine import Engine
     overrides = {}
-    if getattr(args, "interventions", None):
-        overrides["interventions"] = yaml.safe_load(Path(args.interventions).read_text(encoding="utf-8")) or []
+    if getattr(args, "interventions", None):                 # read with the same rules as the files of the data directory
+        path = Path(args.interventions)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise ParameterError(f"{path}: the push file is missing") from None
+        overrides["interventions"] = load_yaml_text(text, path.name) or []
     return Engine(args.data, profile=args.profile, seed=args.seed, overrides=overrides or None, log=log)
 
 

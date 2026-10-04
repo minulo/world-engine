@@ -104,24 +104,46 @@ def validate(value, schema, name: str):
         raise ParameterError("; ".join(problems))
 
 
-class _OneKeyOnce(yaml.SafeLoader):
-    """The safe YAML loader, except that a key written twice in one map is an error. Plain YAML keeps the last
-    one and says nothing, so that a constant set twice in a long file would silently take its second value."""
+_MERGE = "tag:yaml.org,2002:merge"
 
-    def construct_mapping(self, node, deep=False):
-        seen = set()
-        for key_node, _ in node.value:
-            if key_node.tag == "tag:yaml.org,2002:merge":   # the "<<" of an anchor: not a key of its own
+
+def _refuse_keys_written_twice(text):
+    """Plain YAML keeps the last of two equal keys in one map and says nothing, so that a constant set twice in a
+    long file would silently take its second value. This walks the file as it is written, before anything is
+    built from it: a key taken over from an anchor with "<<" and then set again is a legal override, not a key
+    written twice, and merges may be chained."""
+    loader = yaml.SafeLoader(text)
+    try:
+        root = loader.get_single_node()
+        seen, todo = set(), [root] if root is not None else []
+        while todo:
+            node = todo.pop()
+            if id(node) in seen:                             # an anchor used in several places is one node
                 continue
-            key = self.construct_object(key_node, deep=True)
-            try:
-                twice = key in seen
-            except TypeError:
-                continue
-            if twice:
-                raise yaml.constructor.ConstructorError(None, None, f"the key {key!r} is written twice in one map", key_node.start_mark)
-            seen.add(key)
-        return super().construct_mapping(node, deep)
+            seen.add(id(node))
+            if isinstance(node, yaml.MappingNode):
+                keys = set()
+                for key_node, value_node in node.value:
+                    if key_node.tag != _MERGE and isinstance(key_node, yaml.ScalarNode):
+                        key = loader.construct_object(key_node, deep=True)
+                        if key in keys:
+                            raise yaml.constructor.ConstructorError(None, None, f"the key {key!r} is written twice in one map",
+                                                                    key_node.start_mark)
+                        keys.add(key)
+                    todo += [key_node, value_node]
+            elif isinstance(node, yaml.SequenceNode):
+                todo += node.value
+    finally:
+        loader.dispose()
+
+
+def load_yaml_text(text, name):
+    """Parse one YAML text with the engine's rules; `name` is what a refusal calls it."""
+    try:
+        _refuse_keys_written_twice(text)
+        return yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise ParameterError(f"{name}: not valid YAML: {e}") from None
 
 
 def _load_yaml(path: Path):
@@ -129,10 +151,7 @@ def _load_yaml(path: Path):
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ParameterError(f"{path.name}: the file is missing from {path.parent}") from None
-    try:
-        return text, yaml.load(text, Loader=_OneKeyOnce)
-    except yaml.YAMLError as e:
-        raise ParameterError(f"{path.name}: not valid YAML: {e}") from None
+    return text, load_yaml_text(text, path.name)
 
 
 def freeze(value):

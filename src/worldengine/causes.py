@@ -7,6 +7,8 @@ condition or a push. The walk is written once, here. The sentence patterns are d
 
 A pattern entry, under the slot and the field it writes:
     says:     sentence for the field; slots {value}, {lat}, {lon}, {planet[...]} and one per driver
+    says_missing:  sentence used in its place where the field has no value in the cell;
+              follows_missing: the fields the walk then continues to
     form:     sum (the drivers add up to the field), rule (a driver names the rule that fired), or plain
     unit:     how to print numbers: K, C_from_K, or any text put after the number
     ends:     text saying why the chain ends here (a parameter, a seeded starting condition)
@@ -14,15 +16,15 @@ A pattern entry, under the slot and the field it writes:
     drivers:  per driver: says (slot {v}), follows (fields), at (a driver holding the cell to continue at),
               names (for a driver that holds a class), follows_by (class name -> fields),
               cell (the driver holds a cell number: it is used by "at" and not spoken),
-              row_of (the driver holds a row of this table: says may then use {row} and one slot per column;
-              values maps a column's codes to words)
+              row_of (the driver holds a row of this table: says may then use {row}, or {row_number} if the table has
+              a column called row, and one slot per column; values maps a column's codes to words)
 """
 from __future__ import annotations
 
 import numpy as np
 
 MAX_DEPTH = 8
-MAX_STEPS = 16
+MAX_STEPS = 16                 # an answer holds at most this many entries, and then one that says where it stopped
 FOLLOW_TOP = 2
 WORTH_FOLLOWING = 0.1          # a driver smaller than this share of the largest one is not followed
 WORTH_SAYING = 0.002           # a driver smaller than this share of the largest one is not mentioned
@@ -101,15 +103,29 @@ def explain(view, cell: int, field: str) -> dict:
     n = attrs["meta"]["cells"]
     if not (0 <= cell < n):
         raise IndexError(f"cell {cell} is outside 0 to {n - 1}")
-    chain, seen, slots_on_path = [], {}, []
+    entries, seen, slots_on_path = [], {}, []
     recorded = attrs.get("drivers") or {}
     push_meta = attrs.get("pushes") or {}
+    models = attrs.get("models") or {}
 
     def here(c):
         if c == cell:
             return ""
         return (f"At {abs(lat[c]):.1f}° {'N' if lat[c] >= 0 else 'S'}, {abs(lon[c]):.1f}° {'E' if lon[c] >= 0 else 'W'} "
                 f"(cell {int(c)}), where the cause lies: ")
+
+    class Chain(list):
+        """The answer's entries. Every entry about another cell than the one asked about says which cell it is
+        about, and nothing is added once the entry that says where the walk stopped is in place."""
+
+        def append(self, entry):
+            if self and self[-1].get("cut"):
+                return
+            if entry["cell"] != cell and not entry["text"].startswith("At "):
+                entry["text"] = here(entry["cell"]) + entry["text"]
+            list.append(self, entry)
+
+    chain = Chain(entries)
 
     def visit(f, c, depth, lagged, path):
         line = lineage.get(f)
@@ -120,17 +136,16 @@ def explain(view, cell: int, field: str) -> dict:
         key = (f, int(c))                                    # a step explains one field in one cell
         if key in path:                                      # the walk has come round to a step it is in the middle of explaining
             chain.append({"field": f, "cell": int(c), "loop": True,
-                          "text": f"{here(c)}This leads back to {f}, explained in step {seen[key]}: a feedback loop, "
+                          "text": f"This leads back to {f}, explained in step {seen[key]}: a feedback loop, "
                                   f"which the climate rounds repeat until it is steady."})
             return
         if key in seen:
             if not (chain and chain[-1].get("again") == f and chain[-1]["cell"] == int(c)):
-                chain.append({"field": f, "cell": int(c), "again": f, "text": f"{here(c)}For {f}, see step {seen[key]}."})
+                chain.append({"field": f, "cell": int(c), "again": f, "text": f"For {f}, see step {seen[key]}."})
             return
         if len(chain) >= MAX_STEPS:
-            if not chain[-1].get("cut"):
-                chain.append({"field": f, "cell": int(c), "end": True, "cut": True,
-                              "text": f"The walk stops here: the chain has reached {MAX_STEPS} steps. Ask about {f} to go on."})
+            chain.append({"field": f, "cell": int(c), "end": True, "cut": True,
+                          "text": f"The walk stops here: the answer has reached {MAX_STEPS} entries. Ask about {f} to go on."})
             return
         seen[key] = len(chain) + 1
         path = path + (key,)
@@ -140,6 +155,7 @@ def explain(view, cell: int, field: str) -> dict:
         pat = (patterns.get(writer) or {}).get(f) or {}
         unit = pat.get("unit", spec["unit"] if spec["kind"] in ("number", "direction") else "")
         value = cell_value(view, f, c)
+        absent = isinstance(value, float) and value != value          # the field has no value in this cell
         shown = value.replace("_", " ") if isinstance(value, str) else _fmt(value, unit)
         dpat = pat.get("drivers") or {}
         terms = [t for t in dpat if t in recorded.get(f, [])] + [t for t in recorded.get(f, []) if t not in dpat]
@@ -150,18 +166,23 @@ def explain(view, cell: int, field: str) -> dict:
         names = {}
         for t, v in dvals.items():
             p = dpat.get(t) or {}
-            if "names" in p:
-                names[t] = p["names"][v] if 0 <= v < len(p["names"]) else str(v)
+            if "names" in p:                                 # a driver that holds a class, whatever type it was stored in
+                code = int(v) if v == v else -1
+                names[t] = p["names"][code] if 0 <= code < len(p["names"]) else f"no class (code {v})"
                 slots[t] = names[t].replace("_", " ")
             else:
                 slots[t] = _fmt(v, p.get("unit", unit))
-        if pat.get("says"):
+        if absent:
+            text = (pat.get("says_missing") or f"{f} has no value here.").format_map(slots)
+        elif pat.get("says"):
             text = pat["says"].format_map(slots)
         else:
             src = ", ".join(line["reads"] + line["reads_lagged"]) or "the planet parameters"
             text = f"{f} is {shown}: {writer} ({line['model']}) computed it from {src}."
         parts, order = [], []
-        if pat.get("form") == "sum":
+        if absent:
+            pass                                             # the drivers of a value that is not there have nothing to add
+        elif pat.get("form") == "sum":
             order = sorted((t for t in dvals if not any((dpat.get(t) or {}).get(k) for k in ("names", "cell", "row_of"))),
                            key=lambda t: -abs(dvals[t]))
             largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
@@ -199,10 +220,12 @@ def explain(view, cell: int, field: str) -> dict:
                 held = {name: table[name][row].item() for name in table}
                 for name, words in (p.get("values") or {}).items():     # (a stored world holds the codes as text)
                     held[name] = words.get(held.get(name), words.get(str(held.get(name)), held.get(name)))
-                parts.append(p["says"].format_map(_Safe(row=row, **held)))
+                parts.append(p["says"].format_map(_Safe({"row": row, "row_number": row, **held})))
         if parts:
             text = text.rstrip() + " " + "; ".join(parts) + "."
-        step = {"field": f, "cell": int(c), "writer": writer, "model": line["model"], "value": shown, "text": here(c) + text,
+        for m in line.get("modified_by", []):                # processes that changed the field after its writer
+            text += f" After {writer} wrote it, {m} changed it ({(models.get(m) or {}).get('model') or 'a process that modifies this field'})."
+        step = {"field": f, "cell": int(c), "writer": writer, "model": line["model"], "value": shown, "text": text,
                 "drivers": {t: slots[t] for t in dvals}}
         if lagged:
             step["lagged"] = True
@@ -217,13 +240,19 @@ def explain(view, cell: int, field: str) -> dict:
             if w <= 0.0:
                 continue
             before = arr["before"]
-            b = before[c] if before.ndim == 1 else before[:, c]
-            if spec["kind"] == "category":
-                b_text = class_name(spec["categories"], b if not np.ndim(b) else np.bincount(b - b.min()).argmax() + b.min())
-            elif spec["kind"] == "direction":
-                b_text = _fmt(float(np.linalg.norm(b if b.ndim == 1 else b.mean(axis=0))), unit)
+            if spec["kind"] == "direction":                  # (cells, 3) or (months, cells, 3)
+                b = before[c] if before.ndim == 2 else before[:, c].mean(axis=0)
+                b_text = _fmt(float(np.linalg.norm(b)), unit)
             else:
-                b_text = _fmt(float(np.mean(b)), unit)
+                b = before[c] if before.ndim == 1 else before[:, c]
+                if spec["kind"] == "category":
+                    b_text = class_name(spec["categories"], b if not np.ndim(b) else np.bincount(b - b.min()).argmax() + b.min())
+                elif spec["kind"] == "boolean":
+                    b_text = _fmt(bool(b if not np.ndim(b) else b.any()), "")
+                elif spec["kind"] == "index":
+                    b_text = _fmt(int(b), "")
+                else:
+                    b_text = _fmt(float(np.mean(b)), unit)
             kind = "a physical push" if meta.get("physical") else "a push that is not physical"
             chain.append({"field": f, "cell": int(c), "push": pid, "physical": bool(meta.get("physical")),
                           "text": f"{kind.capitalize()} acted here: entry {meta['entry']} ({meta.get('reason') or 'no reason given'}), "
@@ -236,6 +265,11 @@ def explain(view, cell: int, field: str) -> dict:
             return
         # where to continue: the fields that the largest drivers name
         nexts = []
+        if absent:                                           # why there is no value: the pattern names where to look
+            for g in pat.get("follows_missing", []):
+                if g in specs:
+                    visit(g, int(c), depth + 1, g in line["reads_lagged"], path)
+            return
         if pat.get("form") == "sum":
             largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
             worth = [t for t in order if t not in base and abs(dvals[t]) > 0.0 and abs(dvals[t]) >= WORTH_FOLLOWING * largest]
@@ -277,7 +311,9 @@ def explain(view, cell: int, field: str) -> dict:
             notices.append(f"{nt['field']} left its valid range somewhere on the planet.")
         elif nt["kind"] == "process_note" and nt["slot"] in slots_on_path:
             notices.append(f"{nt['slot']} noted: {nt['what']}.")
-    return {"cell": int(cell), "lat": float(lat[cell]), "lon": float(lon[cell]), "field": field, "chain": chain, "notices": notices}
+        elif nt["kind"] == "run_time_over_limit":
+            notices.append(f"The build took {nt['seconds']} seconds, more than the {nt['limit_s']} seconds its profile allows.")
+    return {"cell": int(cell), "lat": float(lat[cell]), "lon": float(lon[cell]), "field": field, "chain": list(chain), "notices": notices}
 
 
 def as_text(answer: dict) -> str:

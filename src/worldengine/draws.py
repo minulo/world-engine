@@ -13,10 +13,11 @@ import hashlib
 import numpy as np
 
 _TWO_PI = 2.0 * np.pi
+SEPARATOR = "|"                 # between the parts of a key; refused inside a slot name or a purpose
 
 
 def _key(seed, slot: str, purpose: str, when) -> np.ndarray:
-    digest = hashlib.sha256(f"{seed}|{slot}|{purpose}|{when}".encode("utf-8")).digest()
+    digest = hashlib.sha256(SEPARATOR.join(map(str, (seed, slot, purpose, when))).encode("utf-8")).digest()
     return np.frombuffer(digest[:16], dtype="<u8").copy()
 
 
@@ -59,6 +60,9 @@ class Draws:
 
     def __init__(self, seed, slot: str, allowed, when):
         self._seed, self._slot, self._allowed, self._when = seed, slot, tuple(allowed), when
+        if any(SEPARATOR in name for name in (slot, *self._allowed)):
+            raise ValueError(f"the slot {slot!r} or one of its draws {self._allowed} has the bar {SEPARATOR} in its name; the bar "
+                             f"separates the parts of a draw's key, and with it two different draws could get the same key")
 
     def _check(self, purpose):
         if purpose not in self._allowed:

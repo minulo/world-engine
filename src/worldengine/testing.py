@@ -26,11 +26,15 @@ class Result:
         self.fields, self.tables, self.drivers, self.notices = world.fields, world.tables, world.drivers, world.notices
 
 
-def _merge(base, changes):
+def _merge(base, changes, where=None):
+    """The base with the changes laid over it, key by key. With `where` given, a change may only replace a value that
+    exists: a misspelt constant would otherwise change nothing and leave the test that sets it empty."""
     out = copy.deepcopy(base)
     for k, v in (changes or {}).items():
-        if isinstance(v, dict) and isinstance(out.get(k), dict):
-            out[k] = _merge(out[k], v)
+        if where is not None and k not in out:
+            raise KeyError(f"{where} has no entry named {k!r} (it has: {', '.join(map(str, out)) or 'none'})")
+        if isinstance(v, dict) and isinstance(out.get(k), dict) and set(out[k]) != {"from_file"}:
+            out[k] = _merge(out[k], v, None if where is None else f"{where}.{k}")
         else:
             out[k] = v
     return out
@@ -58,6 +62,7 @@ class Harness(Engine):
         self.constants, self.shared_for, self.decls, self.procs = {}, {}, {}, {}
         self.memo = {}
         self.member_stage, self.table_stage, self.push_by_id = {}, {}, {}
+        self._received, self._last_given, self._applied, self._rounds_in_force = set(), {}, {}, {}
 
     def run(self, slot, reads=None, lagged=None, groups=None, tables=None, lagged_tables=None, constants=None,
             shared=None, round_no=1, recording=True, start=False) -> Result:
@@ -72,12 +77,24 @@ class Harness(Engine):
         shared          changes to the shared constants
         start           True to call the process's start step before its run
         """
-        cfg = self.params["models"]["slots"][slot]
+        slots = self.params["models"]["slots"]
+        if slot not in slots:
+            raise KeyError(f"models.yaml has no slot named {slot!r} (it has: {', '.join(slots)})")
+        cfg = slots[slot]
         proc = self._load_implementation(slot, cfg["implementation"])
         decl = declaration(proc)
+        if start and not decl["start"]:
+            raise ValueError(f"{slot} has no start step; start=True asks for one")
         where = f"models.yaml.slots.{slot}.constants"
-        consts = _resolve_files(_resolve_level(_merge(cfg.get("constants") or {}, constants), self.level, where), self.params, where)
-        all_shared = _merge(_resolve_level(self.params["models"].get("shared") or {}, self.level, "models.yaml.shared"), shared)
+        consts = _resolve_files(_resolve_level(_merge(cfg.get("constants") or {}, constants, where), self.level, where), self.params, where)
+        all_shared = _merge(_resolve_level(self.params["models"].get("shared") or {}, self.level, "models.yaml.shared"), shared,
+                            "models.yaml.shared")
+        for kind, names, known in (("field", list(reads or {}) + list(lagged or {}), self.registry.fields),
+                                   ("group", list(groups or {}), self.registry.groups),
+                                   ("table", list(tables or {}) + list(lagged_tables or {}), self.registry.tables)):
+            unknown = sorted(n for n in names if n not in known)
+            if unknown:
+                raise KeyError(f"the test hands {slot} the {kind} {', '.join(unknown)}, which the data files do not declare")
         self.procs, self.decls = {slot: proc}, {slot: decl}
         self.constants = {slot: freeze(consts)}
         self.shared_for = {slot: freeze({s: all_shared[s] for s in proc.shared})}
@@ -102,7 +119,9 @@ class Harness(Engine):
             want = self.registry.groups[group].array_shape(w.n, w.months)
             cast = {}
             for member, value in members.items():
-                a = np.array(value, dtype=np.float32)
+                # as the engine would hand it over: a member that is a declared field in that field's stored type,
+                # a push in the type the engine stores a push in
+                a = np.array(value, dtype=self.registry.fields[member].dtype if member in self.registry.fields else np.float32)
                 if a.shape != want:
                     raise ValueError(f"member {member} of group {group} must have shape {want}, got {a.shape}")
                 a.flags.writeable = False

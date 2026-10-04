@@ -72,7 +72,11 @@ class WorldService:
             elif nt["kind"] == "field_outside_range":
                 notices.append(f"The field {nt['field']} left its valid range in some cells.")
             elif nt["kind"] == "push_touched_nothing":
-                notices.append(f"The push {nt['push']} touched no cell.")
+                notices.append(f"The push {nt['push']} changed nothing" + (f": {nt['why']}." if nt.get("why") else ": its region covers no cell."))
+            elif nt["kind"] == "process_note":
+                notices.append(f"{nt['slot']} noted: {nt['what']}.")
+            elif nt["kind"] == "run_time_over_limit":
+                notices.append(f"The build took {nt['seconds']} seconds, more than the {nt['limit_s']} seconds its profile allows.")
         return {"meta": a["meta"], "planet": a["planet"], "seed": a["seed"],
                 "fields": {n: a["fields"][n] for n in stored}, "lineage": a["lineage"], "models": a.get("models", {}),
                 "notices": notices, "warnings": self.warnings(), "colors": a.get("category_colors", {}),
@@ -208,6 +212,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(200, path.read_bytes(), ctype + ("; charset=utf-8" if ctype.startswith("text/") or ctype.endswith("javascript") else ""))
         except (KeyError, IndexError, ValueError) as e:
             return self._json({"error": str(e).strip("'\"")}, 400)
+        except Exception as e:                               # a fault of the engine: say so, and keep the connection whole
+            return self._json({"error": f"the server could not answer ({type(e).__name__}: {e})"}, 500)
 
 
 def make_server(store_path, host="127.0.0.1", port=8765, viewer_dir=None) -> ThreadingHTTPServer:

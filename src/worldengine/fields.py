@@ -15,6 +15,8 @@ from .params import ParameterError
 KINDS = ("number", "direction", "category", "boolean", "index")
 SHAPES = ("cell", "month_cell", "day_cell")
 _DEFAULT_DTYPE = {"number": "float32", "direction": "float32", "category": "int16", "boolean": "bool", "index": "int32"}
+_DTYPES_OF_KIND = {"number": ("float32", "float64"), "direction": ("float32", "float64"), "category": ("int16", "int32"),
+                   "boolean": ("bool",), "index": ("int16", "int32")}     # the stored types that can hold each kind
 
 
 @dataclass(frozen=True)
@@ -65,12 +67,20 @@ class FieldSpec:
         a = np.asarray(value)
         if a.shape != want:
             raise ValueError(f"{self.name} must have shape {want}, got {a.shape}")
+        if a.dtype.kind not in "biuf":
+            raise ValueError(f"{self.name} was given values of type {a.dtype}; a field takes numbers or true and false")
         if self.kind in ("category", "index", "boolean") and a.dtype.kind == "f":
             raise ValueError(f"{self.name} is of kind {self.kind} and cannot take fractional values")
-        out = np.array(a, dtype=self.dtype, order="C", copy=True)
+        if self.kind == "boolean" and a.dtype.kind in "iu" and a.size and not np.isin(a, (0, 1)).all():
+            raise ValueError(f"{self.name} is true or false; of whole numbers it takes only 0 and 1")
+        with np.errstate(over="ignore"):                     # a value too large for the stored type is refused just below
+            out = np.array(a, dtype=self.dtype, order="C", copy=True)
         if out.dtype.kind in "iu" and a.dtype.kind in "iu" and a.size and not np.array_equal(out, a):
             raise ValueError(f"{self.name} is stored as {self.dtype}, which cannot hold every value given "
                              f"(from {int(a.min())} to {int(a.max())}); they would be changed without a word")
+        if out.dtype.kind == "f" and np.isinf(out).any():    # a missing value may be allowed; an endless one never is
+            raise ValueError(f"{self.name} was given an infinite value, or a value too large for its stored type "
+                             f"{self.dtype}; a field holds finite numbers, and where it is allowed a missing value")
         out.flags.writeable = False
         return out
 
@@ -82,13 +92,10 @@ class FieldSpec:
         if self.kind in ("boolean", "index"):
             return None
         finite = np.isfinite(a) if a.dtype.kind == "f" else np.ones(a.shape, dtype=bool)
-        infinite = int(np.isinf(a).sum()) if a.dtype.kind == "f" else 0
-        missing = int((~finite).sum()) - infinite
+        missing = int((~finite).sum())                       # cast() refuses an infinite value, so what is not finite is missing
         out = {}
         if missing and not self.allow_missing:
             out["missing"] = missing
-        if infinite:                                         # a missing value may be allowed; an endless one never is
-            out["infinite"] = infinite
         if self.range is not None and finite.any():
             lo, hi = self.range
             v = a[finite]
@@ -148,6 +155,18 @@ class Registry:
                 raise ParameterError(f"fields.yaml.fields.{name}: the default of a true-or-false field is true or false, found {default!r}")
             elif kind in ("number", "direction", "index") and (isinstance(default, bool) or not isinstance(default, (int, float))):
                 raise ParameterError(f"fields.yaml.fields.{name}: the default {default!r} is not a number")
+            elif kind == "index" and not isinstance(default, int):
+                raise ParameterError(f"fields.yaml.fields.{name}: an index field holds whole numbers; the default {default!r} is not one")
+            elif kind in ("number", "direction") and not np.isfinite(default):
+                raise ParameterError(f"fields.yaml.fields.{name}: the default {default!r} is not a finite number "
+                                     f"(a field that starts without a value takes default: missing)")
+            dtype = e.get("dtype", _DEFAULT_DTYPE[kind])
+            if dtype not in _DTYPES_OF_KIND[kind]:
+                raise ParameterError(f"fields.yaml.fields.{name}: a field of kind {kind} cannot be stored as {dtype} "
+                                     f"(it takes: {', '.join(_DTYPES_OF_KIND[kind])})")
+            if e.get("range") is not None and not e["range"][0] <= e["range"][1]:
+                raise ParameterError(f"fields.yaml.fields.{name}: the range {e['range']} runs backwards; it gives the lowest "
+                                     f"valid value and then the highest")
             if kind == "category":
                 cats = list(cats or [])
                 if label and "none" not in cats:
@@ -155,9 +174,11 @@ class Registry:
                 default = default if default is not None else cats[0]
                 if default not in cats:
                     raise ParameterError(f"fields.yaml.fields.{name}: the default {default!r} is not among its classes")
+                if len(cats) > np.iinfo(dtype).max:
+                    raise ParameterError(f"fields.yaml.fields.{name}: {len(cats)} classes do not fit the stored type {dtype}")
             self.fields[name] = FieldSpec(
                 name=name, family=e["family"], unit=e["unit"], shape=e["shape"], kind=kind,
-                dtype=e.get("dtype", _DEFAULT_DTYPE[kind]), default=default,
+                dtype=dtype, default=default,
                 range=tuple(e["range"]) if e.get("range") is not None else None,
                 categories=tuple(cats) if cats is not None else None,
                 label_stage=label["stage"] if label else None, allow_missing=bool(e.get("allow_missing", False)),

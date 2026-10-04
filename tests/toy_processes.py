@@ -385,3 +385,173 @@ class MemoReader(Process):
         MemoReader.found = "shared?" in ctx.memo
         ctx.write("b", ctx.read("a"))
         ctx.write("kind_of_place", np.zeros(ctx.mesh.n, dtype=np.int16))
+
+
+# ---------------------------------------------------------------- toy processes for the cases of the second review
+class TwoReads(Process):
+    """A geological toy that reads one group both from the previous round and in the same round."""
+    stage = "geo"
+    reads_groups_lagged = ("geo_now",)
+    reads_groups = ("geo_now",)
+    writes = ("elev",)
+    seen = []
+
+    def run(self, ctx):
+        before, now = ctx.read_group_lagged("geo_now"), ctx.read_group("geo_now")
+        TwoReads.seen.append((ctx.round, float(before.total[0]), float(now.total[0])))
+        ctx.write("elev", np.full(ctx.mesh.n, 100.0))
+
+
+class RoundField(Process):
+    """A geological field that holds the number of the round, and a note raised in every round."""
+    stage = "geo"
+    writes = ("round_no",)
+
+    def run(self, ctx):
+        ctx.note("another round")
+        ctx.write("round_no", np.full(ctx.mesh.n, float(ctx.round)))
+
+
+class LabelCounter(Process):
+    """Reads the label field from the previous round and writes where it found a label."""
+    stage = "climate"
+    reads_lagged = ("place_label",)
+    writes = ("c",)
+
+    def run(self, ctx):
+        ctx.write("c", np.broadcast_to((ctx.read_lagged("place_label") > 0).astype(np.float64), (ctx.months, ctx.mesh.n)))
+
+
+class Endless(Process):
+    """Writes an infinite value."""
+    stage = "climate"
+    writes = ("a",)
+
+    def run(self, ctx):
+        ctx.write("a", np.full(ctx.mesh.n, np.inf))
+
+
+class TooLarge(Process):
+    """Writes a value that the stored type of c, a 32-bit number, cannot hold."""
+    stage = "climate"
+    writes = ("c",)
+
+    def run(self, ctx):
+        ctx.write("c", np.full((ctx.months, ctx.mesh.n), 1.0e39))
+
+
+class StartsField(Process):
+    """Fills a field in its start step, reads it from the previous round, and notes what it did at the start."""
+    stage = "climate"
+    reads_lagged = ("seeded",)
+    writes = ("seeded",)
+    has_start = True
+    seen = []
+
+    def start(self, ctx):
+        ctx.note("the start step filled the field", value=42)
+        ctx.write("seeded", np.full(ctx.mesh.n, 42.0))
+
+    def run(self, ctx):
+        value = ctx.read_lagged("seeded")
+        StartsField.seen.append(float(value[0]))
+        ctx.write("seeded", value)
+
+
+class BadNote(Process):
+    """Raises a note whose details take the names the engine uses itself."""
+    stage = "climate"
+    writes = ("a",)
+
+    def run(self, ctx):
+        ctx.note("a note", kind="mine", rounds=99)
+        ctx.write("a", np.ones(ctx.mesh.n))
+
+
+class SetupTooBig(Process):
+    """A setup field far outside its valid range, for a push to bring back in."""
+    stage = "setup"
+    writes = ("level",)
+
+    def run(self, ctx):
+        ctx.write("level", np.full(ctx.mesh.n, 500.0))
+
+
+class LaggedTableVandal(Process):
+    """Reads a table from the previous round and tries to replace one of its columns."""
+    stage = "climate"
+    reads_lagged = ("table:toy_items",)
+    writes = ("c",)
+
+    def run(self, ctx):
+        t = ctx.read_lagged("table:toy_items")
+        t["value"] = np.array([99.0, 99.0])
+        ctx.write("c", np.zeros((ctx.months, ctx.mesh.n)))
+
+
+class MemoCounter(Process):
+    """Counts its own runs in its memo and writes the count: a second build must start counting afresh."""
+    stage = "setup"
+    writes = ("ones",)
+
+    def run(self, ctx):
+        ctx.memo["runs"] = ctx.memo.get("runs", 0) + 1
+        ctx.write("ones", np.full(ctx.mesh.n, float(ctx.memo["runs"])))
+
+
+class ThreadProbe(Process):
+    """Remembers how many threads the compiled loops and the mathematics libraries may use while it runs."""
+    stage = "setup"
+    writes = ("ones",)
+    seen = None
+
+    def run(self, ctx):
+        import numba
+        from threadpoolctl import threadpool_info
+        ThreadProbe.seen = (numba.get_num_threads(), sorted({lib["num_threads"] for lib in threadpool_info()}))
+        ctx.write("ones", np.ones(ctx.mesh.n))
+
+
+class OddClass(Process):
+    """Writes a class code that the field's list does not hold."""
+    stage = "climate"
+    writes = ("b", "kind_of_place")
+    reads = ("a",)
+
+    def run(self, ctx):
+        ctx.write("b", ctx.read("a"))
+        ctx.write("kind_of_place", np.full(ctx.mesh.n, 5, dtype=np.int16))
+
+
+class ClassDriver(Process):
+    """Records a driver that holds a class, stored as fractions, and one that names a row of a table."""
+    stage = "climate"
+    reads = ("table:toy_items",)
+    writes = ("c",)
+    drivers = {"c": ("regime", "item")}
+
+    def run(self, ctx):
+        ctx.read("table:toy_items")
+        ctx.write("c", np.ones((ctx.months, ctx.mesh.n)))
+        ctx.driver("c", "regime", np.full(ctx.mesh.n, 1.0))
+        ctx.driver("c", "item", np.ones(ctx.mesh.n, dtype=np.int32))
+
+
+class GroupModifier(Process):
+    """Modifies b by the sum of a group read from the previous round."""
+    stage = "climate"
+    modifies = ("b",)
+    priority = 20
+    reads_groups_lagged = ("toy_heat",)
+
+    def run(self, ctx):
+        ctx.write("b", ctx.read("b") + ctx.read_group_lagged("toy_heat").total)
+
+
+class Zeros(Process):
+    """Writes nothing but zeros to the monthly field c."""
+    stage = "climate"
+    writes = ("c",)
+
+    def run(self, ctx):
+        ctx.write("c", np.zeros((ctx.months, ctx.mesh.n)))

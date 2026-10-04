@@ -43,6 +43,13 @@ def main(path):
           f"equator (within 5 degrees) {mean(yearly, np.abs(m.lat) < 5):.1f}")
     print(f"  half the yearly swing at 40-60 degrees: land {mean(swing, mid & land):.1f}, sea {mean(swing, mid & wet):.1f}; largest {swing.max():.1f}")
     print(f"  mean albedo {mean(f['albedo'].astype(np.float64).mean(axis=0)):.3f}")
+    white = v.driver("albedo", "from_snow_and_ice").astype(np.float64) > 0.05
+    print(f"  land under snow in every month {share(land & white.all(axis=0)) / share(land):.2f} of land, in some month "
+          f"{share(land & white.any(axis=0)) / share(land):.2f}; land whose warmest month is below freezing "
+          f"{share(land & (t.max(axis=0) < 0)) / share(land):.2f}; sea under ice {share(wet & white.all(axis=0)) / share(wet):.3f} of the sea")
+    by_band = lambda lo, hi: mean(swing, land & (np.abs(m.lat) >= lo) & (np.abs(m.lat) < hi))
+    print(f"  half the yearly swing over land by latitude: 20-40 {by_band(20, 40):.1f}, 40-50 {by_band(40, 50):.1f}, "
+          f"50-60 {by_band(50, 60):.1f}, 60-70 {by_band(60, 70):.1f}")
     east, north = op.to_east_north(m, f["wind"].astype(np.float64).mean(axis=0))
     lat, u = op.zonal_mean(m, east, 10.0)
     _, vv = op.zonal_mean(m, north, 10.0)
@@ -56,6 +63,9 @@ def main(path):
     for sign, name in ((1, "north"), (-1, "south")):
         side = (sign * lat5 > 0) & (sign * lat5 < 60) & ~np.isnan(lr)
         print(f"  driest land band, {name}: {sign * lat5[side][np.argmin(lr[side])]:.0f} degrees, {lr[side].min():.0f} mm/yr")
+    lifted = v.driver("precipitation", "from_rising_ground").astype(np.float64).sum(axis=0)
+    print(f"  wettest cell {rain.max():.0f} mm/yr ({'land' if land[np.argmax(rain)] else 'sea'}); wettest land cell {rain[land].max():.0f}; "
+          f"rain of rising ground: {mean(lifted, land):.0f} mm/yr over land, {(lifted * area).sum() / (rain * area).sum():.3f} of all rain")
     lat10, a10 = op.zonal_mean(m, rain, 10.0)
     print("  rain by 10-degree band, south to north:", a10.round(0))
     print(f"  wettest 10-degree band {a10.max():.0f} mm/yr; land under 250 mm: {share(land & (rain < 250)) / share(land):.2f} of land; "

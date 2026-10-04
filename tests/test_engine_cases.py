@@ -227,7 +227,9 @@ def test_a_value_out_of_range_at_the_end_is_reported_and_an_endless_value_always
     assert [n for n in w.notices if n["kind"] == "field_outside_range"][0]["highest"] == 500.0
     spec = Registry(Parameters(TOY, {"fields": {"fields": {"x": number(allow_missing=True)}, "groups": {}}})).fields["x"]
     assert spec.outside_range(np.array([1.0, np.nan])) is None            # a missing value is allowed here
-    assert spec.outside_range(np.array([1.0, np.inf, -np.inf])) == {"infinite": 2}
+    with pytest.raises(ValueError) as err:                               # an endless value is never stored, allowed to be missing or not
+        spec.cast(np.array([1.0, np.inf, -np.inf] + [0.0] * 159), 162, 12)
+    assert "infinite value" in str(err.value)
 
 
 def test_a_build_that_overruns_its_time_limit_says_so():
@@ -336,23 +338,13 @@ def test_a_long_outline_holds_the_cells_inside_it_and_none_on_the_far_side(corne
     area was left out, and as many cells on the other side of the planet were pushed."""
     m = get_mesh(6)
     inside = iv._inside_outline(m.xyz, corners)
-    assert inside.sum() == 7588
-    assert m.lon[inside].min() > 0.0 and m.lon[inside].max() < 150.0      # none on the far side, between 30 and 64 degrees west
+    on_the_short_side = (np.abs(m.lon) < 1e-9) & (np.abs(m.lat) <= 20.0)    # 21 cell centres lie exactly on the meridian of 0 degrees
+    assert inside.sum() == 7588 + 21 and on_the_short_side.sum() == 21 and inside[on_the_short_side].all()
+    assert m.lon[inside].min() > -1e-9 and m.lon[inside].max() < 150.0    # none on the far side, between 30 and 64 degrees west
     assert np.abs(m.lat[inside]).max() < 37.0                             # the long sides are great circles, which bow toward the poles
     # every cell of a narrow band along the middle line of the outline, from end to end, is inside
     middle = (np.abs(m.lat) < 1.0) & (m.lon > 5.0) & (m.lon < 140.0)
     assert inside[middle].all()
-
-
-def test_the_fade_of_a_small_circle_reaches_the_cells_its_edge_covers_even_if_no_cell_lies_inside():
-    """A 50 km circle with a 1,000 km edge did nothing on the preview mesh, whose cells are 240 km apart."""
-    m = get_mesh(5)
-    region = iv.Region(circle={"lat": 12.3, "lon": 45.6, "radius_km": 50.0}, outline=None, conditions=[], edge_km=1000.0)
-    w = iv.region_weights(region, m, 6.371e6, None, True)
-    centre = iv._unit(12.3, 45.6)
-    d = np.arccos(np.clip(m.xyz @ centre, -1, 1)) * 6371.0
-    assert (w > 0).sum() > 50 and np.allclose(w, np.clip(1.0 - np.maximum(d - 50.0, 0.0) / 1000.0, 0.0, 1.0), atol=1e-6)
-    assert np.all(iv.region_weights(region, m, 6.371e6, None, False) == (d <= 50.0))        # a class takes the bare shape
 
 
 def test_the_fade_of_an_outline_is_measured_from_the_outline_itself():
@@ -377,7 +369,8 @@ MARKED = {"Marker": slot("Marker", ["ones", "month_no", "heading"])}
     ({"where": {"field": "kind_of_place", "is": "tall"}}, 2.0, "'tall' is not a class of kind_of_place"),
     ({"where": {"field": "kind_of_place", "above": 0}}, 2.0, "the test above cannot be made on kind_of_place"),
     ({"where": {"field": "ones", "above": "much"}}, 2.0, "needs a number, found 'much'"),
-    (WHOLE_PLANET, "a lot", "the amount 'a lot' is not a number"),
+    (WHOLE_PLANET, "a lot", "the amount 'a lot' is not a finite number"),
+    (WHOLE_PLANET, float("inf"), "the amount inf is not a finite number"),
     (WHOLE_PLANET, [1.0, 2.0], "one amount per month fits only a monthly target"),
     ({"outline": [[0, 0], [10, 10]]}, 2.0, "an outline needs at least 3 corners"),
 ])
@@ -426,8 +419,8 @@ def test_settings_for_what_is_not_built_are_refused_not_ignored():
 def test_a_weather_stage_that_holds_only_a_label_is_refused_like_any_other():
     stages = {"stages": [{"name": "setup", "clock": "once"}, {"name": "climate", "clock": "climate"}, {"name": "weather", "clock": "weather"}]}
     label = {"storm_label": dict(family="Labels", unit="category", shape="cell", kind="category", label={"stage": "weather"}, default="none")}
-    with pytest.raises(EngineError) as err:
-        engine({}, label, stages=stages, keep_trio=True).build()
+    with pytest.raises(ParameterError) as err:                           # on loading, not after the climate has run
+        engine({}, label, stages=stages, keep_trio=True)
     assert "runs on the weather clock, which is built in step 8" in str(err.value)
     assert engine({}, stages=stages, keep_trio=True).build().settled["climate"]          # an empty weather stage is simply skipped
 

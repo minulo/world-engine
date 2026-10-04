@@ -138,8 +138,10 @@ def save(world, engine, path) -> Path:
     if path.exists():
         raise FileExistsError(f"{path} exists; a world store is written once and never changed")
     partial = path.with_name(path.name + ".partial")
-    if partial.exists():
+    if partial.is_dir() and not partial.is_symlink():        # what a failed write left behind, whatever it is
         shutil.rmtree(partial)
+    elif partial.exists() or partial.is_symlink():
+        partial.unlink()
     try:
         _write(world, engine, partial)
         partial.rename(path)
