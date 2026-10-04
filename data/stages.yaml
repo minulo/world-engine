@@ -1,0 +1,13 @@
+# The stages, the clock each runs on, and each clock's own settings (design, Layer 3).
+stages:
+  - name: setup
+    clock: once
+  - name: geological
+    clock: geological
+    round_length_my: 2.0           # the step of Cortial et al. 2019
+    history_length_my: 2.0         # ONE round while Tectonics is a single snapshot (build step 1).
+                                   # The designed default of 250 My returns with the full plate model in step 3.
+  - name: climate
+    clock: climate
+  - name: weather
+    clock: weather                 # no process yet; built in step 8

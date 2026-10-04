@@ -1,0 +1,13 @@
+# The worked example of the design, Layer 6, in the reduced form of build step 1:
+# the weather push waits for the weather stage of step 8.
+- id: ever_winter
+  physical: false
+  reason: "The Ever-Winter"
+  region:
+    circle: {lat: 48.0, lon: -20.0, radius_km: 600}
+    edge_km: 200                    # every push fades to nothing over this width
+  pushes:
+    - group: surface_heat_flux      # push the cause: a heat sink
+      add: -120.0                   # W/m2, every month
+    - field: surface_temperature    # guarantee the outcome in the climate
+      cap_max: 268.15               # kelvin, which is -5 degrees C

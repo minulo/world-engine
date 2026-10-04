@@ -1,0 +1,3 @@
+stages:
+  - {name: setup, clock: once}
+  - {name: climate, clock: climate}

@@ -1,0 +1,8 @@
+- id: lift
+  physical: false
+  reason: "A test push"
+  region:
+    circle: {lat: 0.0, lon: 0.0, radius_km: 30000}
+  pushes:
+    - field: a
+      add: 2.0

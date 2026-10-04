@@ -1,0 +1,9 @@
+# Sentence patterns for the "why" answers (design, Layer 7). Data, so that a game can rebuild the
+# answers from the world store. Format: see src/worldengine/causes.py.
+PlanetGeometry:
+  latitude:
+    says: "This cell lies at {lat}."
+    ends: "The chain ends here: where a cell lies follows from the mesh alone."
+  coriolis_parameter:
+    says: "The Coriolis parameter is {value}: twice the planet's spin rate times the sine of the latitude, {lat}."
+    ends: "The chain ends here, at a planet parameter: the rotation period of {planet[rotation_period_s]} seconds."

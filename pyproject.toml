@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worldengine"
+version = "0.1.0"
+description = "A planet's geography, natural systems and climate from physical causes"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "numba", "zarr>=3", "PyYAML", "threadpoolctl"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+worldengine = "worldengine.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["slow: builds at the standard mesh size"]

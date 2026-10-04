@@ -1,0 +1,21 @@
+type: map
+required: [slots]
+keys:
+  shared: {type: map, values: {type: any}}
+  slots:
+    type: map
+    values:
+      type: map
+      required: [implementation, writes]
+      keys:
+        implementation: {type: string}
+        writes: {type: list, items: {type: string}}
+        model: {type: string}
+        standing: {type: string, choices: [Established, Adapted, Assembled, Rule, Test]}
+        ignores: {type: string}
+        wrong_where: {type: string}
+        constants: {type: map, values: {type: any}, nullable: true}
+        expected_range:
+          type: map
+          nullable: true
+          values: {type: list, length: 2, items: {type: number}}

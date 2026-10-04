@@ -1,0 +1,9 @@
+fields:
+  a: {family: Toy, unit: none, shape: cell, kind: number, dtype: float64, default: 0.0, range: [0, 100]}
+  b: {family: Toy, unit: none, shape: cell, kind: number, dtype: float64, default: 4.0}
+  c: {family: Toy, unit: none, shape: month_cell, kind: number, default: 0.0}
+  kind_of_place: {family: Toy, unit: category, shape: cell, kind: category, categories: [low, high]}
+  heat_member: {family: Toy, unit: W/m2, shape: cell, kind: number, default: 0.0}
+  place_label: {family: Labels, unit: category, shape: cell, kind: category, label: {stage: climate}, default: none}
+groups:
+  toy_heat: {unit: W/m2, shape: cell, description: A toy sum.}

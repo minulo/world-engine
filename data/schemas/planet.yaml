@@ -1,0 +1,22 @@
+# Schema of planet.yaml. It refuses only values without physical meaning (design, Layer 1):
+# no limit is set on how far a planet may be from Earth.
+type: map
+required: [radius_m, rotation_period_s, axial_tilt_deg, year_length_s, orbit, star_output_w_m2,
+           surface_water_volume_m3, surface_gravity_m_s2, months_per_year]
+keys:
+  name: {type: string}
+  radius_m: {type: number, above: 0}
+  rotation_period_s: {type: number, above: 0}
+  axial_tilt_deg: {type: number, min: 0, max: 180}
+  year_length_s: {type: number, above: 0}
+  surface_gravity_m_s2: {type: number, above: 0}
+  orbit:
+    type: map
+    required: [eccentricity, perihelion_solar_longitude_deg, northward_equinox_year_fraction]
+    keys:
+      eccentricity: {type: number, min: 0, below: 1}
+      perihelion_solar_longitude_deg: {type: number, min: 0, max: 360}
+      northward_equinox_year_fraction: {type: number, min: 0, below: 1}
+  star_output_w_m2: {type: number, min: 0}
+  surface_water_volume_m3: {type: number, min: 0}
+  months_per_year: {type: integer, min: 1}

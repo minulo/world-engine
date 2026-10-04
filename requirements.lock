@@ -1,0 +1,12 @@
+# The lock file: exact package versions (design, Layer 8). Its fingerprint is stored in every world store.
+# Python 3.13. Install with: pip install -r requirements.lock
+numpy==2.5.3
+scipy==1.18.1
+numba==0.68.0
+llvmlite==0.50.0
+zarr==3.4.0
+numcodecs==0.17.0
+PyYAML==6.0.3
+threadpoolctl==3.7.0
+# tests and the viewer check
+pytest==9.1.1

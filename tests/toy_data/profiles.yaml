@@ -1,0 +1,10 @@
+profiles:
+  toy:
+    mesh_level: 2
+    math_threads: 1
+    climate:
+      max_rounds: 200
+      blend_weight: 0.5
+      cell_share: 0.0
+      class_change_share: 0.0
+      default_tolerance: {mean: 1.0e-6, cell: 1.0e-6}

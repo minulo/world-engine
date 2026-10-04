@@ -1,0 +1,16 @@
+# Which implementation fills each process slot, the fields each slot must write, and every constant of
+# every model, with the range of planet parameters in which each model is expected to hold (design, Layer 1).
+# A constant may be given per mesh level as {by_level: {5: ..., 7: ...}}.
+# Labels in comments: [DOCUMENTED] a source the design document cites and I opened; [INFERRED] my reasoning;
+# [UNVERIFIED] recalled, not looked up; [PROVISIONAL] a first value that an Earth test must tune.
+
+shared: {}
+
+slots:
+  PlanetGeometry:
+    implementation: worldengine.processes.planet_geometry:SphereGeometry
+    standing: Established
+    model: "Geometry of a sphere; the Coriolis parameter is twice the spin rate times the sine of latitude."
+    ignores: "The flattening of a planet by its own spin."
+    wrong_where: "Fast-spinning planets, whose equators bulge."
+    writes: [latitude, longitude, cell_area, coriolis_parameter]

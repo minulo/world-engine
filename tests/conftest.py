@@ -1,0 +1,11 @@
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+for p in (str(ROOT / "src"), str(HERE)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+DATA = ROOT / "data"
+TOY = HERE / "toy_data"

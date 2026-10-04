@@ -1,0 +1,10 @@
+name: toy
+radius_m: 6.371e+6
+rotation_period_s: 86164.1
+axial_tilt_deg: 23.44
+year_length_s: 31558150.0
+surface_gravity_m_s2: 9.81
+orbit: {eccentricity: 0.0, perihelion_solar_longitude_deg: 0.0, northward_equinox_year_fraction: 0.0}
+star_output_w_m2: 1361.0
+surface_water_volume_m3: 0.0
+months_per_year: 12

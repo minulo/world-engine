@@ -1,0 +1,42 @@
+type: map
+required: [fields]
+keys:
+  fields:
+    type: map
+    values:
+      type: map
+      required: [family, unit, shape, kind]
+      keys:
+        family: {type: string}
+        unit: {type: string}
+        shape: {type: string, choices: [cell, month_cell, day_cell]}
+        kind: {type: string, choices: [number, direction, category, boolean, index]}
+        dtype: {type: string, choices: [float32, float64, int16, int32, bool]}
+        default: {type: any}
+        range: {type: list, length: 2, items: {type: number}, nullable: true}
+        categories: {type: list, items: {type: string}}
+        categories_from:
+          type: map
+          required: [file, key]
+          keys: {file: {type: string}, key: {type: string}}
+        label:
+          type: map
+          required: [stage]
+          keys: {stage: {type: string}}
+        allow_missing: {type: boolean}
+        pushable: {type: boolean}
+        settle:
+          type: map
+          required: [mean, cell]
+          keys: {mean: {type: number, min: 0}, cell: {type: number, min: 0}}
+        description: {type: string}
+  groups:
+    type: map
+    nullable: true
+    values:
+      type: map
+      required: [unit, shape]
+      keys:
+        unit: {type: string}
+        shape: {type: string, choices: [cell, month_cell]}
+        description: {type: string}

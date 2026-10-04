@@ -1,0 +1,11 @@
+# Step 1 of "the forest with unusual properties" (design, Layer 6): the name alone.
+# The region is a circle and a condition together, so the entry places no forest: it names what grew.
+- id: whispering_forest
+  physical: false
+  reason: "The Whispering Forest"
+  region:
+    circle: {lat: 45.0, lon: 10.0, radius_km: 1500}
+    where: {field: biome, is_one_of: [temperate_seasonal_forest, temperate_rainforest, boreal_forest]}
+  pushes:
+    - field: place_label
+      set: whispering_forest

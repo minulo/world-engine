@@ -1,0 +1,27 @@
+type: map
+required: [profiles]
+keys:
+  profiles:
+    type: map
+    values:
+      type: map
+      required: [mesh_level, climate]
+      keys:
+        mesh_level: {type: integer, min: 0, max: 9}
+        math_threads: {type: integer, min: 1}
+        run_time_limit_s: {type: number, above: 0}
+        climate:
+          type: map
+          required: [max_rounds, blend_weight, cell_share, class_change_share, default_tolerance]
+          keys:
+            max_rounds: {type: integer, min: 1}
+            blend_weight: {type: number, above: 0, max: 1}
+            cell_share: {type: number, min: 0, max: 1}
+            class_change_share: {type: number, min: 0, max: 1}
+            default_tolerance:
+              type: map
+              required: [mean, cell]
+              keys: {mean: {type: number, min: 0}, cell: {type: number, min: 0}}
+        climate_rerun_every_rounds: {type: integer, min: 1, nullable: true}
+        snapshot_every_rounds: {type: integer, min: 1, nullable: true}
+        snapshot_fields: {type: list, items: {type: string}}

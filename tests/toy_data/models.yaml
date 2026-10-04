@@ -1,0 +1,14 @@
+shared:
+  one: 1.0
+slots:
+  ToySource:
+    implementation: toy_processes:ToySource
+    writes: [a]
+    constants: {gain: 0.5}
+  ToyFollower:
+    implementation: toy_processes:ToyFollower
+    writes: [b, kind_of_place]
+  ToyModifier:
+    implementation: toy_processes:ToyModifier
+    writes: []
+    constants: {step: 1.0}

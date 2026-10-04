@@ -1,0 +1,8 @@
+type: map
+required: [world_seed]
+keys:
+  world_seed: {type: integer}
+  draws:
+    type: map
+    nullable: true
+    values: {type: list, items: {type: string}}

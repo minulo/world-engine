@@ -1,0 +1,17 @@
+# The planet. Only values without physical meaning are refused (schema in schemas/planet.yaml).
+# Labels: [DOCUMENTED] the design document cites a source that I opened; [UNVERIFIED] recalled, not looked up.
+name: default
+radius_m: 6.371e+6                 # [DOCUMENTED: the 6,371 km used for the mesh spacing in the design]
+rotation_period_s: 86164.1         # one full turn against the stars [UNVERIFIED: Earth's sidereal day]
+axial_tilt_deg: 23.44              # [UNVERIFIED: Earth's present tilt]. Cold poles follow from sunlight for a tilt below about 54
+year_length_s: 31558150.0          # [UNVERIFIED: Earth's sidereal year, 365.256 days]
+surface_gravity_m_s2: 9.81         # [UNVERIFIED: Earth's surface gravity]
+orbit:
+  eccentricity: 0.0167                      # [UNVERIFIED: Earth's present value]
+  perihelion_solar_longitude_deg: 283.0     # angle travelled along the orbit from the northward equinox to the closest
+                                            # approach to the star [UNVERIFIED: Earth, perihelion in early January]
+  northward_equinox_year_fraction: 0.2163   # when the northward equinox falls, as a share of the year counted from the
+                                            # start of month 1 [UNVERIFIED: 20 March, day 79 of 365.25]
+star_output_w_m2: 1361.0           # sunlight power per square metre at the planet's mean distance [DOCUMENTED]
+surface_water_volume_m3: 1.335e+18 # the water that the seas hold [DOCUMENTED: NOAA, World Ocean Volumes]
+months_per_year: 12                # a month is one twelfth of the planet's year; the climate classes assume 12

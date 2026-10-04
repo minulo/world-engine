@@ -1,0 +1,15 @@
+type: map
+required: [stages]
+keys:
+  stages:
+    type: list
+    items:
+      type: map
+      required: [name, clock]
+      keys:
+        name: {type: string}
+        clock: {type: string, choices: [once, geological, climate, weather, dated]}
+        round_length_my: {type: number, above: 0}
+        history_length_my: {type: number, above: 0}
+        step: {type: string, choices: [day, month, year]}
+        first_date: {type: any}

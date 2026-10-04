@@ -1,0 +1,12 @@
+type: map
+required: [tables]
+keys:
+  tables:
+    type: map
+    nullable: true
+    values:
+      type: map
+      required: [columns]
+      keys:
+        columns: {type: map, values: {type: string, choices: [float32, float64, int16, int32, int64, bool]}}
+        description: {type: string}

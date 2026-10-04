@@ -1,0 +1,5 @@
+# The world seed and the list of permitted random draws (design, Layer 8).
+# A process may draw only for the purposes listed under its slot.
+world_seed: 20261004
+draws:
+  Tectonics: [plate_centres, plate_axes, plate_speeds, outline_waves, continent_plates, continent_waves, thickness_waves]

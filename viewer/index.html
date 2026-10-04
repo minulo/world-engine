@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World viewer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>World viewer</h1>
+  <span id="worldinfo" class="muted">loading the world…</span>
+</header>
+<div id="banner" hidden></div>
+<main>
+  <aside id="controls">
+    <label for="field">Field</label>
+    <select id="field"></select>
+    <p id="fielddesc" class="muted small"></p>
+
+    <div id="partrow" hidden>
+      <label for="part">Show</label>
+      <select id="part">
+        <option value="">speed</option>
+        <option value="east">eastward part</option>
+        <option value="north">northward part</option>
+      </select>
+    </div>
+
+    <div id="monthrow">
+      <label for="month">Month <output id="monthlabel">1</output></label>
+      <div class="row">
+        <input id="month" type="range" min="1" max="12" value="1" step="1">
+        <button id="play" type="button" aria-pressed="false">Play</button>
+      </div>
+    </div>
+
+    <label>View</label>
+    <div class="row seg" role="group" aria-label="View">
+      <button id="viewglobe" type="button" aria-pressed="true">Globe</button>
+      <button id="viewflat" type="button" aria-pressed="false">Flat map</button>
+    </div>
+
+    <label>Legend</label>
+    <div id="legend"></div>
+
+    <details id="modelbox">
+      <summary>The model behind this field</summary>
+      <div id="model" class="small"></div>
+    </details>
+    <p class="muted small">Drag to turn or move the map. Scroll to zoom. Click a cell for its values and its "why" answer.</p>
+  </aside>
+  <section id="stage">
+    <canvas id="gl" aria-label="Map of the selected field"></canvas>
+    <div id="status" class="muted small"></div>
+  </section>
+  <aside id="cellpanel">
+    <h2 id="celltitle">No cell selected</h2>
+    <div id="why"></div>
+    <div id="cellvalues"></div>
+  </aside>
+</main>
+<script src="viewer.js"></script>
+</body>
+</html>

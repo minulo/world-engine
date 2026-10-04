@@ -1,0 +1,137 @@
+# The field dictionary (design, Layer 1; second tab of the design document).
+# One entry per field: unit, shape, kind, stored type, default, valid range.
+# This file holds the fields that a process of the current build step writes, plus the label field.
+# A later step adds a field with one entry here plus a process that writes it.
+#
+# shape: cell | month_cell.   kind: number | direction (3 components) | category | boolean | index.
+# default: what a read from the previous round returns in the first round (the first guess: no ice, no wind, bare ground).
+# settle: the tolerances of the test that decides whether the climate has settled, for fields read from the previous round.
+fields:
+  # ---------------------------------------------------------------- Geometry
+  latitude:
+    {family: Geometry, unit: degrees, shape: cell, kind: number, dtype: float64, range: [-90, 90], pushable: false,
+     description: "Angle north (+) or south (-) of the equator."}
+  longitude:
+    {family: Geometry, unit: degrees, shape: cell, kind: number, dtype: float64, range: [-180, 180], pushable: false,
+     description: "Angle east of the reference meridian."}
+  cell_area:
+    {family: Geometry, unit: "m²", shape: cell, kind: number, dtype: float64, range: [0, 1.0e+18], pushable: false,
+     description: "Surface area of the cell on the sphere."}
+  coriolis_parameter:
+    {family: Geometry, unit: "1/s", shape: cell, kind: number, dtype: float64, pushable: false,
+     description: "Twice the spin rate times the sine of latitude. Sets how strongly rotation turns moving air and water sideways; zero at the equator."}
+  # ---------------------------------------------------------------- Crust and plates
+  plate_id:
+    {family: Crust and plates, unit: index, shape: cell, kind: index,
+     description: "Which plate (rigid piece of the outer shell) carries this cell."}
+  plate_velocity:
+    {family: Crust and plates, unit: m/yr, shape: cell, kind: direction, range: [-1, 1],
+     description: "Speed and direction the plate moves here."}
+  crust_type:
+    {family: Crust and plates, unit: category, shape: cell, kind: category, categories: [oceanic, continental],
+     description: "Thin dense ocean-floor crust, or thick light continental crust."}
+  crust_thickness:
+    {family: Crust and plates, unit: m, shape: cell, kind: number, default: 7000.0, range: [0, 120000],
+     description: "Thickness of the crust."}
+  ocean_crust_age:
+    {family: Crust and plates, unit: My, shape: cell, kind: number, default: missing, allow_missing: true, range: [0, 5000],
+     description: "Time since this ocean floor formed at a spreading ridge, a line where two plates move apart. Undefined on continents."}
+  orogeny_age:
+    {family: Crust and plates, unit: My, shape: cell, kind: number, default: missing, allow_missing: true, range: [0, 5000],
+     description: "Time since mountain building last acted here. Undefined where it never has."}
+  boundary_kind:
+    {family: Crust and plates, unit: category, shape: cell, kind: category,
+     categories: [none, ridge, trench, collision, transform],
+     description: "Kind of the nearest plate boundary, if the cell lies in its zone of influence. A ridge is where plates move apart, a trench where one dives under another, a collision where two continents meet, a transform where plates slide past each other."}
+  boundary_distance:
+    {family: Crust and plates, unit: m, shape: cell, kind: number, range: [0, 1.0e+9],
+     description: "Distance to the nearest plate boundary."}
+  convergence_rate:
+    {family: Crust and plates, unit: m/yr, shape: cell, kind: number, range: [-1, 1],
+     description: "Closing speed across the nearest boundary. Negative means the plates separate."}
+  volcanism:
+    {family: Crust and plates, unit: 0 to 1, shape: cell, kind: number, range: [0, 1],
+     description: "Volcanic activity index: high above sinking plates and along ridges."}
+  # ---------------------------------------------------------------- Rock and relief
+  elevation:
+    {family: Rock and relief, unit: m, shape: cell, kind: number, range: [-20000, 20000],
+     description: "Height of the solid surface above the reference level, which is where continental crust of normal thickness stands; negative below it."}
+  # ---------------------------------------------------------------- Sea and drainage
+  ocean_mask:
+    {family: Sea and drainage, unit: true or false, shape: cell, kind: boolean, default: false,
+     description: "True where the cell lies under the water that SeaLevel poured, in the main sea or in a separate body."}
+  sea_depth:
+    {family: Sea and drainage, unit: m, shape: cell, kind: number, range: [0, 40000],
+     description: "Water depth below the surface of the cell's own body of water; zero on land."}
+  height_above_sea:
+    {family: Sea and drainage, unit: m, shape: cell, kind: number, range: [-40000, 40000],
+     description: "Height of the surface above sea level, the surface of the main sea: the ground on land, the water surface on water. Zero over the main sea; negative for dry land, or a separate body of water, below sea level."}
+  coast_distance:
+    {family: Sea and drainage, unit: m, shape: cell, kind: number, range: [0, 1.0e+9],
+     description: "Distance to the nearest coast."}
+  # ---------------------------------------------------------------- Energy and air
+  insolation:
+    {family: Energy and air, unit: "W/m²", shape: month_cell, kind: number, range: [0, 1.0e+6],
+     description: "Sunlight arriving at the top of the air, averaged over the day."}
+  albedo:
+    {family: Energy and air, unit: 0 to 1, shape: month_cell, kind: number, default: 0.3, range: [0, 1],
+     description: "Fraction of sunlight reflected back to space."}
+  surface_temperature:
+    {family: Energy and air, unit: K, shape: month_cell, kind: number, default: 288.15, range: [100, 400],
+     settle: {mean: 0.02, cell: 0.25},
+     description: "Air temperature near the ground or the sea surface."}
+  sea_level_pressure:
+    {family: Energy and air, unit: Pa, shape: month_cell, kind: number, default: 101325.0, range: [50000, 150000],
+     description: "Air pressure, adjusted to sea level."}
+  wind:
+    {family: Energy and air, unit: m/s, shape: month_cell, kind: direction, default: 0.0, range: [-150, 150],
+     settle: {mean: 0.05, cell: 0.5},
+     description: "Prevailing wind near the surface."}
+  steering_wind:
+    {family: Energy and air, unit: m/s, shape: month_cell, kind: direction, default: 0.0, range: [-300, 300],
+     description: "Prevailing wind a few kilometres up, which carries storms along."}
+  subsidence:
+    {family: Energy and air, unit: mm/s, shape: month_cell, kind: number, default: 0.0, range: [-200, 200],
+     description: "Speed at which air sinks (+) or rises (-) on the large scale, in the planet's overturning loops. Sinking air is dry and suppresses rain."}
+  baroclinicity:
+    {family: Energy and air, unit: 1/day, shape: month_cell, kind: number, default: 0.0, range: [0, 50],
+     description: "How fast mid-latitude storms can grow here (the Eady growth rate); it rises with the horizontal temperature contrast."}
+  # ---------------------------------------------------------------- Water
+  ocean_evaporation:
+    {family: Water, unit: mm/month, shape: month_cell, kind: number, range: [0, 5000],
+     description: "Water leaving the sea surface as vapour."}
+  column_water:
+    {family: Water, unit: "kg/m²", shape: month_cell, kind: number, range: [0, 1000],
+     description: "Water vapour in the column of air above the cell."}
+  precipitation:
+    {family: Water, unit: mm/month, shape: month_cell, kind: number, range: [0, 20000],
+     description: "Rain plus snow."}
+  snowfall:
+    {family: Water, unit: mm/month of water, shape: month_cell, kind: number, range: [0, 20000],
+     description: "The part of precipitation that falls as snow."}
+  # ---------------------------------------------------------------- Soil and life
+  climate_class:
+    {family: Soil and life, unit: category, shape: cell, kind: category, categories_from: {file: biomes, key: climate_classes},
+     description: "Köppen-Geiger climate class, computed from monthly temperature and precipitation."}
+  biome:
+    {family: Soil and life, unit: category, shape: cell, kind: category, categories_from: {file: biomes, key: biomes},
+     description: "Large-scale vegetation type; the list lives in biomes.yaml."}
+  vegetation_cover:
+    {family: Soil and life, unit: 0 to 1, shape: month_cell, kind: number, default: 0.0, range: [0, 1],
+     description: "Fraction of the ground shaded by plants."}
+  # ---------------------------------------------------------------- Labels
+  place_label:
+    {family: Labels, unit: category, shape: cell, kind: category, label: {stage: climate}, default: none,
+     description: "The named place this cell belongs to, or none. A label field of the climate stage: no process writes it, only a push sets it, and no process reads it, so it changes nothing else."}
+
+# Groups: named sums that several processes add to (design, Layer 2).
+groups:
+  crust_thickness_tendency:
+    {unit: m per round, shape: cell,
+     description: "Everything that thickens (+) or thins (-) the crust between rounds, other than plate motion itself."}
+  surface_heat_flux:
+    {unit: "W/m²", shape: month_cell,
+     description: "Heat delivered to (+) or taken from (-) the surface by anything other than sunlight, loss to space and the air's own heat transport."}
+  moisture_source:
+    {unit: mm/month, shape: month_cell,
+     description: "Water vapour supplied to the air from land."}

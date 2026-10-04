@@ -1,0 +1,39 @@
+type: list
+items:
+  type: map
+  required: [id, region, pushes]
+  keys:
+    id: {type: string}
+    physical: {type: boolean}
+    reason: {type: string}
+    region:
+      type: map
+      keys:
+        circle:
+          type: map
+          required: [lat, lon, radius_km]
+          keys:
+            lat: {type: number, min: -90, max: 90}
+            lon: {type: number, min: -360, max: 360}
+            radius_km: {type: number, above: 0}
+        outline:
+          type: list
+          items: {type: list, length: 2, items: {type: number}}
+        edge_km: {type: number, min: 0}
+        where: {type: any}
+    when:
+      type: map
+      keys:
+        rounds: {type: list, length: 2, items: {type: integer, min: 1}}
+    pushes:
+      type: list
+      items:
+        type: map
+        keys:
+          field: {type: string}
+          group: {type: string}
+          set: {type: any}
+          add: {type: any}
+          scale: {type: any}
+          cap_max: {type: any}
+          cap_min: {type: any}
