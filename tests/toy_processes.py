@@ -583,3 +583,17 @@ class LaggedSumLog(Process):
         LaggedSumLog.seen.append(float(total[0]))
         ctx.write("c", np.broadcast_to(total, (ctx.months, ctx.mesh.n)))
 
+
+
+class Trickle(Process):
+    """A sum of two parts that are both nothing in the first ten cells."""
+    stage = "setup"
+    writes = ("trickle",)
+    drivers = {"trickle": ("from_spring", "from_rain")}
+    additive = ("trickle",)
+
+    def run(self, ctx):
+        flows = (np.arange(ctx.mesh.n) >= 10).astype(np.float64)
+        ctx.write("trickle", 3.0 * flows)
+        ctx.driver("trickle", "from_spring", 1.0 * flows)
+        ctx.driver("trickle", "from_rain", 2.0 * flows)

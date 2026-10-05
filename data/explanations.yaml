@@ -61,6 +61,45 @@ SeaLevel:
       ground_height: {says: "its surface stands at {v} relative to the reference level", follows: [elevation]}
       sea_level: {says: "the sea level, found by pouring the planet's water in, shifts that by {v}", always: true}
 
+Drainage:
+  flow_receiver:
+    says: "Water on the ground here runs to cell {value} (-1: to no cell)."
+    follows: [elevation]
+    drivers:
+      rule:
+        names: ["That is its lowest neighbour", "The cell is sea, where the routing of water over land ends",
+                "No neighbour is lower: this is the bottom of a closed hollow",
+                "The ground is level here, and that cell lies on the shortest way to lower ground or to the hollow's bottom"]
+        says: "{v}"
+  slope:
+    says: "Toward the cell its water runs to, the ground here falls by {value} for every metre of distance."
+    unit: ""
+    follows: [flow_receiver]
+  drainage_area:
+    says: "{value} of land send their water through this cell when every hollow upstream is full and overflows: its own area, plus that of every cell whose water runs through it."
+    unit: km2_from_m2
+    follows: [flow_receiver]
+  basin_id:
+    says: "With every hollow on the way full, the water from here leaves the land at cell {value}, the mouth of its river basin (-1: the cell is sea)."
+    follows: [flow_receiver]
+    drivers:
+      ends:
+        names: ["", "From there the water runs into the sea (where a hollow overflows straight into the sea, the cell named is the deepest of that hollow)",
+                "This land has no way out to any sea: the cell named is the deepest bottom of the hollow that holds it"]
+        says: "{v}"
+  depression_id:
+    says: "Water from here collects in hollow {value} of the table of hollows before it can go further (0: it runs to the sea without meeting a closed hollow)."
+    follows: [flow_receiver]
+    drivers:
+      hollow:
+        row_of: hollows
+        says: "The bottom of that hollow is cell {bottom_cell}, at {bottom_m} m; it overflows when its water stands at {spill_m} m, toward cell {spill_into_cell}"
+  spill_elevation:
+    says: "The hollow this cell drains into overflows when its water stands at {value} relative to the reference level."
+    says_missing: "Water from here reaches the sea without meeting a closed hollow, so there is no level of overflow to give."
+    follows: [depression_id]
+    follows_missing: [depression_id]
+
 Insolation:
   insolation:
     says: "Sunlight at the top of the air averages {value} over the year here."
@@ -74,7 +113,7 @@ Albedo:
     drivers:
       from_cloud_and_sun_angle: {says: "cloud and the low sun reflect {v}"}
       from_surface_type: {says: "the surface type reflects {v}", follows: [ocean_mask]}
-      from_snow_and_ice: {says: "snow and ice add {v}", follows: [surface_temperature, snowfall]}
+      from_snow_and_ice: {says: "snow and ice add {v}", follows: [snow_water, surface_temperature]}
 
 EnergyBalance:
   surface_temperature:
@@ -126,6 +165,78 @@ Moisture:
   column_water:
     says: "The air column here holds {value} of water vapour on average."
     follows: [wind, surface_temperature]
+
+Hydrology:
+  snow_water:
+    says: "The snow on the ground here holds {value} of water on the year's average: what has fallen as snow and not yet melted."
+    follows: [snowfall, surface_temperature]
+  potential_evapotranspiration:
+    says: "The air here could take up {value} of water if the ground were wet (the Priestley-Taylor rule)."
+    says_missing: "This cell is sea: the demand of the air for water is worked out for land only."
+    follows: [insolation, surface_temperature]
+    follows_missing: [ocean_mask]
+    drivers:
+      net_radiation: {unit: "W/m²", says: "The surface gains {v} from radiation on the year's average, sunlight absorbed less heat radiated away"}
+  soil_moisture:
+    says: "The soil here holds {value} of what it can hold, on the year's average: rain and melted snow fill it, and the air takes water from it."
+    unit: ""
+    says_missing: "This cell is sea: it has no soil."
+    follows: [precipitation, potential_evapotranspiration]
+    follows_missing: [ocean_mask]
+  evapotranspiration:
+    says: "The land here returns {value} of water to the air:"
+    says_zero: "No water goes back to the air from land here: the cell is sea, or its ground lies under snow or has no water to give."
+    follows_zero: [ocean_mask, snow_water]
+    form: sum
+    drivers:
+      from_soil_and_plants: {says: "the soil gives {v}", follows: [soil_moisture, potential_evapotranspiration]}
+      from_lake: {says: "open water of a lake gives {v}", follows: [lake_fraction]}
+  runoff:
+    says: "Runoff here averages {value}:"
+    says_zero: "No water runs off here: the soil holds all that falls until the air has taken it, or a lake covers the cell, or the cell is sea."
+    follows_zero: [soil_moisture, lake_fraction]
+    form: sum
+    drivers:
+      from_rain: {says: "rain that the soil could not hold gives {v}", follows: [precipitation, soil_moisture]}
+      from_snowmelt: {says: "melted snow that the soil could not hold gives {v}", follows: [snow_water]}
+      from_ice: {says: "ice leaving ground where snow never melts away gives {v}", follows: [snow_water]}
+  runoff_annual:
+    says: "The runoff of the whole year here is {value}."
+    follows: [runoff]
+  river_discharge:
+    says: "The river here carries {value} on the year's average:"
+    says_zero: "No river runs through this cell: no water runs off it, and none reaches it from higher ground."
+    follows_zero: [runoff]
+    form: sum
+    drivers:
+      local_runoff: {says: "the cell's own runoff gives {v}", follows: [runoff]}
+      from_upstream: {says: "{v} arrive from upstream, and the cell named next is the largest single source of it", follows: [runoff], at: largest_source}
+      largest_source: {cell: true}
+  lake_fraction:
+    says: "A lake covers {value} of this cell."
+    unit: ""
+    follows: [depression_id]
+    drivers:
+      state:
+        names: ["No lake reaches it", "It is a lake with an outlet: more water arrives than its surface can lose to the air, so it has filled to its pass and overflows",
+                "It is a closed lake: it has spread until its surface loses to the air all the water that arrives, and stands below its pass"]
+        says: "{v}"
+        follows_by:
+          "It is a lake with an outlet: more water arrives than its surface can lose to the air, so it has filled to its pass and overflows": [river_discharge]
+          "It is a closed lake: it has spread until its surface loses to the air all the water that arrives, and stands below its pass": [potential_evapotranspiration]
+      lake:
+        row_of: lakes
+        says: "Each year {inflow_m3_per_year} m³ of water run toward this lake; flooding its {area_m2} m² lets the air take {loss_to_air_m3_per_year} m³ more than the same ground would give dry, and {outflow_m3_per_year} m³ leave over the pass (row {row} of the table of lakes)"
+  lake_level:
+    says: "The surface of the lake here stands at {value} relative to the reference level."
+    says_missing: "No lake reaches this cell, so there is no lake level to give."
+    follows: [lake_fraction]
+    follows_missing: [lake_fraction]
+
+Soils:
+  soil_water_capacity:
+    says: "The soil here can hold {value} of water."
+    ends: "The chain ends here, at a model constant: until the Soils process of build step 7, every soil is given the capacity of Manabe's bucket."
 
 Biomes:
   biome:

@@ -111,6 +111,7 @@ class GroupSpec:
     unit: str
     shape: str
     description: str
+    settle: dict | None = None       # the tolerances of the settle test for the sum, where a stage reads it from its own previous round
 
     def array_shape(self, n_cells: int, months: int) -> tuple:
         return (n_cells,) if self.shape == "cell" else (months, n_cells)
@@ -188,7 +189,8 @@ class Registry:
                 label_stage=label["stage"] if label else None, allow_missing=bool(e.get("allow_missing", False)),
                 pushable=bool(e.get("pushable", True)), settle=e.get("settle"), description=e.get("description", ""))
         for name, e in (fy.get("groups") or {}).items():
-            self.groups[name] = GroupSpec(name=name, unit=e["unit"], shape=e["shape"], description=e.get("description", ""))
+            self.groups[name] = GroupSpec(name=name, unit=e["unit"], shape=e["shape"], description=e.get("description", ""),
+                                          settle=e.get("settle"))
         for name, e in (params["tables"].get("tables") or {}).items():
             self.tables[name] = TableSpec(name=name, columns=dict(e["columns"]), description=e.get("description", ""))
 

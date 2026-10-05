@@ -579,6 +579,24 @@ def test_a_missing_value_a_true_or_false_field_and_a_pushed_direction_are_put_in
     assert explain(view, 1, "gappy")["chain"][0]["text"] == "It is 5.00 none."
 
 
+def test_a_sum_with_nothing_in_it_says_so_and_leads_on_instead_of_ending_on_a_colon():
+    """Build step 2: asked why no water runs off a cell under a lake, the answer was "Runoff here averages 0.00
+    mm/month:" and nothing more. A sum none of whose parts is worth a word now ends its sentence, or says what its
+    pattern gives it to say, and the walk goes on to the fields the pattern names for that case."""
+    e = engine({"Trickle": slot("Trickle", ["trickle"]), "Marker": slot("Marker", ["ones", "month_no", "heading"])},
+               {**GEO_FIELDS, "trickle": number()})
+    w = e.build()
+    view = MemoryView(w, e)
+    view.attrs["explanations"] = {"Trickle": {"trickle": {"says": "The trickle is {value}:", "form": "sum", "drivers": {
+        "from_spring": {"says": "a spring gives {v}"}, "from_rain": {"says": "rain gives {v}"}}}}}
+    assert explain(view, 20, "trickle")["chain"][0]["text"] == "The trickle is 3.00 none: rain gives 2.00 none; a spring gives 1.00 none."
+    assert explain(view, 3, "trickle")["chain"][0]["text"] == "The trickle is 0.00 none."
+    view.attrs["explanations"]["Trickle"]["trickle"].update(says_zero="Nothing trickles at {lat}.", follows_zero=["ones"])
+    chain = explain(view, 3, "trickle")["chain"]
+    assert chain[0]["text"].startswith("Nothing trickles at ") and chain[1]["field"] == "ones"
+    assert [step["field"] for step in explain(view, 20, "trickle")["chain"]] == ["trickle"]        # where it flows, the pattern is as before
+
+
 def test_a_driver_that_names_a_class_or_a_row_is_read_whatever_it_is_stored_as():
     """A class driver stored as fractions raised a TypeError; so did a table with a column called row."""
     T.TableMaker.columns = {"row": [10, 20], "value": [1.0, 2.5]}

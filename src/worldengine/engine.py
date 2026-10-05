@@ -818,7 +818,7 @@ class Engine:
             spec = self.registry.groups[g]
             zero = np.zeros(spec.array_shape(w.n, w.months))
             mine = lambda members: sum((v for k, v in sorted(members.items()) if self.member_stage.get((g, k)) == stage), zero)
-            measure("group:" + g, mine(w.group_now.get(g, {})), mine(w.group_lagged.get(g, {})), None)
+            measure("group:" + g, mine(w.group_now.get(g, {})), mine(w.group_lagged.get(g, {})), spec.settle)
         for f, spec in self.registry.fields.items():         # the classes that nothing reads from the previous round
             if spec.kind != "category" or spec.is_label or self.stage_of.get(f) != stage or f not in w.fields or f in self.lagged_fields:
                 continue

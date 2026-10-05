@@ -16,3 +16,14 @@ tables:
   seas:
     description: "One row per body of water that the poured volume left: the height of its surface, its area and its volume. The first row is the main sea, the body with the largest area; its surface is the sea level."
     columns: {surface_m: float64, area_m2: float64, volume_m3: float64, cells: int32, lowest_cell: int32}
+  hollows:
+    description: "One row per closed hollow of the land, and how the hollows nest. Row 0 stands for the sea. The next rows are the hollows with one bottom each, in the order of their bottom cells; later rows are larger hollows, each made of two that fill to the pass between them. parent, sibling, first_child and second_child are rows of this table (-1 for none). spill_m is the level at which the hollow overflows, spill_from_cell the cell on its own side of that pass, spill_into_cell the cell beyond it, and spill_into_hollow the hollow which that cell drains into (0 for the sea). The last two columns describe the lake that fills the hollow to its pass."
+    columns: {parent: int32, sibling: int32, first_child: int32, second_child: int32, bottom_cell: int32, bottom_m: float64,
+              spill_m: float64, spill_from_cell: int32, spill_into_cell: int32, spill_into_hollow: int32,
+              area_when_full_m2: float64, volume_when_full_m3: float64}
+
+  lakes:
+    description: "One row per lake that receives water: the hollow it lies in (a row of the table of hollows), the cell at its bottom, the height of its surface, its area and volume, the water that runs toward it in a year, what its surface loses to the air in a year beyond what the flooded ground would have lost, what it passes on, whether it overflows, the cell where the overflow leaves the lake and the cell it runs into (-1 for a closed lake)."
+    columns: {hollow: int32, bottom_cell: int32, level_m: float64, area_m2: float64, volume_m3: float64,
+              inflow_m3_per_year: float64, loss_to_air_m3_per_year: float64, outflow_m3_per_year: float64,
+              overflows: bool, outlet_cell: int32, spills_into_cell: int32}

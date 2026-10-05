@@ -10,7 +10,9 @@ A pattern entry, under the slot and the field it writes:
     says_missing:  sentence used in its place where the field has no value in the cell;
               follows_missing: the fields the walk then continues to
     form:     sum (the drivers add up to the field), rule (a driver names the rule that fired), or plain
-    unit:     how to print numbers: K, C_from_K, or any text put after the number
+    says_zero:     for form sum: the sentence used where no driver has anything to say (the sum is nothing);
+              follows_zero: the fields the walk then continues to
+    unit:     how to print numbers: C_from_K, K_difference, km2_from_m2, or any text put after the number
     ends:     text saying why the chain ends here (a parameter, a seeded starting condition)
     follows:  fields the walk continues to when no driver says otherwise
     drivers:  per driver: says (slot {v}), follows (fields), at (a driver holding the cell to continue at),
@@ -38,6 +40,8 @@ def _fmt(v, unit):
         return f"{v - 273.15:.1f} °C"
     if unit == "K_difference":
         return f"{v:+.1f} °C"
+    if unit == "km2_from_m2":
+        return f"{v / 1e6:,.0f} km²"
     if isinstance(v, (bool, np.bool_)):
         return "true" if v else "false"
     if isinstance(v, (int, np.integer)):
@@ -225,9 +229,15 @@ def explain(view, cell: int, field: str) -> dict:
                 held = {name: table[name][row].item() for name in table}
                 for name, words in (p.get("values") or {}).items():     # (a stored world holds the codes as text)
                     held[name] = words.get(held.get(name), words.get(str(held.get(name)), held.get(name)))
+                held = {name: _fmt(v, "") if isinstance(v, float) else v for name, v in held.items()}
                 parts.append(p["says"].format_map(_Safe({"row": row, "row_number": row, **held})))
+        nothing = pat.get("form") == "sum" and not absent and not parts      # a sum none of whose parts is worth a word
         if parts:
             text = text.rstrip() + " " + "; ".join(parts) + "."
+        elif nothing and pat.get("says_zero"):
+            text = pat["says_zero"].format_map(slots)
+        elif nothing and text.rstrip().endswith(":"):                        # nothing follows the colon: end the sentence
+            text = text.rstrip()[:-1] + "."
         for m in line.get("modified_by", []):                # processes that changed the field after its writer
             text += f" After {writer} wrote it, {m} changed it ({(models.get(m) or {}).get('model') or 'a process that modifies this field'})."
         step = {"field": f, "cell": int(c), "writer": writer, "model": line["model"], "value": shown, "text": text,
@@ -294,6 +304,8 @@ def explain(view, cell: int, field: str) -> dict:
             for g in fol:
                 if (g, at) not in nexts:
                     nexts.append((g, at))
+        if nothing and pat.get("follows_zero"):
+            nexts = [(g, c) for g in pat["follows_zero"]]
         if not nexts:
             nexts = [(g, c) for g in pat.get("follows", [])]
         if not nexts and not terms and not pat:

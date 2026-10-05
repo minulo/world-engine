@@ -39,4 +39,8 @@ keys:
       keys:
         unit: {type: string}
         shape: {type: string, choices: [cell, month_cell]}
+        settle:
+          type: map
+          required: [mean, cell]
+          keys: {mean: {type: number, min: 0}, cell: {type: number, min: 0}}
         description: {type: string}

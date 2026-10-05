@@ -153,6 +153,22 @@ def test_a_group_read_from_the_previous_round_holds_the_stored_members_of_other_
     assert [g["name"] for g in w.settle_log[-1]["gaps"]] == ["group:toy_heat"]      # the sum is what the stage reads from its last round
 
 
+def test_a_group_can_carry_its_own_tolerances_for_the_settle_test():
+    """The sum of a group that a stage reads from its own previous round is tested like a field read that way. A field
+    could name its tolerances; a group had to take the profile's default, whatever its unit (build step 2: water
+    returned to the air, in mm a month, was held to the default meant for unnamed fields).
+    The copy handed to the next round moves half-way to the new sum each round, so the gap halves: 1, 0.5, 0.25 ..."""
+    slots = {**CLIMATE_MEMBER, "SumLagged": slot("SumLagged", ["sum_lagged"])}
+    plain = engine(slots, HEAT_FIELDS).build()
+    assert plain.settled["climate"] and plain.rounds_used["climate"] == 21             # 0.5 ** 20 is the first gap below a millionth
+    loose = engine(slots, HEAT_FIELDS, groups={"toy_heat": {"unit": "W/m2", "shape": "cell", "settle": {"mean": 0.1, "cell": 0.1}}}).build()
+    assert loose.settled["climate"] and loose.rounds_used["climate"] == 5              # 0.0625 is the first gap below a tenth
+    assert loose.settle_log[-1]["gaps"][0]["name"] == "group:toy_heat" and abs(loose.settle_log[-1]["gaps"][0]["mean_gap"] - 0.0625) < 1e-9
+    for bad in ({"mean": 0.1}, {"mean": -1.0, "cell": 0.1}):
+        with pytest.raises(ParameterError):
+            engine(slots, HEAT_FIELDS, groups={"toy_heat": {"unit": "W/m2", "shape": "cell", "settle": bad}})
+
+
 def test_a_member_must_have_the_layout_of_its_group():
     with pytest.raises(ParameterError) as err:
         engine({"MonthlyMember": slot("MonthlyMember", ["c"])})

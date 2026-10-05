@@ -130,10 +130,10 @@ class WorldService:
             a = a.astype(np.float64)
             f = a[np.isfinite(a)]
             if f.size == 0:
-                hit = {"min": None, "max": None, "low": None, "high": None}
+                hit = {"min": None, "max": None, "low": None, "high": None, "top": None}
             else:
-                lo, hi = np.percentile(f, [2.0, 98.0])
-                hit = {"min": float(f.min()), "max": float(f.max()), "low": float(lo), "high": float(hi)}
+                lo, hi, top = np.percentile(f, [2.0, 98.0, 99.9])      # top: for fields a few cells of which hold most (a river)
+                hit = {"min": float(f.min()), "max": float(f.max()), "low": float(lo), "high": float(hi), "top": float(top)}
             with self._lock:
                 self._stats[name] = hit
         return hit

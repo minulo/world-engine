@@ -17,6 +17,7 @@ const MAPS = {
   rain: ["#f4efe1", "#d9e7c5", "#a3d3a8", "#5cb6a4", "#2f8fb0", "#2b63a8", "#3a3a8f", "#4a1d6e"],
   diverging: ["#2b3f8f", "#5c86c9", "#a9c8e8", "#f2f2f2", "#f0b8a0", "#d6694d", "#9b1c1c"],
   terrain: ["#0a1f4d", "#1b4a8a", "#3f86c2", "#9fd0e6", "#5f9d58", "#b8b56a", "#b08a57", "#8a6a55", "#f4f4f4"],
+  water: ["#ece6d6", "#d3e3df", "#a6d0e2", "#6aaede", "#3b82c9", "#1f58a6", "#123a7a", "#0a2352"],
 };
 const SPLIT_AT = { terrain: 4 };          // where a map breaks at zero: water colours below, land colours above
 const FIELD_MAP = {
@@ -24,7 +25,14 @@ const FIELD_MAP = {
   precipitation: ["rain", false], snowfall: ["rain", false], column_water: ["rain", false], ocean_evaporation: ["rain", false],
   subsidence: ["diverging", true], convergence_rate: ["diverging", true], coriolis_parameter: ["diverging", true],
   latitude: ["diverging", true], longitude: ["diverging", true],
+  // third entry "log": a few cells hold most of the range (a river), so equal steps of colour are equal ratios
+  river_discharge: ["water", false, "log"], drainage_area: ["water", false, "log"], lake_fraction: ["water", false],
+  runoff: ["rain", false], runoff_annual: ["rain", false], evapotranspiration: ["rain", false],
+  potential_evapotranspiration: ["rain", false], soil_moisture: ["rain", false], snow_water: ["water", false, "log"],
+  slope: ["viridis", false, "log"],
 };
+const LOG_DECADES = 4;                    // a log scale spans this many powers of ten below its top
+const ZERO_IS_NONE = { depression_id: true };     // index fields in which 0 means "none", drawn in the neutral colour
 function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
 function ramp(stops, out, from, count) {
   for (let i = 0; i < count; i++) {
@@ -62,7 +70,7 @@ in vec2 aPos; out vec2 vPos; void main() { vPos = aPos; gl_Position = vec4(aPos,
 const FS = `#version 300 es
 precision highp float; precision highp int; precision highp usampler2D;
 uniform usampler2D uIds; uniform sampler2D uData; uniform sampler2D uLut; uniform sampler2D uPal;
-uniform int uFlat, uCategorical, uClasses, uSplit, uSel, uReady; uniform ivec2 uIdSize; uniform mat3 uRot;
+uniform int uFlat, uCategorical, uClasses, uSplit, uSel, uReady, uLog, uZeroNone; uniform ivec2 uIdSize; uniform mat3 uRot;
 uniform float uZoom, uLo, uHi, uAspect; uniform vec2 uPan; uniform vec3 uSpace;
 in vec2 vPos; out vec4 frag;
 const float PI = 3.141592653589793;
@@ -91,9 +99,20 @@ void main() {
     int k = int(floor(v + 0.5));
     c = (k < 0 || k >= uClasses) ? vec3(${NO_CLASS.map((x) => (x / 255).toFixed(3)).join(", ")}) : texelFetch(uPal, ivec2(k, 0), 0).rgb;
   }
+  else if (uCategorical == 2) {                           // a number that names a thing (a plate, a basin): one colour each
+    float k = floor(v + 0.5);
+    if (k < 0.0 || (uZeroNone == 1 && k == 0.0)) c = vec3(0.45);
+    else {
+      float h = fract(k * 0.61803398875) * 6.0, l = 0.40 + 0.22 * fract(k * 0.36787944117), s = 0.55;
+      float a = s * min(l, 1.0 - l);
+      vec3 n = mod(vec3(0.0, 4.0, 2.0) + h, 6.0);
+      c = l - a * clamp(min(n - 1.0, 3.0 - n), -1.0, 1.0);
+    }
+  }
   else {
     float t;
     if (uSplit == 1) t = v <= 0.0 ? 0.498 - 0.498 * clamp(v / min(uLo, -1e-30), 0.0, 1.0) : 0.502 + 0.498 * clamp(v / max(uHi, 1e-30), 0.0, 1.0);
+    else if (uLog == 1) t = v > 0.0 ? clamp(log(v / uLo) / log(uHi / uLo), 0.0, 1.0) : 0.0;
     else t = clamp((v - uLo) / max(uHi - uLo, 1e-30), 0.0, 1.0);
     c = texture(uLut, vec2(t, 0.5)).rgb;
   }
@@ -112,7 +131,7 @@ function initGL() {
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(prog, "aPos"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  for (const n of ["uIds", "uData", "uLut", "uPal", "uFlat", "uCategorical", "uClasses", "uSplit", "uSel", "uReady", "uIdSize", "uRot", "uZoom",
+  for (const n of ["uIds", "uData", "uLut", "uPal", "uFlat", "uCategorical", "uClasses", "uSplit", "uLog", "uZeroNone", "uSel", "uReady", "uIdSize", "uRot", "uZoom",
     "uLo", "uHi", "uAspect", "uPan", "uSpace"]) uni[n] = gl.getUniformLocation(prog, n);
   ["ids", "data", "lut", "pal"].forEach((n, i) => { tex[n] = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, tex[n]);
@@ -194,13 +213,13 @@ function fmt(v, unit) {
   return unit && !/^(category|index|true or false|0 to 1)$/.test(unit) ? `${t} ${unit}` : t;
 }
 async function selectField() {
-  const s = spec(), cat = s.kind === "category" || s.kind === "boolean";
+  const s = spec(), cat = s.kind === "category" || s.kind === "boolean", named = s.kind === "index";
   $("fielddesc").textContent = s.description || "";
   $("partrow").hidden = s.kind !== "direction";
   $("monthrow").style.opacity = isMonthly() ? 1 : 0.4; $("month").disabled = $("play").disabled = !isMonthly();
   if (!isMonthly() && state.playing) togglePlay();
-  const [mapName, split0] = FIELD_MAP[state.field] || ["viridis", false];
-  let lo = 0, hi = 1, split = false;
+  const [mapName, split0, scale] = FIELD_MAP[state.field] || ["viridis", false];
+  let lo = 0, hi = 1, split = false, log = false;
   const legend = $("legend"); legend.textContent = "";
   if (cat) {
     const names = s.kind === "boolean" ? ["false", "true"] : s.categories;
@@ -218,9 +237,16 @@ async function selectField() {
     }
     legend.append(ul);
     gl.uniform1i(uni.uClasses, names.length);
+  } else if (named) {
+    await loadField();
+    const note = document.createElement("p"); note.className = "muted small";
+    note.textContent = "Each number has a colour of its own; grey means none" + (ZERO_IS_NONE[state.field] ? " (0)." : " (-1).");
+    legend.append(note);
   } else {
     state.stats = await getJSON("/api/stats?name=" + encodeURIComponent(state.field));
     lo = state.stats.low ?? 0; hi = state.stats.high ?? 1;
+    log = scale === "log" && state.stats.top > 0;
+    if (log) { hi = state.stats.top; lo = hi / 10 ** LOG_DECADES; }
     split = split0 && state.stats.min < 0 && state.stats.max > 0 && !(s.kind === "direction" && !state.part);
     if (s.kind === "direction" && state.part) { const m = Math.max(Math.abs(lo), Math.abs(hi)); lo = -m; hi = m; split = true; }
     if (split) { lo = Math.min(lo, -1e-30); hi = Math.max(hi, 1e-30); }
@@ -231,12 +257,13 @@ async function selectField() {
     const bar = document.createElement("canvas"); bar.width = 256; bar.height = 1;
     const img = bar.getContext("2d").createImageData(256, 1); img.data.set(table); bar.getContext("2d").putImageData(img, 0, 0);
     const ends = document.createElement("div"); ends.className = "ends";
-    const mid = split ? `<span>0</span>` : "";
-    ends.innerHTML = `<span>${fmt(lo, "")}</span>${mid}<span>${fmt(hi, s.unit)}</span>`;
+    const mid = split ? `<span>0</span>` : log ? `<span>equal steps are equal ratios</span>` : "";
+    ends.innerHTML = `<span>${log ? "≤ " : ""}${fmt(lo, "")}</span>${mid}<span>${fmt(hi, s.unit)}</span>`;
     legend.append(bar, ends);
     await loadField();
   }
-  gl.uniform1i(uni.uCategorical, cat ? 1 : 0); gl.uniform1i(uni.uSplit, split ? 1 : 0);
+  gl.uniform1i(uni.uCategorical, cat ? 1 : named ? 2 : 0); gl.uniform1i(uni.uSplit, split ? 1 : 0);
+  gl.uniform1i(uni.uLog, log ? 1 : 0); gl.uniform1i(uni.uZeroNone, ZERO_IS_NONE[state.field] ? 1 : 0);
   gl.uniform1f(uni.uLo, lo); gl.uniform1f(uni.uHi, hi);
   const line = state.world.lineage[state.field], m = line && state.world.models[line.writer];
   $("model").innerHTML = line ? `<p><b>Written by</b> ${line.writer}${line.pushes.length ? ", then pushed by " + line.pushes.join(", ") : ""}.</p>` +

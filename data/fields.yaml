@@ -5,7 +5,8 @@
 #
 # shape: cell | month_cell.   kind: number | direction (3 components) | category | boolean | index.
 # default: what a read from the previous round returns in the first round (the first guess: no ice, no wind, bare ground).
-# settle: the tolerances of the test that decides whether the climate has settled, for fields read from the previous round.
+# settle: the tolerances of the test that decides whether the climate has settled, for fields read from the previous round
+#         (and for a group whose sum is read from the previous round).
 fields:
   # ---------------------------------------------------------------- Geometry
   latitude:
@@ -69,6 +70,24 @@ fields:
   coast_distance:
     {family: Sea and drainage, unit: m, shape: cell, kind: number, range: [0, 1.0e+9],
      description: "Distance to the nearest coast."}
+  flow_receiver:
+    {family: Sea and drainage, unit: index, shape: cell, kind: index,
+     description: "The neighbouring cell that water on the ground flows into; -1 for a sea cell and for the bottom of a closed hollow."}
+  drainage_area:
+    {family: Sea and drainage, unit: "m²", shape: cell, kind: number, dtype: float64, range: [0, 1.0e+18],
+     description: "Total land area whose water passes through this cell when every hollow upstream is full and overflows. On a sea cell: the land area that drains straight into it."}
+  basin_id:
+    {family: Sea and drainage, unit: index, shape: cell, kind: index,
+     description: "River basin: all cells that drain to the same outlet when every hollow on the way is full and overflows. The number is that of the mouth: the last land cell before the sea, or, where a hollow overflows straight into the sea, the deepest cell of that hollow. -1 on sea."}
+  depression_id:
+    {family: Sea and drainage, unit: index, shape: cell, kind: index, default: 0,
+     description: "The closed hollow this cell drains into, as a row of the table of hollows; zero if it drains to the sea."}
+  spill_elevation:
+    {family: Sea and drainage, unit: m, shape: cell, kind: number, default: missing, allow_missing: true, range: [-20000, 20000],
+     description: "Water level at which that hollow overflows, relative to the reference level. No value where the cell drains to the sea."}
+  slope:
+    {family: Sea and drainage, unit: m/m, shape: cell, kind: number, range: [0, 10],
+     description: "Steepness toward the receiver cell: the drop to it over the distance between the two cell centres. Zero where there is no receiver."}
   # ---------------------------------------------------------------- Energy and air
   insolation:
     {family: Energy and air, unit: "W/m²", shape: month_cell, kind: number, range: [0, 1.0e+6],
@@ -108,8 +127,37 @@ fields:
      description: "Rain plus snow."}
   snowfall:
     {family: Water, unit: mm/month of water, shape: month_cell, kind: number, default: 0.0, range: [0, 20000],
-     settle: {mean: 0.05, cell: 1.0},
      description: "The part of precipitation that falls as snow."}
+  evapotranspiration:
+    {family: Water, unit: mm/month, shape: month_cell, kind: number, default: 0.0, range: [0, 5000],
+     description: "Water returned to the air by soil, plants and lakes; zero on sea. Member of the group moisture_source."}
+  potential_evapotranspiration:
+    {family: Water, unit: mm/month, shape: month_cell, kind: number, default: missing, allow_missing: true, range: [0, 5000],
+     description: "Water the air could take up if the ground were wet. No value on sea."}
+  soil_moisture:
+    {family: Water, unit: 0 to 1, shape: month_cell, kind: number, default: missing, allow_missing: true, range: [0, 1],
+     description: "Water held in the soil, as a fraction of what it can hold. No value on sea."}
+  snow_water:
+    # settle: the ground counts as fully white from 15 mm (Albedo), so 2 mm is an eighth of the range in which the
+    # store changes anything that reads it
+    {family: Water, unit: mm, shape: month_cell, kind: number, default: 0.0, range: [0, 1.0e+6],
+     settle: {mean: 0.05, cell: 2.0},
+     description: "Water stored as snow on the ground, on the month's average; zero on sea."}
+  runoff:
+    {family: Water, unit: mm/month, shape: month_cell, kind: number, default: 0.0, range: [0, 40000],
+     description: "Water leaving the cell over or through the ground, with the ice that leaves ground under snow that never melts."}
+  runoff_annual:
+    {family: Water, unit: mm/yr, shape: cell, kind: number, default: 0.0, range: [0, 400000],
+     description: "Yearly total of runoff."}
+  river_discharge:
+    {family: Water, unit: "m³/s", shape: month_cell, kind: number, default: 0.0, range: [0, 1.0e+9],
+     description: "Flow of the river passing through the cell: the runoff of the cell and of everything upstream of it. On a sea cell: what the land beside it delivers."}
+  lake_fraction:
+    {family: Water, unit: 0 to 1, shape: cell, kind: number, default: 0.0, range: [0, 1],
+     description: "Fraction of the cell covered by lake."}
+  lake_level:
+    {family: Water, unit: m, shape: cell, kind: number, default: missing, allow_missing: true, range: [-20000, 20000],
+     description: "Height of the lake surface relative to the reference level. No value where there is no lake."}
   # ---------------------------------------------------------------- Soil and life
   climate_class:
     {family: Soil and life, unit: category, shape: cell, kind: category, categories_from: {file: biomes, key: climate_classes},
@@ -120,6 +168,9 @@ fields:
   vegetation_cover:
     {family: Soil and life, unit: 0 to 1, shape: month_cell, kind: number, default: 0.0, range: [0, 1],
      description: "Fraction of the ground shaded by plants."}
+  soil_water_capacity:
+    {family: Soil and life, unit: mm, shape: cell, kind: number, default: 150.0, range: [0, 5000],
+     description: "Water the soil can hold for plants; zero on sea."}
   # ---------------------------------------------------------------- Labels
   place_label:
     {family: Labels, unit: category, shape: cell, kind: category, label: {stage: climate}, default: none,
@@ -134,5 +185,5 @@ groups:
     {unit: "W/m²", shape: month_cell,
      description: "Heat delivered to (+) or taken from (-) the surface by anything other than sunlight, loss to space and the air's own heat transport."}
   moisture_source:
-    {unit: mm/month, shape: month_cell,
+    {unit: mm/month, shape: month_cell, settle: {mean: 0.05, cell: 1.0},
      description: "Water vapour supplied to the air from land."}
