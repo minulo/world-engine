@@ -28,7 +28,9 @@ A pattern entry, under the slot and the field it writes:
               cell (the driver holds a cell number: it is used by "at" and not spoken),
               row_of (the driver holds a row of this table: says may then use {row}, or {row_number} if the table has
               a column called row, and one slot per column; values maps a column's codes to words, and units
-              maps a column to the unit its number is printed in)
+              maps a column to the unit its number is printed in),
+              aside (the driver is a number for the sentences to use by its name: it is no part of a sum, is not
+              spoken by itself and is not followed)
 """
 from __future__ import annotations
 
@@ -54,8 +56,8 @@ def _fmt(v, unit):
     if unit == "km3_from_m3":
         a = abs(v) / 1e9
         return f"{v / 1e9:,.0f} km³" if a >= 100 else f"{v / 1e9:.1f} km³" if a >= 1 else f"{v / 1e9:.3g} km³"
-    if unit == "percent_from_share":
-        return f"{v * 100:.0f} %"
+    if unit == "percent_from_share":                         # a share that is not nothing is not printed as 0 %, nor one short of all as 100 %
+        return "under 1 %" if 0.0 < v < 0.005 else "over 99 %" if 0.995 <= v < 1.0 else f"{v * 100:.0f} %"
     if isinstance(v, (bool, np.bool_)):
         return "true" if v else "false"
     if isinstance(v, (int, np.integer)):
@@ -229,7 +231,7 @@ def explain(view, cell: int, field: str) -> dict:
         if absent or quiet:
             pass                                             # the drivers of a value that is not there have nothing to add
         elif pat.get("form") == "sum":
-            order = sorted((t for t in dvals if not any((dpat.get(t) or {}).get(k) for k in ("names", "cell", "row_of"))),
+            order = sorted((t for t in dvals if not any((dpat.get(t) or {}).get(k) for k in ("names", "cell", "row_of", "aside"))),
                            key=lambda t: -abs(dvals[t]))
             largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
             for t in order:
@@ -249,7 +251,7 @@ def explain(view, cell: int, field: str) -> dict:
                         said += " (" + ", ".join(members) + ")"
                 parts.append(said)
         else:
-            order = [t for t in dvals if not any((dpat.get(t) or {}).get(k) for k in ("cell", "row_of"))]
+            order = [t for t in dvals if not any((dpat.get(t) or {}).get(k) for k in ("cell", "row_of", "aside"))]
             for t in order:
                 p = dpat.get(t) or {}
                 if p.get("says") and dvals[t] == dvals[t]:      # a driver whose value is missing here has nothing to say

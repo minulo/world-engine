@@ -1,10 +1,10 @@
 """Open the viewer on a world store in a headless browser and save screenshots.
 
 A development tool, not part of the engine. It needs the Python package playwright and a Chromium.
-    python tools/viewer_check.py STORE OUT_DIR [field ...] ["?lat=48&lon=-20&month=7"] [--no-class=FIELD]
+    python tools/viewer_check.py STORE OUT_DIR [field ...] ["?lat=48&lon=-20&month=7"] [--no-class FIELD]
 For each field it saves a globe view and a flat view, then clicks the middle of the globe and
 saves the page with the cell panel filled in. It prints what the page reported.
-With --no-class=FIELD it also checks that a class field whose every cell holds a code outside
+With --no-class FIELD it also checks that a class field whose every cell holds a code outside
 its list is drawn in the colour kept for such codes, and not in the colour of a class.
 Where the world holds them, it checks two more things on every run: a field of numbers that
 name things (a receiver cell, a plate) is shown in whole numbers, with "none" for the number
@@ -17,15 +17,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from playwright.sync_api import sync_playwright          # noqa: E402
-
+from worldengine import console                          # noqa: E402
 from worldengine.server import make_server                # noqa: E402
 
 
 NO_CLASS = [217, 26, 191]       # as in viewer.js
 
 
-def main(store, out_dir, fields, query="", no_class=None):
+def check(store, out_dir, fields, query="", no_class=None):
+    from playwright.sync_api import sync_playwright          # needed for this one step only: --help works without it
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     srv = make_server(store, port=0)
@@ -149,7 +149,27 @@ def main(store, out_dir, fields, query="", no_class=None):
     return 1 if problems else 0
 
 
+def parser():
+    p = console.tool_parser(__doc__, "python tools/viewer_check.py")
+    p.add_argument("store", metavar="STORE")
+    p.add_argument("out_dir", metavar="OUT_DIR")
+    p.add_argument("fields", nargs="*", metavar="field", help="a field to show; an entry that begins with ? is the page's query instead")
+    p.add_argument("--no-class", default=None, metavar="FIELD")
+    return p
+
+
+def main(argv=None) -> int:
+    args = parser().parse_args(argv)
+    console.print_anywhere()
+    if not Path(args.store).exists():
+        print(f"no world store at {args.store}", file=sys.stderr)
+        return 2
+    queries = [a for a in args.fields if a.startswith("?")]
+    if len(queries) > 1:
+        print(f"one query at most, not {len(queries)}: {' '.join(queries)}", file=sys.stderr)
+        return 2
+    return check(args.store, args.out_dir, [a for a in args.fields if not a.startswith("?")], queries[0] if queries else "", args.no_class)
+
+
 if __name__ == "__main__":
-    args = [a for a in sys.argv[3:] if not a.startswith("?") and not a.startswith("--no-class=")]
-    sys.exit(main(sys.argv[1], sys.argv[2], args, next((a for a in sys.argv[3:] if a.startswith("?")), ""),
-                  next((a.split("=", 1)[1] for a in sys.argv[3:] if a.startswith("--no-class=")), None)))
+    sys.exit(main())

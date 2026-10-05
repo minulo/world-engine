@@ -105,12 +105,12 @@ Drainage:
         follows: [ocean_mask]
         quiet: true
   depression_id:
-    says: "Water from here collects in hollow {value} of the table of hollows before it can go further (0: it runs to the sea without meeting a closed hollow)."
+    says: "Water from here collects first in hollow {value} of the table of hollows, the innermost closed hollow around this cell (0: it runs to the sea without meeting a closed hollow)."
     follows: [flow_receiver]
     drivers:
       hollow:
         row_of: hollows
-        says: "The bottom of that hollow is cell {bottom_cell}, at {bottom_m} m; it overflows when its water stands at {spill_m} m, toward cell {spill_into_cell}"
+        says: "The bottom of that hollow is cell {bottom_cell}, at {bottom_m} m; taken by itself it overflows when its water stands at {spill_m} m, toward cell {spill_into_cell}. It may lie inside a larger hollow, and a lake that fills the larger one stands higher than that: lake_fraction says what Hydrology found"
   spill_elevation:
     says: "The hollow this cell drains into overflows when its water stands at {value} relative to the reference level."
     says_missing: "Water from here reaches the sea without meeting a closed hollow, so there is no level of overflow to give."
@@ -226,7 +226,7 @@ Hydrology:
       snow_free: {unit: percent_from_share}
     cases:
       - when: {state: part_of_the_year}
-        says: "The air here could take {value} of water from the ground if the ground were wet (the Priestley-Taylor rule). Bare ground here would gain {net_radiation} from radiation on the year's average, sunlight absorbed less heat radiated away. But snow covers the ground for part of the year, and from under snow the air takes nothing in this model: on the year's average {snow_free} of the ground is bare."
+        says: "The air here could take {value} of water from the ground if the ground were wet (the Priestley-Taylor rule). Bare ground here would gain {net_radiation} from radiation on the year's average, sunlight absorbed less heat radiated away. But snow covers some of the ground for some or all of the year, and from under snow the air takes nothing in this model: counted over the year, {snow_free} of the ground is bare."
         follows: [snow_water, insolation, surface_temperature]
       - when: {state: all_year}
         says: "The air takes no water from the ground here: snow covers it through every month, and from under snow the air takes nothing in this model."
@@ -273,13 +273,14 @@ Hydrology:
       from_snowmelt: {says: "melted snow that the soil could not hold gives {v}", follows: [snow_water]}
       from_ice: {says: "ice leaving ground where snow never melts away gives {v}", follows: [snow_water]}
       cover: {names: [dry_land, partly_under_a_lake, under_a_lake, sea]}
+      shed_as_if_dry: {aside: true, unit: mm/month}
     cases:
       - when: {cover: sea}
         says: "This cell is sea: runoff is water leaving the ground, and there is no ground here."
         quiet: true
         follows: [ocean_mask]
       - when: {cover: under_a_lake}
-        says: "No runoff is counted here: the cell lies wholly under a lake, and what falls on it falls into the lake."
+        says: "No runoff is counted in this field here: the cell lies wholly under a lake, and what falls on it falls into the lake. In the books of the rivers the cell still counts with the {shed_as_if_dry} that its ground would shed if it were dry; what the open water loses to the air beyond that is taken off at the lake."
         quiet: true
         follows: [lake_fraction]
       - when: {cover: partly_under_a_lake}
@@ -296,9 +297,10 @@ Hydrology:
     drivers:
       local_runoff: {says: "the cell's own runoff gives {v}", follows: [runoff]}
       from_upstream: {says: "{v} arrive from upstream, where the largest single source is {at}", follows: [runoff], at: largest_source}
+      into_the_lake: {says: "the flooded part of the cell, where that water has already reached the lake, changes it by {v}", follows: [lake_fraction]}
       through_lake: {says: "{v} cross the lake here"}
       largest_source: {cell: true}
-      place: {names: [dry_ground, lake_that_overflows, closed_lake, sea]}
+      place: {names: [dry_ground, lake_that_overflows, closed_lake, sea, brim_of_a_lake_that_overflows, under_a_closed_lake]}
       lake: {row_of: lakes}
     cases:
       - when: {place: sea}
@@ -309,32 +311,42 @@ Hydrology:
         says: "This cell lies in a lake that overflows. Of the water that crosses the lake here on its way to the outlet, {value} go on to leave the lake over its pass, on the year's average: every month the lake passes on the share of what reaches it that it does not lose to the air over the year."
         quiet: true
         follows: [lake_fraction]
+      - when: {place: brim_of_a_lake_that_overflows}
+        says: "This cell stands at the brim of a lake that overflows: exactly at the level of its water, so that the lake covers none of it, and on the way that water takes to the pass. Of the water that crosses here, the cell's own runoff with it, {value} go on to leave the lake over its pass, on the year's average: every month the lake passes on the share of what reaches it that it does not lose to the air over the year."
+        quiet: true
+        follows: [lake_fraction]
       - when: {place: closed_lake}
-        says: "This cell lies partly under a closed lake, which keeps all the water that reaches it. Over the part of the cell that is not flooded the river carries {value} on the year's average:"
-        says_zero: "This cell lies under a closed lake, which keeps all the water that reaches it: no river is counted here."
+        says: "This cell lies partly under a closed lake, which keeps all the water that reaches it. The river is counted over the part of the cell that is not flooded, which gives {value} on the year's average:"
+        says_zero: "This cell lies partly under a closed lake, which keeps all the water that reaches it. No water runs off the rest of the cell, and none reaches it from higher ground."
         follows_zero: [lake_fraction]
+      - when: {place: under_a_closed_lake}
+        says: "This cell lies wholly under a closed lake, which keeps all the water that reaches it: no river is counted here. From upstream {from_upstream} reach the lake in this cell on the year's average."
+        quiet: true
+        follows: [lake_fraction]
   lake_fraction:
     says: "A lake covers {value} of this cell."
     unit: percent_from_share
     follows: [depression_id]
     drivers:
       state:
-        names: [none, with_outlet, closed, no_way_out]
+        names: [none, with_outlet, closed, no_way_out, at_its_brim]
         says_by:
           none: "No lake reaches it"
           with_outlet: "It is a lake with an outlet: more water arrives than its surface can lose to the air, so it has filled to its pass and overflows"
           closed: "It is a closed lake: it has spread until its surface loses to the air all the water that arrives, and stands below its pass"
           no_way_out: "It is a lake in a hollow with no way out, flooded to its rim: more water arrives than its whole surface can lose to the air, and the model drops the rest"
+          at_its_brim: "But a lake that overflows stands exactly at the height of this cell: its water crosses the cell on the way to the pass, and none of the cell lies under it"
         follows_by:
           closed: [potential_evapotranspiration]
       lake:
         row_of: lakes
         units: {inflow_m3_per_year: km3_from_m3, area_m2: km2_from_m2, loss_to_air_m3_per_year: km3_from_m3,
-                outflow_m3_per_year: km3_from_m3, evaporation_m3_per_year: km3_from_m3, rain_on_lake_m3_per_year: km3_from_m3}
-        says: "each year {inflow_m3_per_year} of water run toward this lake, counted as if its ground were dry; flooding its {area_m2} lets the air take {loss_to_air_m3_per_year} more than the same ground would give dry, and {outflow_m3_per_year} leave over the pass; its open water gives the air {evaporation_m3_per_year} a year, and {rain_on_lake_m3_per_year} fall on it (row {row} of the table of lakes)"
+                outflow_m3_per_year: km3_from_m3, evaporation_m3_per_year: km3_from_m3, rain_on_lake_m3_per_year: km3_from_m3,
+                level_m: m}
+        says: "each year {inflow_m3_per_year} of water run toward this lake, counted as if its ground were dry; flooding its {area_m2} lets the air take {loss_to_air_m3_per_year} more than the same ground would give dry, and {outflow_m3_per_year} leave over the pass; its open water gives the air {evaporation_m3_per_year} a year, and {rain_on_lake_m3_per_year} fall on it; the lake fills hollow {hollow} of the table of hollows, as a whole, and stands at {level_m} (row {row} of the table of lakes)"
   lake_level:
     says: "The surface of the lake here stands at {value} relative to the reference level."
-    says_missing: "No lake reaches this cell, so there is no lake level to give."
+    says_missing: "No lake covers any of this cell, so there is no lake level to give."
     follows: [lake_fraction]
     follows_missing: [lake_fraction]
 

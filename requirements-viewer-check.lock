@@ -1,0 +1,6 @@
+# For tools/viewer_check.py alone, which opens the viewer in a headless browser. Not needed to build a world, to view
+# it or to run the tests. Install after requirements.lock: pip install -r requirements-viewer-check.lock, and then a
+# Chromium for it: python -m playwright install chromium
+playwright==1.56.0
+greenlet==3.5.6
+pyee==13.0.1

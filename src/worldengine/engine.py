@@ -981,6 +981,13 @@ class Engine:
         out.update({"group:" + g: self.registry.groups[g].settle for g in sorted(read_here) if self.registry.groups[g].settle})
         return out
 
+    def _first_guess_of(self, stage) -> dict:
+        """The first guesses that a climate run of this stage starts from: the defaults of fields.yaml for the fields
+        that the stage reads from its previous round. The rounds stop within a tolerance of the steady state, not at
+        it, so the place they started from is still in the last digits of every field of the stage."""
+        return {f: (None if isinstance(d, float) and d != d else d)
+                for f, d in ((f, self.registry.fields[f].default) for f in self.lagged_fields if self.stage_of.get(f) == stage)}
+
     def _lineage(self):
         w = self.world
         for f, writer in self.plan.producer.items():
@@ -1006,8 +1013,10 @@ class Engine:
                       "stage": self.stage_cfg[d["stage"]],           # the clock, and the length and number of its rounds
                       "seed": self.seed if draws else None,          # the seed counts where a draw is made
                       "climate": self.profile["climate"] if self.clocks[d["stage"]] == "climate" else None,
-                      # the tolerances that decide when the rounds of the stage stop shaped every field of it
-                      "settle": self._settle_of(d["stage"]) if self.clocks[d["stage"]] == "climate" else None}
+                      # the tolerances that decide when the rounds of the stage stop shaped every field of it,
+                      # and so did the first guesses from which its rounds set out
+                      "settle": self._settle_of(d["stage"]) if self.clocks[d["stage"]] == "climate" else None,
+                      "first_guess": self._first_guess_of(d["stage"]) if self.clocks[d["stage"]] == "climate" else None}
             w.lineage[f] = {
                 "writer": writer, "stage": d["stage"], "model": proc.model if proc else "the engine's default for a label field",
                 "version": proc.version if proc else __version__,

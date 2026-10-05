@@ -634,3 +634,29 @@ class TrickleInTheLoop(Process):
         ctx.write("trickle", 3.0 * flows)
         ctx.driver("trickle", "from_spring", 1.0 * flows)
         ctx.driver("trickle", "from_rain", 2.0 * flows)
+
+
+# ---------------------------------------------------------------- a toy process for the forms of an answer (fourth check of step 2)
+class Pointer(Process):
+    """A sum of three parts, of which the second is a hundredth and the third a thousandth of the first; a driver that
+    names a cell (`target`, for every cell but the first ten, which name none), one that names row 0 of a table, and
+    an amount in a unit of its own."""
+    stage = "climate"
+    reads = ("table:toy_items",)
+    writes = ("pointed",)
+    drivers = {"pointed": ("large", "small", "tiny", "to_cell", "to_row", "span")}
+    additive = ("pointed",)
+    target = 0
+
+    def run(self, ctx):
+        ctx.read("table:toy_items")
+        n = ctx.mesh.n
+        to_cell = np.full(n, Pointer.target, dtype=np.int32)
+        to_cell[:10] = -1
+        ctx.write("pointed", np.full(n, 101.1))
+        ctx.driver("pointed", "large", np.full(n, 100.0))
+        ctx.driver("pointed", "small", np.full(n, 1.0))
+        ctx.driver("pointed", "tiny", np.full(n, 0.1))
+        ctx.driver("pointed", "to_cell", to_cell)
+        ctx.driver("pointed", "to_row", np.zeros(n, dtype=np.int32))
+        ctx.driver("pointed", "span", np.full(n, 3.0e6))

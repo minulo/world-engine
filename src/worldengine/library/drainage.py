@@ -26,14 +26,19 @@ They are settled in this order.
      surface under the sea.
   2. The wider way: the longer boundary shared by the two cells (Ties.way, Ties.edge). [INFERRED: mine.
      It is a property of the mesh's geometry and not of the ground, so it settles a tie without claiming
-     to know the ground better than the data do; it turns with the planet, and it does not change when
-     the cells are numbered otherwise. mesh_ties says how the lengths are compared, and where rounding
-     errors in the geometry still decide.]
+     to know the ground better than the data do, and it does not change when the cells are numbered
+     otherwise. mesh_ties says how the lengths are compared. What it leaves open goes to step 3, and
+     that does change with the numbering unless the caller hands in an order: boundaries that are
+     images of each other are exactly as wide, and level ground has no wider way out.]
   3. The order of the cells that the caller gives (Ties.rank); the cell numbers if none is given.
 The same three steps settle every choice among equals in this module:
   * a cell with several equally low neighbours;
-  * a hollow with several passes of exactly its height: the pass whose far side lies lowest is taken
-    first, which is where a single cell's water goes by the rule, and then the three steps;
+  * a hollow with several passes of exactly its height. Before the three steps the pass whose lower cell
+    lies lowest is taken. Where the higher cell of the pass is the hollow's own, that lower cell is the
+    far side, and the choice is where a single cell's water goes by the rule. Where the higher cell is the
+    far one, the lower cell is the hollow's own, and the choice is no truer than any other [MEASURED by
+    the fourth check of step 2: on Earth's relief 47 of 1,034 hollows take such a pass, across a far cell
+    level with the water, where a pass of the same height led down];
   * level ground, which is drained toward its nearest way out, counted in cells, and among equally near
     ways by the three steps; a level floor with no way out drains to one of its cells, the first in the
     order of step 3, which is then the bottom of its hollow;
@@ -43,6 +48,10 @@ Without `ties` only step 1 and the cell numbers decide. Nothing here varies from
 ties of the mesh (mesh_ties) a result depends on how the cells are numbered only where bed and boundary
 are both equal: where the ground repeats itself exactly across a line of symmetry of the mesh, and in
 the choice of the bottom of a level floor.
+
+Ties.passes lets a caller put an order of its own before everything else among passes of one height. The
+engine does not use it. The Earth harness does (src/earth_reference), to draw at random every choice
+that the heights do not make, and so to see which of its results the relief decides and which the ties.
 """
 from __future__ import annotations
 
@@ -53,8 +62,8 @@ from numba import njit
 
 NO_CELL = -1                    # no receiver: a sea cell, or the bottom of a hollow
 SEA = 0                         # the label of ground that drains to the sea, and row 0 of the table of hollows
-EQUAL_WIDTHS = 1.0e-9           # shared boundaries are compared after rounding to this share of the longest of the mesh,
-                                # so that rounding errors in the mesh's geometry seldom settle a tie (mesh_ties says how seldom)
+SAME_PLACE = 1.0e-9             # boundary_families: two boundaries are images of each other when what places them agrees to this
+CORNERS = 12                    # an icosahedron has twelve corners; a mesh keeps them as its first twelve cells (mesh.py)
 
 
 class Ties(NamedTuple):
@@ -62,24 +71,65 @@ class Ties(NamedTuple):
     way: np.ndarray             # (cells, neighbours): how far the way from a cell to each neighbour is preferred; the larger wins
     edge: np.ndarray            # (pairs of neighbouring cells, in the order of the mesh's edge_cells): the same number
     rank: np.ndarray            # (cells): where even that is equal, or one cell of several must be named: the lower wins
+    passes: np.ndarray | None = None    # (pairs of neighbouring cells), or none: among passes of one height the lower goes
+                                        # first, before the lower cell, the bed and the width are looked at
+
+
+def boundary_families(mesh) -> np.ndarray:
+    """For each pair of neighbouring cells, the number of its family: the boundaries that are images of each other
+    under the 120 turns and mirrorings that map the mesh onto itself, and are therefore exactly as long.
+
+    A boundary is placed by the sum of the positions of its two cells. Its scalar products with the twelve corners of
+    the icosahedron, put in order, are the same for every image of the boundary and for no other boundary: the three
+    largest name the nearest face and the place within it. Worked out, they agree among images to about 1e-15, and
+    differ between families by the spacing of the mesh, so anything between serves to tell them apart (SAME_PLACE).
+    The products are rounded on two grids half a step apart and boundaries that agree on either are joined: one
+    grid alone would split a family whose products lie on a rounding step."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    corners = np.asarray(mesh.xyz[:CORNERS], dtype=np.float64)       # the icosahedron's corners are the first twelve cells
+    a, b = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
+    placed = np.sort((mesh.xyz[a] + mesh.xyz[b]) @ corners.T, axis=1) / SAME_PLACE
+    _, on_one = np.unique(np.round(placed), axis=0, return_inverse=True)
+    _, on_other = np.unique(np.floor(placed), axis=0, return_inverse=True)
+    on_one, on_other = on_one.ravel(), on_other.ravel()
+    count = int(on_one.max()) + 1
+    joined = coo_matrix((np.ones(a.size), (on_one, count + on_other)), shape=(count + int(on_other.max()) + 1,) * 2)
+    _, family = connected_components(joined, directed=False)
+    _, family = np.unique(family[on_one], return_inverse=True)       # numbered from 0, in a fixed order
+    return family.ravel().astype(np.int64)
 
 
 def mesh_ties(mesh) -> Ties:
     """The ties of a mesh settled by its geometry: the wider way first, the longer boundary shared by two cells,
     and then the cell numbers.
 
-    The lengths are rounded to EQUAL_WIDTHS of the longest before they are compared. The mesh has boundaries that
-    are mirror images of each other and exactly as long, and its geometry carries rounding errors of its own: up to
-    about 1e-13 of the longest boundary at level 5, 1e-12 at level 6 and 1e-11 at level 7. Unrounded, those errors
-    would tell nearly every such pair apart. Rounded, the pair counts as equal and the order of the cells decides,
-    unless the two lengths fall on either side of a rounding step: then the rounding error still decides. That is
-    the same on every run, and it is rare [MEASURED: in the sorted list of all boundary lengths, of the neighbours
-    that differ by less than 1e-11 of the longest, the rounding splits none of 30,448 at level 5, 2 of 121,824 at
-    level 6 and 29 of 487,377 at level 7]. Rounding to a grid is not a tolerance: two lengths that differ by far
-    less than EQUAL_WIDTHS can round apart, and two that differ by nearly that much can round together."""
-    width = np.round(mesh.edge_dual / (mesh.edge_dual.max() * EQUAL_WIDTHS))
+    The mesh has boundaries that are images of each other under its symmetries and exactly as long; worked out,
+    their lengths differ by the rounding errors of the geometry, up to 1e-12 of the longest boundary at level 5 and
+    1.5e-11 at level 7. So lengths are not compared as worked out: every boundary takes the length of its family
+    (boundary_families; the shortest worked-out length of its members), and the families are put in order of that
+    length. Images of one boundary then tie exactly, on every mesh, and the order of the cells settles them.
+    Two families whose lengths differ at all are told apart, by however little. On the standard mesh the two
+    nearest families differ by 5e-12 of the longest boundary, less than the rounding errors inside a family, so
+    which of those two counts as the longer is settled by those errors: the same way on every run and for every
+    image, and with no claim to be right. [MEASURED: tests/test_water_rules.py;
+    before the fourth check of step 2 the lengths were rounded to a billionth, which left 29 of the 4,160 families of
+    the standard mesh split by the rounding errors, and 580 of 16,512 one level finer.]"""
+    cached = getattr(mesh, "_ties_of_the_mesh", None)
+    if cached is not None:
+        return cached
+    family = boundary_families(mesh)
+    length = np.full(int(family.max()) + 1, np.inf)
+    np.minimum.at(length, family, np.asarray(mesh.edge_dual, dtype=np.float64))
+    _, place = np.unique(length, return_inverse=True)                # the families in order of their length
+    width = place.ravel()[family].astype(np.float64)
     way = np.where(mesh.nbr >= 0, width[np.maximum(mesh.nbr_edge, 0)], -np.inf)
-    return Ties(way=way, edge=width, rank=np.arange(mesh.n, dtype=np.int64))
+    ties = Ties(way=way, edge=width, rank=np.arange(mesh.n, dtype=np.int64))
+    try:
+        mesh._ties_of_the_mesh = ties                                # a mesh is built once and never changed
+    except AttributeError:
+        pass
+    return ties
 
 
 def count_ties(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.ndarray, ties: Ties) -> dict:
@@ -302,10 +352,12 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
 
     Passes of exactly equal height are common [MEASURED: tests/test_water.py counts them on rough ground where no
     two cells tie]: when the higher cell of a pass is the hollow's own, every lower
-    neighbour of that cell beyond the hollow makes a pass of that same height. Among them the pass whose lower
-    cell is lowest is taken, which is where a cell's water goes by the rule for a single cell; then the lowest
-    bed (`bed`: the solid ground, which differs from `surface` under the sea), then the widest pass, then the
-    first in the order of the cells (`ties`; the module's first lines). Of two hollows that become one, the one
+    neighbour of that cell beyond the hollow makes a pass of that same height. Among passes of one height the
+    one whose lower cell is lowest is taken, which in that case is where a cell's water goes by the rule for a
+    single cell (and is no truer than another choice where the higher cell of the pass is the far one: the
+    module's first lines); then the lowest bed (`bed`: the solid ground, which differs from `surface` under the
+    sea), then the widest pass, then the first in the order of the cells (`ties`). An order of the caller's own
+    for passes of one height (`ties.passes`) comes before all of these. Of two hollows that become one, the one
     with the lower bottom is named first; of two equally low bottoms, the first in the order of the cells.
 
     Returns (label, table):
@@ -337,6 +389,8 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
     a, b = edge_cells[:, 0].astype(np.int64), edge_cells[:, 1].astype(np.int64)
     touch = label[a] != label[b]
     narrow = -(np.zeros(a.size) if ties is None else np.asarray(ties.edge, dtype=np.float64))[touch]     # the widest first
+    given = None if ties is None else ties.passes                   # an order of the caller's own, before all else
+    first = (np.zeros(a.size) if given is None else np.asarray(given, dtype=np.float64))[touch]
     rank = np.arange(n, dtype=np.int64) if ties is None else np.asarray(ties.rank, dtype=np.int64)
     a, b = a[touch], b[touch]
     swap = label[a] > label[b]
@@ -344,17 +398,17 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
     one, other = label[a], label[b]
     under = surface if bed is None else np.asarray(bed, dtype=np.float64)
     height = np.maximum(surface[a], surface[b])
-    lower = np.minimum(surface[a], surface[b])               # among passes of one height: the lowest far side first
+    lower = np.minimum(surface[a], surface[b])               # among passes of one height: the lowest lower cell first
     lower_bed = np.minimum(under[a], under[b])
     early, late = np.minimum(rank[a], rank[b]), np.maximum(rank[a], rank[b])     # the order of the cells, whichever side each is on
-    order = np.lexsort((late, early, narrow, lower_bed, lower, height, other, one))
-    keys = (one, other, a, b, height, lower, lower_bed, narrow, early, late)
-    one, other, a, b, height, lower, lower_bed, narrow, early, late = (v[order] for v in keys)
+    order = np.lexsort((late, early, narrow, lower_bed, lower, first, height, other, one))
+    keys = (one, other, a, b, height, first, lower, lower_bed, narrow, early, late)
+    one, other, a, b, height, first, lower, lower_bed, narrow, early, late = (v[order] for v in keys)
     lowest = np.ones(one.size, dtype=bool)
     lowest[1:] = (one[1:] != one[:-1]) | (other[1:] != other[:-1])
-    keys = (one, other, a, b, height, lower, lower_bed, narrow, early, late)
-    one, other, a, b, height, lower, lower_bed, narrow, early, late = (v[lowest] for v in keys)
-    order = np.lexsort((late, early, narrow, lower_bed, lower, height))          # the passes from the lowest up
+    keys = (one, other, a, b, height, first, lower, lower_bed, narrow, early, late)
+    one, other, a, b, height, first, lower, lower_bed, narrow, early, late = (v[lowest] for v in keys)
+    order = np.lexsort((late, early, narrow, lower_bed, lower, first, height))   # the passes from the lowest up
 
     group = list(range(count + 1))                           # which labels have merged; the sea's group keeps top 0
     top = list(range(count + 1))

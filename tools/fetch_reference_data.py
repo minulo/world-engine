@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import earth_reference as reference                      # noqa: E402
+from worldengine import console                          # noqa: E402
 
 
 def right(path, entry) -> bool:
@@ -37,10 +38,13 @@ def fetch(url, target) -> str:
     return ""
 
 
-def main(check_only=False, listed=None, folder=None, say=print) -> int:
+def fetch_all(check_only=False, listed=None, folder=None, say=print) -> int:
+    """Fetch and check (or, with check_only, check: nothing is fetched, removed or created, not even the folder).
+    Returns 0 if every file is there and right, 1 otherwise."""
     listed = listed or reference.listed()
     source, folder = listed["source"], Path(folder) if folder else reference.folder()
-    folder.mkdir(parents=True, exist_ok=True)
+    if not check_only:
+        folder.mkdir(parents=True, exist_ok=True)
     bad = 0
     for name, entry in listed["files"].items():
         target = folder / name
@@ -71,5 +75,17 @@ def main(check_only=False, listed=None, folder=None, say=print) -> int:
     return 1 if bad else 0
 
 
+def parser():
+    p = console.tool_parser(__doc__, "python tools/fetch_reference_data.py")
+    p.add_argument("--check", action="store_true")
+    return p
+
+
+def main(argv=None) -> int:
+    args = parser().parse_args(argv)
+    console.print_anywhere()
+    return fetch_all(check_only=args.check)
+
+
 if __name__ == "__main__":
-    sys.exit(main(check_only="--check" in sys.argv[1:]))
+    sys.exit(main())

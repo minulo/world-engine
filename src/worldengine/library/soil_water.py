@@ -18,8 +18,12 @@ store changes at the steady rate S - D. Below Wc it relaxes toward the level S *
 which the air takes exactly what arrives. A month may pass from one rule to the other once,
 and the moment is found.
 
-The formulas are written so that a demand of next to nothing gives next to nothing: none of
-them subtracts two large numbers that nearly agree.
+The formulas for the store are written so that a demand of next to nothing changes the store
+by next to nothing: none of them subtracts two large numbers that nearly agree. What the air
+took is then what is left of the month's balance (the store before, plus the supply, less the
+store after and the overflow), and that does subtract numbers that nearly agree: where the air
+asks for next to nothing, the amount it is said to take can exceed its demand by about a
+billionth of a millimetre [MEASURED by the fourth check of build step 2: 1.2e-9 mm].
 
 A knife edge. Where the year's supply equals its demand exactly and the store stays above Wc,
 the store neither rises nor falls: every level is a year that repeats, and the one returned is

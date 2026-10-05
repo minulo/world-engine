@@ -12,6 +12,7 @@ Numbers in comments were measured on the default world as the code stood at the 
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -174,7 +175,7 @@ def _land_rain_by_band(w):
 
 @pytest.mark.parametrize("half", [pytest.param("north", marks=pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
     "The driest northern band lies at 58 degrees, with 297 mm a year; the dry belt at 24 degrees gets 362 mm [MEASURED]. The "
-    "land of that band, a sixth of it, stands 1,080 m high on average, has a yearly mean of -13 C and lies under snow all "
+    "land of that band, a sixth of it, stands 1,053 m high on average, has a yearly mean of -13 C and lies under snow all "
     "year: cold air holds little vapour, and ground under snow gives the air nothing back. On Earth the land at these "
     "latitudes gets 690 mm (tests/test_earth.py). The engine's land is too cold there and its summers too weak "
     "(docs/BUILD_NOTES.md), and the same condition fails on Earth's own relief, for the same reason [INFERRED: the cause]."))),
@@ -191,6 +192,29 @@ def test_the_driest_land_band_between_the_equator_and_60_degrees_lies_between_15
     side = (sign * lat > 0) & (sign * lat < 60) & ~np.isnan(land_rain)
     driest = sign * lat[side][np.argmin(land_rain[side])]
     assert 15 <= driest <= 40, f"the driest band lies at {driest:.0f} degrees, with {land_rain[side].min():.0f} mm"
+
+
+def test_what_the_reason_of_the_dry_belts_failure_says_of_that_band(plain):
+    """Found, then kept: it keeps true the numbers in the reason of the expected failure above, which the build notes
+    quote. The driest northern band is the one from 56 to 61 degrees north: 33 land cells, a sixth of the band,
+    1,053 m high on the mean, -13 C on the year's mean, every one of them under snow in every month, with 297 mm of
+    rain a year. [The reason said 1,080 m until the fourth check of build step 2 measured the band.]"""
+    _, w = plain
+    f = w.fields
+    lat, land_rain, yearly = _land_rain_by_band(w)
+    side = (lat > 0) & (lat < 60) & ~np.isnan(land_rain)
+    k = int(np.flatnonzero(side)[np.argmin(land_rain[side])])
+    width = lat[1] - lat[0]
+    assert abs(lat[k] - 58.4) < 0.1 and abs(land_rain[k] - 297.0) < 3.0
+    assert abs(land_rain[int(np.argmin(np.abs(lat - 24.3)))] - 362.0) < 3.0                    # the dry belt, where the design looks for the driest band
+    in_band = (w.mesh.lat >= lat[k] - width / 2) & (w.mesh.lat < lat[k] + width / 2)
+    land = in_band & ~f["ocean_mask"]
+    area = f["cell_area"].astype(np.float64)
+    mean = lambda x: float((x[land] * area[land]).sum() / area[land].sum())
+    assert land.sum() == 33 and abs(area[land].sum() / area[in_band].sum() - 1 / 6) < 0.01
+    assert abs(mean(f["height_above_sea"].astype(np.float64)) - 1053.0) < 5.0
+    assert abs(mean(f["surface_temperature"].astype(np.float64).mean(axis=0)) - 273.15 + 13.0) < 0.3
+    assert (f["snow_water"][:, land].min(axis=0) > 0).all() and abs(mean(yearly) - land_rain[k]) < 1e-6 * land_rain[k]
 
 
 def test_under_the_sinking_air_the_land_is_drier_than_in_the_storm_belt(plain):
@@ -248,14 +272,22 @@ def test_mountains_sit_on_plate_edges_where_plates_close(plain):
 
 # ---------------------------------------------------------------------------------------------- cause records
 def test_drivers_add_up_to_the_stored_field(plain):
+    """Where a process says that its drivers are the terms of a sum, they add up to the field. A driver that the
+    sentence patterns mark as an aside is a number for a sentence to use by its name and no term of the sum (the
+    water that ground under a lake would shed if it were dry is one): it is left out here as the answers leave it out."""
     e, w = plain
+    asides = 0
     for name, proc in e.procs.items():
         for field in proc.additive:
             d = w.drivers[field]
-            total = sum(v.astype(np.float64) for k, v in d.items() if v.dtype.kind == "f")
+            said = ((e.params["explanations"].get(name) or {}).get(field) or {}).get("drivers") or {}
+            aside = {term for term, how in said.items() if (how or {}).get("aside")}
+            asides += len(aside & set(d))
+            total = sum(v.astype(np.float64) for k, v in d.items() if v.dtype.kind == "f" and k not in aside)
             value = w.fields[field].astype(np.float64)
             scale = max(1.0, float(np.nanmax(np.abs(value))))
             assert np.allclose(total, value, atol=2e-5 * scale), f"{name}: the drivers of {field} do not add up"
+    assert asides == 1                                        # one aside among the sums today: runoff's shed_as_if_dry
 
 
 def test_explain_returns_a_chain_that_ends_at_a_seed_or_a_parameter(plain):
@@ -413,7 +445,11 @@ def test_the_largest_river_runs_where_it_rains_and_dry_land_sheds_next_to_nothin
     and dry land without snow (under 150 mm) less than 0.02 of its rain (measured: none at all). That dry land
     sheds nothing whatever is the model's doing and not a desert's: a soil fed with the mean rain of a month
     never fills there, and the engine knows no cloudburst. The largest flow into the sea is of the order of
-    Earth's great rivers (measured 1.0e5 m3/s), and the cell that gives it the most water is rainy ground."""
+    Earth's great rivers (measured 1.0e5 m3/s), and the cell that gives it the most water is ground on which much
+    falls (1,511 mm a year). What the test does not ask is in what form: in the default world that cell is a
+    mountain at 23 degrees north that lies under snow all year, and most of what it sheds is ice leaving the store
+    (89 of 126 mm a month [MEASURED: the answer shown in README.md]). That is one of the world's known errors
+    (docs/BUILD_NOTES.md, section 8), and this test passes on it."""
     _, w = plain
     f = w.fields
     sea = f["ocean_mask"]
@@ -481,7 +517,7 @@ def test_the_why_answers_for_water_on_land_lead_from_a_river_to_the_rain_behind_
     assert "This cell lies in a lake that overflows" in text and "It is a lake with an outlet" in text
     sea_cell = int(np.flatnonzero(sea)[0])
     assert "This cell is sea: it has no soil." in as_text(explain(view, sea_cell, "soil_moisture"))
-    assert "No lake reaches this cell" in as_text(explain(view, sea_cell, "lake_level"))
+    assert "No lake covers any of this cell" in as_text(explain(view, sea_cell, "lake_level"))
     hollow = int(np.flatnonzero(f["depression_id"] > 0)[0])
     assert "The bottom of that hollow is cell" in as_text(explain(view, hollow, "depression_id"))
     assert "km² of land send their water through this cell" in as_text(explain(view, last, "drainage_area"))
@@ -506,9 +542,194 @@ def test_no_why_answer_for_water_on_land_says_what_its_numbers_contradict(plain)
     e, w = plain
     view = store.MemoryView(w, e)
     under_lake = np.flatnonzero(w.fields["lake_fraction"] > 0)
-    cells = sorted(set(range(0, w.n, 7)) | set(under_lake[::3].tolist()))
+    place = w.drivers["river_discharge"]["place"]
+    at_a_lake = np.flatnonzero((place != 0) & ~w.fields["ocean_mask"])           # in, under or at the brim of a lake
+    assert {1, 2, 4, 5} <= set(place[at_a_lake].tolist())                        # the case: every kind of place at a lake occurs
+    cells = sorted(set(range(0, w.n, 7)) | set(under_lake[::3].tolist()) | set(at_a_lake[place[at_a_lake] != 1].tolist()))
     problems = tool("why_scan").scan(view, cells)
     assert not problems, problems[:5]
+
+
+def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(plain, monkeypatch):
+    """The claim that no answer contradicts its numbers rests on tools/why_scan.py. Here one answer after another is
+    rewritten to say what an earlier version of the engine said wrongly, and the scan must report each: a scan that
+    reports nothing would pass the test above as well."""
+    e, w = plain
+    view = store.MemoryView(w, e)
+    scan = tool("why_scan")
+    f, d = w.fields, w.drivers["river_discharge"]
+    sea, share, place = f["ocean_mask"], f["lake_fraction"], d["place"]
+    pick = lambda mask: int(np.flatnonzero(mask)[0])
+    source = d["largest_source"]
+    yearly_runoff = f["runoff"].astype(np.float64).mean(axis=0)
+    below_a_lake = pick((source >= 0) & (share[np.maximum(source, 0)] >= 1.0) & (yearly_runoff[np.maximum(source, 0)] == 0)
+                        & (d["from_upstream"].mean(axis=0) > 0))
+    cover = f["snow_cover"]
+    some_snow = pick(~sea & (cover.max(axis=0) > 0) & (cover.min(axis=0) < 1))
+    dry_river = pick(~sea & (place == 0) & (d["from_upstream"].mean(axis=0) > 0))
+
+    def first(text):
+        return lambda chain: [dict(chain[0], text=text)] + chain[1:]
+
+    def swap(old, new, field=None):
+        def change(chain):
+            out = [dict(step, text=step["text"].replace(old, new)) if field in (None, step["field"]) else step for step in chain]
+            assert out != chain, (old, [step["text"] for step in chain])         # the words to take out were there
+            return out
+        return change
+    planted = {
+        (pick(sea), "runoff"): (first("Runoff here averages 3.00 mm/month: rain that the soil could not hold gives 3.00 mm/month."),
+                                "does not say 'This cell is sea'"),
+        (pick(place == 4), "river_discharge"): (swap("This cell stands at the brim of a lake that overflows", "This cell lies in a lake that overflows"),
+                                               "says 'This cell lies in a lake that overflows'"),
+        (pick(place == 4), "lake_fraction"): (swap("But a lake that overflows stands exactly at the height of this cell", "No lake reaches it"),
+                                             "says 'No lake reaches it'"),
+        (pick(place == 2), "river_discharge"): (lambda chain: [dict(chain[0], text=re.sub(r"[\d.]+ m³/s arrive from upstream", "5.00 m³/s arrive from upstream", chain[0]["text"]))] + chain[1:],
+                                               "says that 5.00 m³/s arrive from upstream"),
+        (below_a_lake, "river_discharge"): (swap(" that its ground would shed if it were dry", " of its ground", "runoff"),
+                                           "names as the largest source upstream a cell that sheds nothing"),
+        (dry_river, "river_discharge"): (lambda chain: [dict(chain[0], text=re.sub(r"is cell \d+,", f"is cell {dry_river},", chain[0]["text"]))] + chain[1:],
+                                        "names the cell itself, or no cell, as the largest source upstream"),
+        (pick(share >= 1.0), "lake_fraction"): (swap("the lake fills hollow", "the lake fills a hollow, number"), "does not say 'the lake fills hollow"),
+        (pick(f["depression_id"] > 0), "depression_id"): (swap("the innermost closed hollow", "the closed hollow"), "without saying that it is the innermost one"),
+        (some_snow, "potential_evapotranspiration"): (swap("some of the ground for some or all of the year", "the ground for part of the year"),
+                                                     "says 'for part of the year'"),
+        (pick(~sea & (share == 0) & (place == 0)), "lake_level"): (first("The surface of the lake here stands at 5.00 m relative to the reference level."),
+                                                                  "does not say 'No lake covers any of this cell'"),
+        (pick(~sea & (place == 0)), "soil_moisture"): (first("The soil here holds {value} of what it can hold."), "a slot left unfilled"),
+        (pick(~sea & (place == 0)), "snow_cover"): (lambda chain: [dict(chain[0], text=chain[0]["text"].rstrip(".") + ":")] + chain[1:], "ends on a colon"),
+    }
+    # ... and what the fourth check found that no test would notice: sentence patterns set to the wrong class, numbers
+    # in the wrong unit or the wrong place of a sentence, signs dropped, places given on the wrong side of the planet
+    lat, lon = w.mesh.lat, w.mesh.lon
+    away = (np.abs(lat) > 5) & (np.abs(lon) > 5) & (np.abs(lon) < 175)          # where north and south, east and west can be told apart
+    main = pick(sea)
+    yearly = lambda name: f[name].astype(np.float64).mean(axis=0)
+    snow_parts = w.drivers["snow_water"]
+    all_year = pick(~sea & (snow_parts["left_as_ice"].sum(axis=0) > 0) & (np.abs(snow_parts["melted"].mean(axis=0) - snow_parts["left_as_ice"].mean(axis=0)) > 0.5))
+    two_parts = pick(~sea & (share == 0) & (w.drivers["runoff"]["from_rain"].mean(axis=0) > 1.0) & (w.drivers["runoff"]["from_snowmelt"].mean(axis=0) > 1.0))
+    branch = np.array([np.bincount(col).argmax() for col in w.drivers["subsidence"]["branch"].T])
+    limit = w.drivers["biome"]["limit"]
+    recv = f["flow_receiver"]
+    downhill = pick(~sea & (recv >= 0) & (w.drivers["flow_receiver"]["rule"] == 0))
+    high = pick(~sea & (f["height_above_sea"] > 1500.0))
+    warmed = pick(sea & away & (w.drivers["surface_temperature"]["spread_from_neighbours"].mean(axis=0) > 1.0))
+    far_source = pick(~sea & (place == 0) & (source >= 0) & away & away[np.maximum(source, 0)] & (d["from_upstream"].mean(axis=0) > 0.5 * yearly("river_discharge"))
+                      & (yearly_runoff[np.maximum(source, 0)] > 0) & (np.arange(w.n) != dry_river))
+    rained_from = w.drivers["precipitation"]["vapour_came_from"]
+    planted.update({
+        (main, "ocean_mask"): (swap("it was flooded from the main sea", "it lies in a separate body of water"), "does not say 'it was flooded from the main sea'"),
+        (pick(~sea & (f["elevation"] > w.tables["seas"]["surface_m"][0] + 10.0)), "ocean_mask"): (
+            swap("the ground stands above sea level", "it is low ground that a barrier keeps dry"), "does not say 'the ground stands above sea level'"),
+        (pick((branch == 2) & away), "subsidence"): (swap("the northern loop", "the southern loop"), "says 'the southern loop'"),
+        (pick(~sea & (limit == 1)), "biome"): (swap("what limits plant life here is cold", "what limits plant life here is drought"),
+                                               "does not say 'what limits plant life here is cold'"),
+        (pick(~sea & (limit == 2)), "biome"): (swap("what limits plant life here is drought", "neither cold nor drought limits plant life here"),
+                                               "says 'neither cold nor drought limits plant life here'"),
+        (high, "surface_temperature"): (lambda chain: [dict(chain[0], text=re.sub(r"its height changes it by -([\d.]+) °C", lambda m: f"its height changes it by {-273.15 - float(m.group(1)):.1f} °C",
+                                                                                 chain[0]["text"]))] + chain[1:], "which no lapse of temperature with height gives"),
+        (warmed, "surface_temperature"): (swap("changes it by +", "changes it by "), "gives a change of temperature without its sign"),
+        (pick(~sea & away & (np.arange(w.n) != high)), "surface_temperature"): (
+            lambda chain: [dict(chain[0], text=re.sub(r"averages (-?[\d.]+) °C", lambda m: f"averages {float(m.group(1)) + 0.15:.1f} °C", chain[0]["text"]))] + chain[1:],
+            "°C on the year's average"),
+        (all_year, "snow_water"): (lambda chain: [dict(chain[0], text=re.sub(r"(\S+) mm/month melt and (\S+) mm/month leave as ice", r"\2 mm/month melt and \1 mm/month leave as ice",
+                                                                            chain[0]["text"]))] + chain[1:], "for the snow that falls, melts and leaves as ice"),
+        (pick(~sea & (f["snow_water"].max(axis=0) > 5.0) & (np.arange(w.n) != all_year)), "snow_water"): (swap(" mm of water", " m of water"), "gives no depth of water in mm"),
+        (two_parts, "runoff"): (lambda chain: [dict(chain[0], text=re.sub(r"; melted snow that the soil could not hold gives [^;.]+(\.\d+)? mm/month", "", chain[0]["text"]))] + chain[1:],
+                                "gives parts that add up to"),
+        (pick((share > 0) & (np.arange(w.n) != pick(share >= 1.0))), "lake_fraction"): (swap("km³ of water run toward this lake", "km² of water run toward this lake"),
+                                                                                        "gives no books of the lake in the form asked"),
+        (downhill, "flow_receiver"): (swap("That is its lowest neighbour", "The ground is level here, and that cell lies on the shortest way to lower ground or to the hollow's bottom"),
+                                      "does not say 'That is its lowest neighbour'"),
+        (far_source, "river_discharge"): (lambda chain: [dict(chain[0], text=re.sub(r"(is cell \d+, at [\d.]+° [NS], [\d.]+°) ([EW])",
+                                                                                   lambda m: f"{m.group(1)} {'W' if m.group(2) == 'E' else 'E'}", chain[0]["text"]))] + chain[1:],
+                                          "gives another place for cell"),
+        (pick(~sea & away & (rained_from >= 0) & (rained_from != np.arange(w.n)) & away[np.maximum(rained_from, 0)]), "precipitation"): (
+            lambda chain: [dict(step, text=re.sub(r"^At ([\d.]+)° ([NS])", lambda m: f"At {m.group(1)}° {'S' if m.group(2) == 'N' else 'N'}", step["text"])) for step in chain],
+            "gives another place than that of the cell the step is about"),
+    })
+    turned = (pick(~sea & away & (place == 0) & (yearly("river_discharge") == 0)), "drainage_area")       # an answer whose heading is turned east for west
+    cells, fields = sorted({cell for cell, _ in planted} | {turned[0]}), sorted({field for _, field in planted} | {turned[1]})
+    assert len(planted) == 27 and turned not in planted                          # no two faults were planted in one answer
+    assert not scan.scan(view, cells, fields)                                    # as the engine wrote them, these answers pass
+    real = scan.explain
+
+    def doctored(v, cell, field):
+        answer = real(v, cell, field)
+        if (cell, field) in planted:
+            answer["chain"] = planted[(cell, field)][0]([dict(step) for step in answer["chain"]])
+        if (cell, field) == turned:
+            answer["lon"] = -answer["lon"]
+        return answer
+    planted[turned] = (lambda chain: chain, "the heading does not give the place of the cell")
+    monkeypatch.setattr(scan, "explain", doctored)
+    found = scan.scan(view, cells, fields)
+    for (cell, field), (_, words) in planted.items():
+        assert any(c == cell and fl == field and words in what for c, fl, what, _ in found), (cell, field, words, [x[:3] for x in found if x[0] == cell])
+    assert {(c, fl) for c, fl, _, _ in found} == set(planted)                    # and nothing is reported that was not planted
+
+
+def test_the_world_report_prints_the_numbers_of_the_world(plain):
+    """tools/world_report.py prints the numbers by which the notes judge a world (docs/BUILD_NOTES.md, section 8). Its
+    lines are held here against numbers worked out in this test from the fields, and against the counts that the
+    notes quote. [No test ran the tool until the fourth check of build step 2 asked for one.]"""
+    e, w = plain
+    said = []
+    tool("world_report").report(store.MemoryView(w, e), say=said.append)
+    text = "\n".join(said)
+    f = w.fields
+    area, sea = f["cell_area"].astype(np.float64), f["ocean_mask"]
+    land = ~sea
+    mean = lambda x, mask: float((x * area)[mask].sum() / area[mask].sum())
+    rain = f["precipitation"].astype(np.float64).sum(axis=0)
+    to_air = f["evapotranspiration"].astype(np.float64).sum(axis=0)
+    celsius = f["surface_temperature"].astype(np.float64).mean(axis=0) - 273.15
+    to_sea = f["river_discharge"].astype(np.float64).mean(axis=0)[sea].sum() * YEAR_S / 1e12
+    assert f"world: {w.n} cells, profile preview, seed {e.seed}," in text and f"climate rounds {w.rounds_used['climate']}, settled True" in text
+    assert "notices: none" in text
+    assert f"land share {area[land].sum() / area.sum():.3f};" in text and f"highest {f['height_above_sea'].max():.0f} m;" in text
+    assert f"temperature: global mean {mean(celsius, np.ones(w.n, dtype=bool)):.1f} C; north pole {celsius[NORTH_POLE]:.1f}, south pole {celsius[SOUTH_POLE]:.1f};" in text
+    assert f"rain: global {mean(rain, np.ones(w.n, dtype=bool)):.0f} mm/yr; land {mean(rain, land):.0f}; sea {mean(rain, sea):.0f};" in text
+    assert "driest land band, north: 58 degrees, 297 mm/yr; equatorward of 50: 24 degrees, 362 mm/yr;" in text
+    assert (f"water on land, mm/yr: rain {mean(rain, land):.0f}; back to the air {mean(to_air, land):.0f} "
+            f"({mean(to_air, land) / mean(rain, land):.3f} of the rain);") in text
+    assert f"rivers reaching the sea {to_sea:.1f} thousand km3 a year;" in text and "ratio 1.000000" in text
+    lakes = w.tables["lakes"]
+    assert f"lakes: {len(lakes['hollow'])}, of which {int(lakes['overflows'].sum())} overflow; {(f['lake_fraction'] * area).sum() / area[land].sum():.3f} of the land under water;" in text
+    # the counts that docs/BUILD_NOTES.md quotes for the default world on the preview mesh
+    assert "exact ties: of 3489 land cells with a lower neighbour, 399 have several equally low: the lower bed settles 199, the wider way 193, the cell numbers 7; 0 land cells lie on level ground" in text
+    assert "closed hollows: 31 with one bottom, 11 made of two;" in text and "lakes: 19, of which 16 overflow; 0.089 of the land under water;" in text
+    assert "land under snow in every month 0.20 of land, in some month 0.41;" in text
+    assert sum(line.startswith("biomes, share of the surface:") for line in said) == 1 and said[-1].startswith("timings (s):")
+
+
+def readme_example():
+    """The command and the answer that README.md shows: (field, lat, lon, the pieces of the answer between its cuts)."""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    command = re.search(r"python -m worldengine explain worlds/first\.zarr --lat (\S+) --lon (\S+) --field (\S+)\n\n((?:    .*\n|\n)+)", text)
+    lat, lon, field, block = float(command.group(1)), float(command.group(2)), command.group(3), command.group(4)
+    shown = " ".join(line.strip() for line in block.splitlines() if line.strip())
+    pieces = [piece.strip() for piece in re.split(r"\[\.\.\.\]|(?<= )\.\.\.(?= |$)", shown) if piece.strip()]
+    return field, lat, lon, pieces
+
+
+def test_the_readme_shows_an_answer_that_the_default_world_gives(plain):
+    """README.md shows a "why" answer, shortened where it says so. Every piece of it must stand in the answer that the
+    default world gives, word for word and in order: the heading with its place, the numbers with their units and
+    signs, and the step about another cell with the place of that cell. If an answer changes, the README is changed
+    with it, or this fails."""
+    e, w = plain
+    field, lat, lon, pieces = readme_example()
+    answer = " ".join(as_text(explain(store.MemoryView(w, e), cell_at(w.mesh, lat, lon), field)).split())
+    assert len(pieces) >= 8 and pieces[0].startswith(f"Why is {field} like this at ") and "(cell " in pieces[0]
+    at = 0
+    for piece in pieces:
+        found = answer.find(piece, at)
+        assert found >= 0, f"the README shows what the world does not say, or not in this order: {piece!r}"
+        at = found + len(piece)
+    assert sum(len(piece) for piece in pieces) > 1200          # most of what is shown is the answer's own words
+    for form in ("° N, ", "° W (cell ", " °C", " m³/s", " mm/month", "changes it by +", "changes it by -", "where the cause lies:"):
+        assert any(form in piece for piece in pieces), form       # the forms that the example is there to show
 
 
 # ---------------------------------------------------------------------------------------------- pushes
@@ -595,8 +816,11 @@ def test_the_world_store_round_trips_and_the_server_answers_for_every_kind_of_fi
     path = tmp_path / "slice.zarr"
     store.save(w, e, path)
     view = store.StoreView(path)
-    assert view.fingerprints() == {k: v for k, v in w.fingerprints().items() if not k.startswith("table:")}
-    assert np.array_equal(view.table("seas")["surface_m"], w.tables["seas"]["surface_m"])
+    assert view.fingerprints() == w.fingerprints() == view.attrs["fingerprints"]          # every field and every column of every table
+    for name, built in w.fields.items():
+        assert view.field(name).dtype == built.dtype, name                                # true-or-false stays true-or-false
+    for table, columns in w.tables.items():
+        assert {c: a.dtype for c, a in view.table(table).items()} == {c: a.dtype for c, a in columns.items()}, table
     assert view.attrs["meta"]["settled"] == {"climate": True}
     cell = cell_at(w.mesh, 10.0, 30.0)
     assert as_text(explain(view, cell, "precipitation")) == as_text(explain(store.MemoryView(w, e), cell, "precipitation"))

@@ -13,6 +13,7 @@ import json
 import math
 import shutil
 import threading
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -150,11 +151,32 @@ def save(world, engine, path) -> Path:
         partial.unlink()
     try:
         _write(world, engine, partial)
-        partial.rename(path)
     except BaseException:
         shutil.rmtree(partial, ignore_errors=True)
         raise
+    _move_into_place(partial, path)
     return path
+
+
+MOVE_TRIES, MOVE_WAIT_S = 6, 0.5
+
+
+def _move_into_place(partial: Path, path: Path):
+    """Give a store that is whole its final name. On Windows the rename of a folder fails while another program holds
+    one of its files open, which a virus scanner or a search index may do for a moment after the files are written
+    [INFERRED from how Windows treats open files; not run on Windows]. The rename is tried again a few times. If it
+    still fails, the store is whole and is left where it is, under its other name, and the refusal says so: a world
+    that took minutes or hours to build is not thrown away over a name."""
+    for attempt in range(MOVE_TRIES):
+        try:
+            partial.rename(path)
+            return
+        except PermissionError as problem:
+            if attempt == MOVE_TRIES - 1:
+                raise PermissionError(f"the world is built and written whole to {partial}, but could not be given its name {path} "
+                                      f"({problem}). Another program holds it open. Rename that folder to {path.name} by hand; "
+                                      f"nothing else is missing") from None
+            time.sleep(MOVE_WAIT_S)
 
 
 def _write(world, engine, path):
@@ -335,8 +357,12 @@ class StoreView(WorldView):
         return dict(self._keep(("group", group), read))
 
     def fingerprints(self) -> dict:
-        """Recomputed from the stored bytes, for comparison with the fingerprints kept at build time."""
+        """Recomputed from the stored bytes, for comparison with the fingerprints kept at build time: every field and
+        every column of every table, under the names the world gave them (World.fingerprints)."""
         out = {}
         for name in self.field_names():
             out[name] = hashlib.sha256(np.ascontiguousarray(self.field(name)).tobytes()).hexdigest()
+        for t in sorted(self._root["tables"].group_keys()):
+            for col, a in sorted(self.table(t).items()):
+                out[f"table:{t}.{col}"] = hashlib.sha256(np.ascontiguousarray(a).tobytes()).hexdigest()
         return out

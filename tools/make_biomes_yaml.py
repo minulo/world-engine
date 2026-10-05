@@ -11,7 +11,9 @@ import sys
 import warnings
 from pathlib import Path
 
-import rdata
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from worldengine import console                          # noqa: E402
 
 NAMES = {"Tundra": "tundra", "Boreal forest": "boreal_forest", "Temperate seasonal forest": "temperate_seasonal_forest",
          "Temperate rain forest": "temperate_rainforest", "Tropical rain forest": "tropical_rainforest",
@@ -29,7 +31,8 @@ KOPPEN = [("Af", "#0000FF"), ("Am", "#0078FF"), ("Aw", "#46AAFA"), ("BWh", "#FF0
           ("Dfa", "#00FFFF"), ("Dfb", "#37C8FF"), ("Dfc", "#007D7D"), ("Dfd", "#00465F"), ("ET", "#B2B2B2"), ("EF", "#666666")]
 
 
-def main(repo):
+def write(repo):
+    import rdata                                             # needed for this one step only: --help works without it
     warnings.simplefilter("ignore")
     df = rdata.read_rda(str(Path(repo) / "data" / "Whittaker_biomes.rda"))["Whittaker_biomes"]
     out = ["# Category lists and rule tables for Biomes (design, Layer 1 and Layer 5).",
@@ -59,5 +62,21 @@ def main(repo):
     Path(__file__).resolve().parents[1].joinpath("data", "biomes.yaml").write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
+def parser():
+    p = console.tool_parser(__doc__, "python tools/make_biomes_yaml.py")
+    p.add_argument("repo", metavar="PATH_TO_plotbiomes")
+    return p
+
+
+def main(argv=None) -> int:
+    args = parser().parse_args(argv)
+    console.print_anywhere()
+    if not (Path(args.repo) / "data" / "Whittaker_biomes.rda").exists():
+        print(f"{args.repo} holds no data/Whittaker_biomes.rda: it is not a clone of plotbiomes", file=sys.stderr)
+        return 2
+    write(args.repo)
+    return 0
+
+
 if __name__ == "__main__":
-    main(sys.argv[1])
+    sys.exit(main())

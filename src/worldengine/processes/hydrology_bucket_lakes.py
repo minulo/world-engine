@@ -53,11 +53,13 @@ lake; plants (their roots, and their closing of pores in drought); frozen ground
 straight to the air; wind and the dryness of the air in the demand for water; and clouds:
 every cell gets the same share of sunshine.
 Wrong where: the timing of floods in very large basins, and below every lake, whose outflow
-keeps the seasons of its inflow. Over land the heat radiated away comes out too small with
-the one share of sunshine, so the demand for water is too high on the whole [MEASURED against
-Earth: docs/BUILD_NOTES.md]. In dry air and under a clear sky the real demand is higher than
-the rule gives, so closed lakes in deserts come out too large; under the cloud of the wet
-tropics it is lower [UNVERIFIED: both from memory of how the rule is used]. A lake smaller than
+keeps the seasons of its inflow. Over Earth's land the two radiation formulas leave 1.31
+times the energy that a published budget leaves it: the ground reflects 0.17 of the sunlight
+where the budget has 0.21, and radiates away 68 W/m2 where the budget has 80. The sunlight
+that reaches the ground comes out right [MEASURED against Earth: python tools/earth_demand.py;
+docs/BUILD_NOTES.md, section 7, item 14]. In dry air and under a clear sky the real demand is
+higher than the rule gives, so closed lakes in deserts come out too large; under the cloud of
+the wet tropics it is lower [UNVERIFIED: both from memory of how the rule is used]. A lake smaller than
 a cell is drawn as a share of its cell, without a shape, and a lake's level moves in steps of
 the cells' heights. A hollow under snow that never melts loses nothing to the air, so it
 fills and shows as a lake where a real one would hold ice. Far too much of the land drains
@@ -66,8 +68,14 @@ docs/BUILD_NOTES.md], where about a fifth of the real Earth's land drains to no 
 [UNVERIFIED: recalled]. The seeded relief has had no rivers to cut it. FluvialErosion (build
 step 3) cuts valleys on the mesh itself [INFERRED: that this removes most of the excess; it is
 tested there]. Like for like, the land of Earth's great river basins sheds two thirds of the
-water measured [MEASURED: python tools/earth_rivers.py, part 2]: the demand for water is too
-high over land, most of all where the rain falls in the warm season.
+water measured, and Earth's land gives the air 1.17 times what the published budget gives it
+[MEASURED: python tools/earth_rivers.py, part 2; python tools/earth_demand.py]. Why is not
+established. A demand for water cut to 0.76 of itself, the ratio of the two energies above,
+would mend the shortfall on the whole; so would the Priestley-Taylor rule without its factor
+of 1.26; and under either cut two basins of fourteen come within 15 % of the measured depth,
+while they run from a third of it to 1.7 times it [MEASURED: python tools/earth_rivers.py
+--demands. INFERRED: any cause named. The fourth check of build step 2 found that this
+docstring had stated the first of these as the measured cause].
 """
 import numpy as np
 
@@ -79,9 +87,11 @@ from ..library.soil_water import bucket_repeating
 from ..library.units import MM_PER_M, SECONDS_PER_DAY, ZERO_CELSIUS_IN_K
 from ..process import Process
 
-NO_LAKE, LAKE_WITH_OUTLET, CLOSED_LAKE, LAKE_WITH_NO_WAY_OUT = range(4)
+NO_LAKE, LAKE_WITH_OUTLET, CLOSED_LAKE, LAKE_WITH_NO_WAY_OUT, LAKE_AT_ITS_BRIM = range(5)
 DRY_LAND, PARTLY_UNDER_A_LAKE, UNDER_A_LAKE, AT_SEA = range(4)                  # what covers a cell
-ON_DRY_GROUND, IN_A_LAKE_THAT_OVERFLOWS, IN_A_CLOSED_LAKE, RIVERS_END_AT_SEA = range(4)      # where a river is
+# where a river is. A cell at the brim stands exactly at the level of a lake that overflows: the lake covers none of
+# it, and the lake's water crosses it on the way to the pass (the outlet cell is one such cell).
+ON_DRY_GROUND, IN_A_LAKE_THAT_OVERFLOWS, IN_A_CLOSED_LAKE, RIVERS_END_AT_SEA, AT_THE_BRIM_OF_A_LAKE, UNDER_A_CLOSED_LAKE = range(6)
 NO_SNOW, SNOW_PART_OF_THE_YEAR, SNOW_ALL_YEAR, SNOW_ON_SEA = range(4)
 
 
@@ -101,8 +111,8 @@ class BucketHydrology(Process):
                "snow_cover": ("state",),
                "potential_evapotranspiration": ("state", "net_radiation", "snow_free"),
                "soil_moisture": ("cover",),
-               "runoff": ("from_rain", "from_snowmelt", "from_ice", "cover"),
-               "river_discharge": ("local_runoff", "from_upstream", "through_lake", "largest_source", "place", "lake"),
+               "runoff": ("from_rain", "from_snowmelt", "from_ice", "cover", "shed_as_if_dry"),
+               "river_discharge": ("local_runoff", "from_upstream", "into_the_lake", "through_lake", "largest_source", "place", "lake"),
                "evapotranspiration": ("from_soil_and_plants", "from_lake", "cover"),
                "lake_fraction": ("state", "lake")}
     additive = ("runoff", "river_discharge", "evapotranspiration")
@@ -155,7 +165,7 @@ class BucketHydrology(Process):
         recv = ctx.read("flow_receiver").astype(np.int64)
         label = ctx.read("depression_id").astype(np.int64)
         ground = ctx.read("elevation").astype(np.float64)
-        lk.check_table(table, label, recv, sea, ground)
+        lk.check_table(table, label, recv, sea, ground, ctx.mesh.nbr)
         stack = dr.flow_stack(recv)
         own = dr.owners(ground, label, table)
         rows = len(table["parent"])
@@ -239,18 +249,27 @@ class BucketHydrology(Process):
             ctx.driver("runoff", "from_snowmelt", (1.0 - share) * overflow * (1.0 - of_rain))
             ctx.driver("runoff", "from_ice", (1.0 - share) * ice)
             ctx.driver("runoff", "cover", cover)
-            # a river: on dry ground the runoff of the cell and what arrives; in a lake that overflows, what goes on
+            # what the ground would shed with no lake on it: the rivers' books count every cell with this, and take
+            # off at the lake what its open water loses beyond it. Said where the field itself holds nothing
+            ctx.driver("runoff", "shed_as_if_dry", np.where(land, shed, 0.0))
+            # a river: on dry ground the runoff of the cell and what arrives; in a lake that overflows, what goes on;
+            # in a cell of a closed lake, what arrives less the share of it that has reached the lake inside the cell
             flow = discharge / month_seconds
             crosses = crossing >= 0
+            brim = crosses & (share <= 0.0)
+            closed_here = ~crosses & (share > 0.0)
+            arrives = np.maximum(flows["passing"] - volume, 0.0) / month_seconds     # from upstream, before a lake in the cell takes any
             local = np.where(crosses, 0.0, (1.0 - share) * volume / month_seconds)
             through = np.where(crosses, flow, 0.0)
             ctx.driver("river_discharge", "local_runoff", local)
             ctx.driver("river_discharge", "through_lake", through)
-            ctx.driver("river_discharge", "from_upstream", flow - local - through)
+            ctx.driver("river_discharge", "from_upstream", np.where(closed_here, arrives, flow - local - through))
+            ctx.driver("river_discharge", "into_the_lake", np.where(closed_here, -share * arrives, 0.0))
             source = dr.largest_upstream(flows["stack"], flows["receivers"], volume.sum(axis=0), ties.rank)
             ctx.driver("river_discharge", "largest_source", source.astype(np.int32))
             ctx.driver("river_discharge", "place", np.where(sea, RIVERS_END_AT_SEA, np.where(
-                crosses, IN_A_LAKE_THAT_OVERFLOWS, np.where(share > 0.0, IN_A_CLOSED_LAKE, ON_DRY_GROUND))).astype(np.int32))
+                brim, AT_THE_BRIM_OF_A_LAKE, np.where(crosses, IN_A_LAKE_THAT_OVERFLOWS, np.where(
+                    share >= 1.0, UNDER_A_CLOSED_LAKE, np.where(share > 0.0, IN_A_CLOSED_LAKE, ON_DRY_GROUND))))).astype(np.int32))
             which = np.full(n, -1, dtype=np.int32)
             which[cells] = lake_row
             through_row = np.where(crosses, row_of[np.maximum(crossing, 0)], which)
@@ -261,5 +280,6 @@ class BucketHydrology(Process):
             state = np.full(n, NO_LAKE, dtype=np.int32)
             state[cells] = np.where(found["overflows"][lake_row], LAKE_WITH_OUTLET,
                                     np.where(found["left_over"][lake_row] > 0.0, LAKE_WITH_NO_WAY_OUT, CLOSED_LAKE))
+            state[brim] = LAKE_AT_ITS_BRIM                             # the lake covers none of the cell, and is still its neighbour's cause
             ctx.driver("lake_fraction", "state", state)
-            ctx.driver("lake_fraction", "lake", which)
+            ctx.driver("lake_fraction", "lake", np.where(brim, through_row, which).astype(np.int32))

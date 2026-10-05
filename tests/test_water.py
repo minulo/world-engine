@@ -219,6 +219,20 @@ def test_on_a_single_cone_every_cell_drains_to_the_foot():
     assert f["drainage_area"][top] == area[top]                              # nothing drains through the top but itself
     slope = f["slope"][~wet & (away < 55) & (away > 5)]
     assert np.all(slope > 0) and abs(np.median(slope) / (60.0 / np.deg2rad(1.0) / R) - 1) < 0.1      # 60 m per degree of arc
+    # cell by cell: the fall to the receiver over the distance between the two centres. On the coast the receiver is a
+    # sea cell, and the water falls to the sea's surface, not to its bed 1,000 m down [the fourth check of build step 2
+    # took the bed for the surface, and no test noticed: the line above leaves the coast out]
+    level = float(sea.tables["seas"]["surface_m"][0])
+    ground_given = np.where(foot, -1000.0, ground)
+    dry = np.flatnonzero(~wet)
+    to = recv[dry]
+    distance = np.arccos(np.clip(np.einsum("ij,ij->i", m.xyz[dry], m.xyz[to]), -1.0, 1.0)) * R
+    fall = ground_given[dry] - np.where(wet[to], level, ground_given[to])
+    assert np.allclose(f["slope"][dry], fall / distance, rtol=2e-4, atol=0.0)       # (heights and slopes are kept in single precision)
+    coast = wet[to]
+    assert coast.sum() > 20 and -1000.0 < level < ground_given[dry][coast].min()
+    assert np.all(f["slope"][dry][coast] < 0.5 * (ground_given[dry][coast] + 1000.0) / distance[coast])      # (to the bed it would be far steeper)
+    assert not f["slope"][wet].any()
     assert set(out.drivers["flow_receiver"]["rule"][~wet]) == {0} and set(out.drivers["flow_receiver"]["rule"][wet]) == {1}
 
 
@@ -953,7 +967,7 @@ def lake_case(mesh, ground, sea, area, loss, runoff):
     room = np.bincount(own[own >= 0], weights=loss[own >= 0], minlength=rows)
     moved = lk.settle(table, inflow, room)
     share, level, lake = lk.flooded(table, own, ground, loss, moved["extra"], moved["overflows"])
-    lk.check_table(table, label, recv, sea, ground)
+    lk.check_table(table, label, recv, sea, ground, mesh.nbr)
     flows = lk.lake_flows(table, label, recv, ground, mesh.nbr, share, lake, runoff, moved["extra"], moved["overflows"])
     found = flows["lakes"]
     by_row = {int(r): {k: v[i] for k, v in found.items()} for i, r in enumerate(found["row"])}
@@ -1514,7 +1528,12 @@ def test_water_in_equals_water_out_for_every_basin_on_rough_ground_with_lakes_an
     assert np.isclose((f["lake_fraction"].astype(np.float64) * area).sum(), lakes["area_m2"].sum(), rtol=1e-5)
     assert np.array_equal(flooded, ~np.isnan(f["lake_level"])) and not flooded[wet].any()
     which = out.drivers["lake_fraction"]["lake"]
-    assert np.array_equal(which >= 0, flooded)
+    # a lake is named for the ground it covers, and for a cell at its brim: ground exactly at the level of a lake that
+    # overflows, which the lake covers none of and whose water crosses it on the way to the pass
+    brim = out.drivers["lake_fraction"]["state"] == 4
+    assert np.array_equal(which >= 0, flooded | brim) and not (flooded & brim).any()
+    assert np.all(out.drivers["river_discharge"]["place"][brim] == 4) and np.all(lakes["overflows"][which[brim]])
+    assert np.allclose(ground[brim], lakes["level_m"][which[brim]], atol=1e-2)
     assert np.allclose(f["lake_level"][flooded], lakes["level_m"][which[flooded]], atol=1e-2)
     assert np.all(ground[flooded] <= f["lake_level"][flooded] + 1e-2)             # no flooded ground stands above its lake
     full = f["lake_fraction"] == 1.0
@@ -1523,10 +1542,20 @@ def test_water_in_equals_water_out_for_every_basin_on_rough_ground_with_lakes_an
     assert full.any() and strong.sum() > 100 and ratio.min() > 1.12 and ratio.max() < 1.3  # more in energy left after the heat radiated away
     assert np.all(f["evapotranspiration"][:, full] >= demand[:, full] * (1 - 1e-5))
     # the parts recorded for the "why" answers add up
+    # (shed_as_if_dry is no part of the sum: it is what the ground would shed with no lake on it, kept for the sentence
+    # of a cell under a lake, whose field holds nothing)
     for name in ("runoff", "river_discharge", "evapotranspiration"):
-        total = sum(v.astype(np.float64) for v in out.drivers[name].values() if v.dtype.kind == "f")
+        total = sum(v.astype(np.float64) for term, v in out.drivers[name].items() if v.dtype.kind == "f" and term != "shed_as_if_dry")
         value = f[name].astype(np.float64)
         assert np.allclose(total, value, rtol=1e-4, atol=1e-6 * np.abs(value).max())
+    as_if_dry = out.drivers["runoff"]["shed_as_if_dry"].astype(np.float64)
+    runoff_field = f["runoff"].astype(np.float64)
+    no_lake = land & (f["lake_fraction"] == 0)
+    assert np.allclose(as_if_dry[:, no_lake], runoff_field[:, no_lake], rtol=1e-5, atol=1e-6) and not as_if_dry[:, wet].any()
+    assert np.all(as_if_dry[:, flooded] >= runoff_field[:, flooded] - 1e-6) and (as_if_dry[:, full].sum(axis=0) > 0).any()
+    into = out.drivers["river_discharge"]["into_the_lake"].astype(np.float64)
+    under_closed = np.isin(out.drivers["river_discharge"]["place"], (2, 5))       # partly or wholly under a closed lake
+    assert np.all(into <= 0) and not into[:, ~under_closed].any() and (into[:, under_closed] < 0).any()
     source = out.drivers["river_discharge"]["largest_source"]
     big = int(mouths[np.argmax(river[mouths])])
     assert basin[source[big]] == big                                              # the largest source of a river lies in its basin
@@ -1594,7 +1623,7 @@ def test_a_hollow_in_a_dry_climate_holds_a_closed_lake_and_in_a_wet_one_a_lake_w
     assert np.all(share[lakes["bottom_cell"]] == 1.0)
     river = f["river_discharge"].astype(np.float64)
     place = out.drivers["river_discharge"]["place"]
-    assert set(place[share > 0]) == {2} and set(place[dry]) == {0} and set(place[wet]) == {3}
+    assert set(place[whole]) == {5} and set(place[part]) == {2} and set(place[dry]) == {0} and set(place[wet]) == {3}
     assert not river[:, whole].any() and np.all(river[:, part].sum(axis=0) > 0)   # no river under a closed lake; one reaches its shore
     assert not out.drivers["river_discharge"]["through_lake"].any()
     # the books of each lake in the terms of a map: what the streams and its own shores bring is what its open water
@@ -1625,13 +1654,19 @@ def test_a_hollow_in_a_dry_climate_holds_a_closed_lake_and_in_a_wet_one_a_lake_w
     # never exceeds that; the parts recorded for the answers say "through the lake" there and nothing else
     outlet = lakes["outlet_cell"][0]
     assert np.isclose(river[outlet], lakes["outflow_m3_per_year"][0], rtol=1e-5)
-    in_lake = out.drivers["river_discharge"]["place"] == 1
-    assert in_lake[outlet] and np.all(f["lake_fraction"][in_lake & (ground < t["spill_m"][3])] == 1.0)
-    assert np.all(river[in_lake] <= river[outlet] * (1 + 1e-6)) and (river[in_lake] > 0).sum() > 10
+    place = out.drivers["river_discharge"]["place"]
+    in_lake, at_brim = place == 1, place == 4
+    crossed = in_lake | at_brim                                                   # the cells that the lake's water crosses
+    # the outlet cell stands exactly at the level of the lake: the lake covers none of it, and it is said to be at the
+    # brim, not in the lake [the fourth check of step 2 found it said to lie in the lake and to be reached by no lake]
+    assert at_brim[outlet] and not f["lake_fraction"][at_brim].any() and np.all(f["lake_fraction"][in_lake] > 0)
+    assert np.all(f["lake_fraction"][in_lake & (ground < t["spill_m"][3])] == 1.0)
+    assert np.all(river[crossed] <= river[outlet] * (1 + 1e-6)) and (river[in_lake] > 0).sum() > 10
     through = out.drivers["river_discharge"]["through_lake"].astype(np.float64).sum(axis=0) * MONTH_S
-    assert np.allclose(through[in_lake], river[in_lake], rtol=1e-5) and not through[~in_lake].any()
-    assert not out.drivers["river_discharge"]["local_runoff"][:, in_lake].any()
-    assert set(out.drivers["river_discharge"]["lake"][in_lake]) == {0}            # the row of the lake in the table of lakes
+    assert np.allclose(through[crossed], river[crossed], rtol=1e-5) and not through[~crossed].any()
+    assert not out.drivers["river_discharge"]["local_runoff"][:, crossed].any()
+    assert set(out.drivers["river_discharge"]["lake"][crossed]) == {0}            # the row of the lake in the table of lakes
+    assert set(out.drivers["lake_fraction"]["state"][at_brim]) == {4} and set(out.drivers["lake_fraction"]["lake"][at_brim]) == {0}
     months = f["river_discharge"].astype(np.float64)[:, outlet]
     assert np.allclose(months, months.mean(), rtol=1e-5)                          # even rain in, even flow out
     fell = reads["precipitation"].sum(axis=0)
@@ -1746,7 +1781,7 @@ def test_a_hollow_with_no_way_out_that_gets_more_than_it_can_lose_is_flooded_who
     assert np.isclose(lakes["area_m2"][0], area.sum(), rtol=1e-6)
     assert np.isclose(lakes["volume_m3"][0], ((top - ground.astype(np.float32).astype(np.float64)) * area).sum(), rtol=1e-4)
     assert set(out.drivers["lake_fraction"]["state"]) == {3} and not f["river_discharge"].any()
-    assert set(out.drivers["river_discharge"]["place"]) == {2}
+    assert set(out.drivers["river_discharge"]["place"]) == {5}                  # wholly under a lake that keeps its water
 
 
 def test_a_soil_that_holds_more_carries_more_water_into_the_dry_season():

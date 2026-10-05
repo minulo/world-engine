@@ -367,6 +367,28 @@ def test_the_fingerprint_of_a_climate_field_holds_the_tolerances_that_decide_whe
     assert loose["b"]["fingerprint"] != lineage({"mean": 0.5, "cell": 0.25})[0]["b"]["fingerprint"]
 
 
+def test_the_fingerprint_of_a_climate_field_holds_the_first_guess_its_rounds_set_out_from():
+    """The climate rounds start from the default that fields.yaml gives each field read from the previous round, and
+    stop within a tolerance of the steady state. The first guess is therefore still in the last digits of every
+    field of the stage [MEASURED by the fourth check of step 2: with another first guess of the temperature 20 of
+    52 fields of the default world differed, river flows by up to 132 m3/s, under one and the same fingerprint]."""
+    def built(default=None):
+        b = dict(toy_file("fields")["fields"]["b"])
+        if default is not None:
+            b["default"] = default
+        e = engine({}, {"b": b}, keep_trio=True)
+        e.build()
+        return e.world
+    plain, other = built(), built(3.0)
+    climate = [f for f in plain.lineage if plain.lineage[f]["stage"] == "climate"]
+    assert "b" in climate and len(climate) >= 2
+    assert toy_file("fields")["fields"]["b"].get("default", 0.0) != 3.0
+    assert any(not np.array_equal(plain.fields[f], other.fields[f]) for f in ("a", "b"))  # the case: the worlds differ
+    for field in climate:
+        assert plain.lineage[field]["fingerprint"] != other.lineage[field]["fingerprint"]
+    assert built(3.0).lineage["b"]["fingerprint"] == other.lineage["b"]["fingerprint"]
+
+
 def test_the_fingerprint_changes_with_the_rounds_of_a_push_and_with_a_push_on_a_group_the_writer_reads():
     def elev(pushes):
         T.Ground.seen = []

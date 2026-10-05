@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .console import print_anywhere
 from .params import DEFAULT_DATA_DIR, ParameterError, load_yaml_text
 from .scheduler import Refused
 
@@ -40,8 +41,8 @@ def _nearest_cell(view, lat, lon):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="worldengine", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    ap = argparse.ArgumentParser(prog="worldengine", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
+    sub = ap.add_subparsers(dest="cmd", required=True, parser_class=lambda **kw: argparse.ArgumentParser(**{**kw, "allow_abbrev": False}))
     for name in ("order", "build"):
         sp = sub.add_parser(name)
         sp.add_argument("--data", default=str(DEFAULT_DATA_DIR), help="directory of parameter files")
@@ -65,6 +66,10 @@ def main(argv=None) -> int:
     sp = sub.add_parser("info")
     sp.add_argument("store")
     args = ap.parse_args(argv)
+    print_anywhere()
+    if args.cmd == "explain" and args.cell is None and (args.lat is None or args.lon is None):
+        print("refused: explain needs a place: --cell N, or --lat and --lon", file=sys.stderr)
+        return 2
     try:
         if args.cmd == "order":
             eng = _engine(args)
@@ -113,8 +118,8 @@ def main(argv=None) -> int:
             except KeyboardInterrupt:
                 pass
             return 0
-    except (ParameterError, Refused, FileNotFoundError, KeyError) as e:
-        print(f"refused: {e}", file=sys.stderr)
+    except (ParameterError, Refused, FileNotFoundError, KeyError, IndexError) as e:      # (IndexError: a cell the world does not have)
+        print(f"refused: {str(e).strip(chr(39) + chr(34))}", file=sys.stderr)
         return 2
     return 0
 

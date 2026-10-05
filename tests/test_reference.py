@@ -116,6 +116,14 @@ def test_a_coarse_grid_is_read_between_the_four_points_around_each_cell_centre()
     off = np.abs(ref.at_cell_centres(m, la, lo, wave) - np.cos(np.deg2rad(m.lon)) * np.cos(np.deg2rad(m.lat)))
     beyond = np.abs(m.lon) > 177.5                                               # cells between the last column and the first
     assert beyond.sum() > 5 and off[np.abs(m.lat) < 87.5].max() < 0.005 and off[beyond & (np.abs(m.lat) < 87.5)].max() < 0.005
+    # ... and one that changes fastest exactly there (the field above is flat at the date line, and would be read nearly
+    # rightly from the last column alone: the fourth check of build step 2 found that nothing held the wrapping)
+    steep = np.sin(np.deg2rad(lo))[None, :] * np.cos(np.deg2rad(la))[:, None]
+    off = np.abs(ref.at_cell_centres(m, la, lo, steep) - np.sin(np.deg2rad(m.lon)) * np.cos(np.deg2rad(m.lat)))
+    low = np.abs(m.lat) < 60.0
+    assert (beyond & low).sum() > 5 and off[low].max() < 0.005
+    last_column_alone = np.abs(steep[np.abs(la[:, None] - m.lat[None, :]).argmin(axis=0), -1] - np.sin(np.deg2rad(m.lon)) * np.cos(np.deg2rad(m.lat)))
+    assert last_column_alone[beyond & low & (m.lon < 0)].max() > 0.02            # the case: without the first column the miss would be seen
     # beyond the last row toward a pole, the last row is used
     rows = la[:, None] * np.ones((1, lo.size))
     at_poles = ref.at_cell_centres(m, la, lo, rows)
@@ -191,6 +199,29 @@ def test_water_raised_from_the_ocean_finds_the_hollows_of_a_grid():
     assert np.isclose(r["ocean_share_of_planet"], (weight * f["ocean"]).sum() / weight.sum())
     with pytest.raises(ValueError, match="open ocean is not below sea level"):
         ref.flood_grid(lat, lon, h, open_ocean=(0.5, 45.5))
+
+
+def test_the_rows_of_a_grid_do_not_wrap_round_at_the_poles():
+    """The columns of a grid of longitude and latitude wrap round, and its rows do not: the north pole is not beside
+    the south pole. Here the northern cap is land: a plateau at 100 m from 60 north, a ring at 300 m all the way
+    round at 70 north, and inside the ring ground at 50 m up to the pole. The south is ocean down to its pole. The
+    ground inside the ring must fill to the ring, 300 m. If the last row counted as beside the first, the points at
+    the north pole would pass for a shore of the southern ocean and the cap would drain away at 50 m."""
+    lat = -89.5 + np.arange(180.0)
+    lon = -179.5 + np.arange(360.0)
+    la = lat[:, None] * np.ones((1, 360))
+    h = np.full((180, 360), -100.0)
+    h[la > 60] = 100.0
+    h[(la > 70) & (la < 71)] = 300.0
+    h[la > 71] = 50.0
+    f = ref.flood_grid(lat, lon, h, open_ocean=(-60.0, -120.0))
+    assert ref.raw_at(f, -89.5, 10.5)["ocean"] and ref.raw_at(f, 59.5, 10.5)["ocean"]
+    assert ref.raw_at(f, 65.5, 10.5) == {"height": 100.0, "ocean": False, "level": 100.0}
+    for place in ((75.5, 10.5), (89.5, -170.5), (89.5, 0.5), (71.5, 179.5)):
+        assert ref.raw_at(f, *place) == {"height": 50.0, "ocean": False, "level": 300.0}, place
+    # and the other way up: a southern cap behind its ring, with the north all ocean
+    f = ref.flood_grid(lat, lon, h[::-1].copy(), open_ocean=(60.0, -120.0))
+    assert ref.raw_at(f, -89.5, 0.5) == {"height": 50.0, "ocean": False, "level": 300.0} and ref.raw_at(f, 89.5, 0.5)["ocean"]
 
 
 def test_a_valley_is_judged_inside_its_own_box_and_against_the_way_round():
@@ -285,19 +316,22 @@ def test_the_three_ways_of_settling_earths_ties_are_what_the_harness_says_they_a
     three = bare._ties()
     assert sorted(three.rank) == list(range(m.n)) and not np.array_equal(three.rank, np.arange(m.n))      # the order of the cells is drawn too
     assert np.unique(three.edge).size == m.edge_cells.shape[0]                   # every pair its own width: the widths settle nearly every tie
+    assert three.passes.shape == three.edge.shape and np.unique(three.passes).size == m.edge_cells.shape[0]
+    assert not np.array_equal(three.passes, three.edge)                          # the passes of one height get an order of their own
     assert np.array_equal(three.way[valid], three.edge[m.nbr_edge[valid]]) and np.all(np.isneginf(three.way[~valid]))
     again = bare._ties()
     assert np.array_equal(again.edge, three.edge) and np.array_equal(again.rank, three.rank)              # the same draw for the same number
     bare.ties = 4
     four = bare._ties()
     assert not np.array_equal(four.edge, three.edge) and not np.array_equal(four.rank, three.rank)
+    assert not np.array_equal(four.passes, three.passes)
     bare.ties = "mean"
     low = bare._ties()
     c = 100
     ring = [(k, int(j)) for k, j in enumerate(m.nbr[c]) if j >= 0]
     best = max(ring, key=lambda kj: low.way[c, kj[0]])[1]
     assert bare.mean[best] == min(bare.mean[j] for _, j in ring)                 # the wider way is the one toward the lower mean
-    assert low.rank[np.argmin(bare.mean)] == 0 and sorted(low.rank) == list(range(m.n))
+    assert low.rank[np.argmin(bare.mean)] == 0 and sorted(low.rank) == list(range(m.n)) and low.passes is None
     bare.ties = "lowest"
     with pytest.raises(ValueError, match="ties can be None, a number"):
         bare._ties()
@@ -456,7 +490,7 @@ def test_the_fetch_tool_fetches_what_is_missing_and_refuses_what_is_wrong(remote
     source, entry, good = remote
     tool = fetch_tool()
     said = []
-    run = lambda files, folder, **more: tool.main(listed={"source": source, "files": files}, folder=folder, say=said.append, **more)
+    run = lambda files, folder, **more: tool.fetch_all(listed={"source": source, "files": files}, folder=folder, say=said.append, **more)
     here = tmp_path / "here"
     # a missing file is fetched and checked; a second run fetches nothing
     assert run({"good.bin": entry("files/good.bin")}, here) == 0 and (here / "good.bin").read_bytes() == good

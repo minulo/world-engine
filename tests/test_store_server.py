@@ -1,18 +1,22 @@
 """The world store and the local server (build step 0): a world holding only geometry is identical on a
 second run and opens in the viewer through the local server."""
+import http.client
 import json
 import threading
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import numpy as np
 import pytest
 import yaml
 
+import toy_processes as T
 from conftest import DATA
+from test_engine_cases import BOOL_TABLE, GEO_FIELDS, engine, slot
 from worldengine import store
 from worldengine.engine import Engine
-from worldengine.server import make_server
+from worldengine.server import WorldService, make_server
 
 
 def geometry_only():
@@ -51,7 +55,7 @@ def test_store_holds_what_was_built_and_how(geometry_store):
     v = store.StoreView(path)
     for name, a in w.fields.items():
         assert np.array_equal(v.field(name), a)
-    assert v.fingerprints() == {k: h for k, h in w.fingerprints().items() if not k.startswith("table:")}
+    assert v.fingerprints() == w.fingerprints() == v.attrs["fingerprints"]
     a = v.attrs
     assert a["seed"] == e.seed and a["meta"]["math_threads"] == 1 and a["code_fingerprint"] and a["packages"]["numpy"]
     assert yaml.safe_load(a["parameters_text"]["planet"]) == e.params["planet"]
@@ -94,6 +98,33 @@ def test_store_is_written_once(geometry_store):
     e, w, path = geometry_store
     with pytest.raises(FileExistsError):
         store.save(w, e, path)
+
+
+def test_a_store_that_cannot_be_given_its_name_at_once_is_not_lost(geometry_store, tmp_path, monkeypatch):
+    """The last step of writing a store is a rename. Where another program holds a file of the store open for a
+    moment, the rename fails (a virus scanner on Windows does that [INFERRED: not run on Windows]). It is tried
+    again; and if it never succeeds, the store is left whole under its other name and the refusal says where, so
+    that a world that took hours is not thrown away over a name. Tried here by making the rename fail on purpose."""
+    e, w, _ = geometry_store
+    real, waits, failures = Path.rename, [], [3]
+
+    def held(self, target):
+        if self.name.endswith(".partial") and failures[0] > 0:
+            failures[0] -= 1
+            raise PermissionError(13, "held open by another program")
+        return real(self, target)
+    monkeypatch.setattr(Path, "rename", held)
+    monkeypatch.setattr(store.time, "sleep", waits.append)
+    path = store.save(w, e, tmp_path / "late.zarr")                    # refused three times, then given its name
+    assert path.exists() and not path.with_name("late.zarr.partial").exists() and waits == [store.MOVE_WAIT_S] * 3
+    assert store.StoreView(path).fingerprints() == w.fingerprints()
+    failures[0], waits[:] = 10 ** 6, []
+    with pytest.raises(PermissionError) as err:
+        store.save(w, e, tmp_path / "never.zarr")
+    left = tmp_path / "never.zarr.partial"
+    assert str(left) in str(err.value) and "Rename that folder to never.zarr by hand" in str(err.value)
+    assert len(waits) == store.MOVE_TRIES - 1 and not (tmp_path / "never.zarr").exists()
+    assert store.StoreView(left).fingerprints() == w.fingerprints()    # what was left behind is the whole world
 
 
 @pytest.fixture(scope="module")
@@ -151,3 +182,150 @@ def test_server_refuses_what_it_does_not_have(served):
         with pytest.raises(urllib.error.HTTPError) as err:
             get(served + q)
         assert err.value.code in (400, 404)
+
+
+# ---------------------------------------------------------------------------------------------- what the fourth check of step 2 found untested
+@pytest.fixture(scope="module")
+def toy_store(tmp_path_factory):
+    """A small world with every kind of thing a store holds: numbers, a direction, a true-or-false field, and a table
+    with a true-or-false column."""
+    T.TableMaker.columns = {"item": [0, 1], "value": [1.0, 2.5], "ok": [True, False]}
+    try:
+        e = engine({"TableMaker": slot("TableMaker", ["table:toy_items"]), "Marker": slot("Marker", ["ones", "month_no", "heading"]),
+                    "Flipper": slot("Flipper", ["flag"])},
+                   {**GEO_FIELDS, "flag": dict(family="Toy", unit="true or false", shape="cell", kind="boolean", default=False)},
+                   tables=BOOL_TABLE, max_rounds=3)
+        w = e.build()
+    finally:
+        T.TableMaker.columns = {"item": [0, 1], "value": [1.0, 2.5]}
+    return e, w, store.save(w, e, tmp_path_factory.mktemp("worlds") / "toy.zarr")
+
+
+def test_a_store_hands_out_what_was_built_in_kind_as_well_as_in_value(toy_store):
+    """A true-or-false field must come back true-or-false: as numbers 0 and 1 it compares equal to what was built and
+    then fails where it is used as a mask (~ of 1 is -2). Every field and every column of every table is held to the
+    type and the bytes of the world in memory."""
+    e, w, path = toy_store
+    view = store.StoreView(path)
+    assert w.fields["flag"].dtype == np.bool_ and w.fields["heading"].shape == (w.n, 3)
+    for name, built in w.fields.items():
+        read = view.field(name)
+        assert read.dtype == built.dtype and read.shape == built.shape and np.array_equal(read, built, equal_nan=built.dtype.kind == "f"), name
+    assert view.field("flag").dtype == np.bool_
+    for name, column in w.tables["toy_items"].items():
+        assert view.table("toy_items")[name].dtype == column.dtype and np.array_equal(view.table("toy_items")[name], column), name
+    assert view.fingerprints() == w.fingerprints() and any(key.startswith("table:toy_items.") for key in w.fingerprints())
+
+
+def test_what_a_view_hands_out_cannot_be_changed_and_is_read_once(toy_store, monkeypatch):
+    """A view gives one copy of an array to every caller, so no caller may change it; and it keeps what it has read,
+    up to a limit, so that one "why" answer after another does not read the same arrays again."""
+    _, w, path = toy_store
+    view = store.StoreView(path)
+    ones = view.field("ones")
+    assert view.field("ones") is ones                         # the second asking reads nothing: it is handed the array that was kept
+    for array in (ones, view.field("flag"), view.table("toy_items")["value"], view.mesh_array("lat")):
+        assert not array.flags.writeable
+        with pytest.raises(ValueError, match="read-only"):
+            array[0] = 5
+    assert view.table("toy_items")["value"] is view.table("toy_items")["value"]            # the table's arrays are kept too
+    # the limit: with room for one field only, the view still answers rightly, and holds no more than it may
+    monkeypatch.setattr(store, "KEEP_BYTES", ones.nbytes + 8)
+    small = store.StoreView(path)
+    for name in ("ones", "month_no", "heading", "ones"):
+        assert np.array_equal(small.field(name), w.fields[name])
+        assert small._kept_bytes <= store.KEEP_BYTES
+    assert ("field", "ones") in small._kept and ("field", "month_no") not in small._kept    # what does not fit is not kept
+
+
+def test_the_fingerprint_of_a_world_holds_its_tables(toy_store):
+    """The table of hollows and the table of lakes are part of a world. Two worlds that differ in one value of one
+    table must not carry one fingerprint."""
+    e, w, _ = toy_store
+    before, prints = w.fingerprint(), w.fingerprints()
+    assert {"table:toy_items.item", "table:toy_items.value", "table:toy_items.ok"} <= set(prints)
+    kept = w.tables["toy_items"]
+    other = kept["value"].copy()                              # (a world's own arrays cannot be written to)
+    other[1] += 1.0e-9
+    try:
+        w.tables["toy_items"] = {**kept, "value": other}
+        assert w.fingerprint() != before and w.fingerprints()["table:toy_items.value"] != prints["table:toy_items.value"]
+        assert {k for k, v in w.fingerprints().items() if v != prints[k]} == {"table:toy_items.value"}
+    finally:
+        w.tables["toy_items"] = kept
+    assert w.fingerprint() == before
+
+
+@pytest.fixture(scope="module")
+def toy_served(toy_store, tmp_path_factory):
+    """The toy world behind the server, with a viewer folder of its own and a file beside that folder."""
+    _, _, path = toy_store
+    home = tmp_path_factory.mktemp("served")
+    (home / "viewer").mkdir()
+    (home / "viewer" / "index.html").write_text("<p>the page</p>", encoding="utf-8")
+    (home / "secret.txt").write_text("not for the page", encoding="utf-8")
+    srv = make_server(path, port=0, viewer_dir=home / "viewer")
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield srv.server_address[1]
+    srv.shutdown()
+
+
+def raw_get(port, path):
+    """A request whose path is sent exactly as written (urllib may tidy a path before it sends it)."""
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    connection.request("GET", path)
+    response = connection.getresponse()
+    body = response.read()
+    connection.close()
+    return response.status, body
+
+
+def test_the_server_gives_a_direction_as_east_then_north(toy_store, toy_served):
+    """The field `heading` of the toy world points east everywhere. For one cell the page is given (east, north); the
+    part asked for by name is that part; without a name, the speed."""
+    _, w, _ = toy_store
+    cell = int(np.flatnonzero(np.abs(w.mesh.lat) < 60)[7])
+    status, body = raw_get(toy_served, f"/api/cell?id={cell}")
+    values = json.loads(body)["values"]
+    assert status == 200 and values["heading"] == pytest.approx([1.0, 0.0], abs=1e-12) and values["flag"] in (0.0, 1.0)
+    part = lambda name: np.frombuffer(raw_get(toy_served, f"/api/field?name=heading{name}")[1], dtype="<f4")
+    away_from_poles = np.abs(w.mesh.lat) < 89.0
+    assert np.allclose(part("&part=east")[away_from_poles], 1.0, atol=1e-6) and np.allclose(part("&part=north"), 0.0, atol=1e-6)
+    assert np.allclose(part("")[away_from_poles], 1.0, atol=1e-6)
+
+
+def test_the_flat_map_runs_from_180_west_to_180_east_and_from_the_north_down(toy_store, toy_served):
+    """The page draws the flat map from a grid of cell numbers: column 0 at 180 degrees west, the middle column at the
+    meridian of 0, row 0 in the north."""
+    _, w, _ = toy_store
+    status, body = raw_get(toy_served, "/api/idmap?width=256")
+    ids = np.frombuffer(body, dtype="<u4").reshape(128, 256)
+    lat, lon = w.mesh.lat, w.mesh.lon
+    spacing = 30.0                                              # degrees: the toy mesh is coarse (cells some 15 degrees apart)
+    for column, east in ((0, -180.0), (64, -90.0), (128, 0.0), (192, 90.0)):
+        got = lon[ids[64, column]]
+        assert min(abs(got - east), abs(got - east - 360.0), abs(got - east + 360.0)) < spacing, (column, got)
+    assert lat[ids[2, 128]] > 60.0 and lat[ids[125, 128]] < -60.0 and abs(lat[ids[64, 128]]) < spacing
+
+
+def test_the_server_serves_its_viewer_folder_and_nothing_beside_it(toy_served):
+    """A file that exists beside the viewer folder is not served, by whatever path it is asked for: the server is for
+    one page and one world."""
+    assert raw_get(toy_served, "/")[1] == b"<p>the page</p>" and raw_get(toy_served, "/index.html")[0] == 200
+    for path in ("/../secret.txt", "/%2e%2e/secret.txt", "/viewer/../../secret.txt", "//secret.txt", "/secret.txt"):
+        status, body = raw_get(toy_served, path)
+        assert status == 404 and b"not for the page" not in body, path
+
+
+def test_the_page_is_warned_when_the_engine_is_not_the_one_that_built_the_world(toy_store):
+    """A stored world is answered by the code that runs now. If that is not the code that built it, an answer worked
+    out now may differ from the build, and the page says so."""
+    _, _, path = toy_store
+    service = WorldService(store.StoreView(path))
+    assert service.warnings() == [] and service.world()["warnings"] == []
+    service.view.attrs["code_fingerprint"] = "0" * 16
+    assert service.warnings() == ["The engine's code has changed since this world was built, so answers computed now may differ from the build."]
+    service.view.attrs["lock_fingerprint"] = "0" * 16
+    service.view.attrs["engine_version"] = "0.0.0"
+    said = service.world()["warnings"]
+    assert len(said) == 3 and said[0].startswith("This world was built by engine version 0.0.0") and "lock file" in said[2]

@@ -1,12 +1,25 @@
 # The lock file: exact package versions (design, Layer 8). Its fingerprint is stored in every world store.
 # Python 3.13. Install with: pip install -r requirements.lock
+# The packages the engine names itself:
 numpy==2.5.3
 scipy==1.18.1
 numba==0.68.0
-llvmlite==0.50.0
 zarr==3.4.0
-numcodecs==0.17.0
 PyYAML==6.0.3
 threadpoolctl==3.7.0
-# tests and the viewer check
+# ... and the packages those bring with them, as they were when the engine was built and tested. Two of them touch a
+# world's numbers: llvmlite compiles numba's loops, and numcodecs packs the stored arrays (without loss).
+llvmlite==0.50.0
+numcodecs==0.17.0
+donfig==0.8.1.post1
+google-crc32c==1.9.0
+msgspec==0.22.0
+packaging==26.3
+typing_extensions==4.16.0
+# the tests
 pytest==9.1.1
+iniconfig==2.3.0
+pluggy==1.6.0
+pygments==2.21.0
+colorama==0.4.6; sys_platform == "win32"
+# tools/viewer_check.py alone needs a browser and the package playwright: requirements-viewer-check.lock

@@ -38,7 +38,8 @@ Wrong where: the cloud decks of cool subtropical seas and the cloud bands of the
 Clouds are the largest known gap in the climate stage. Too much land is white all year: a
 fifth of the default world's land, and a third of the land of the Earth twin, where a tenth
 of Earth's land lies under ice [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8]. The fault
-is not in this table: EnergyBalance gives the land summers too weak to melt the snow. A
+is taken to lie not in this table but in EnergyBalance, which gives the land summers too weak
+to melt the snow [INFERRED from runs of EnergyBalance alone: the same sections]. A
 planet can still freeze over: with ice on most of its surface
 it reflects more sunlight than it needs to stay frozen, and models of this kind tip that way
 more easily than fuller ones [UNVERIFIED: my recollection of the literature on energy balance

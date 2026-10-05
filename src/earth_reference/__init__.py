@@ -241,8 +241,12 @@ class Earth:
     have a neighbour at exactly their own height [MEASURED: tools/earth_relief.py]. Where heights tie the data cannot
     say which way a river runs, and the way the tie is settled decides. `ties` chooses how:
       None       as the engine settles them: the wider way, then the cell numbers (library/drainage.py, "Ties")
-      a number   at random, with that number as the seed: every pair of neighbours draws its width and every cell
-                 its place in the order. Many such draws show which results the relief decides and which the ties.
+      a number   at random, with that number as the seed: every pair of neighbours draws its width, every cell its
+                 place in the order, and every pair of neighbours a second number that orders the passes of one
+                 height before anything else is looked at. Many such draws show which results the relief decides
+                 and which the ties. [Until the fourth check of step 2 the passes were not drawn: among passes of
+                 one height the lower cell and its bed went first, as in the engine, and the draws settled only
+                 what those left. That hid most of what the ties decide about single rivers.]
       "mean"     by the ground: of two equal ways the one toward the cell with the lower mean height
     Anything but None is given to Drainage and Hydrology by standing in for the one library function that hands them
     the ties of the mesh (drainage.mesh_ties), for the length of the run: the processes themselves are unchanged.
@@ -305,7 +309,9 @@ class Earth:
             return dr.Ties(way=way, edge=np.minimum(low[a], low[b]), rank=np.argsort(np.argsort(-low, kind="stable"), kind="stable"))
         rng = np.random.default_rng(int(self.ties))
         width = rng.random(m.edge_cells.shape[0])
-        return dr.Ties(way=np.where(valid, width[np.maximum(m.nbr_edge, 0)], -np.inf), edge=width, rank=rng.permutation(n))
+        rank = rng.permutation(n)
+        passes = rng.random(m.edge_cells.shape[0])               # among passes of one height: any of them, before all else
+        return dr.Ties(way=np.where(valid, width[np.maximum(m.nbr_edge, 0)], -np.inf), edge=width, rank=rank, passes=passes)
 
     def _settling(self):
         """For the length of a run, the library hands the processes this Earth's ties in place of the mesh's own."""
@@ -387,6 +393,17 @@ class Earth:
         return surface, dr.overflow_receivers(d.fields["flow_receiver"].astype(np.int64), surface, self.mesh.nbr,
                                               d.fields["depression_id"].astype(np.int64), d.tables["hollows"], ties)
 
+    def with_ground(self, ground) -> "Earth":
+        """This Earth with other heights handed to Drainage (one per cell, metres; sea cells keep their own): the sea,
+        the climate and the ties are shared, the drainage and the water on land are worked out again. A diagnosis of
+        the way the relief is put on the mesh, not Earth."""
+        import copy
+        other = copy.copy(self)
+        other.ground = np.where(self.wet, self.ground, np.asarray(ground, dtype=np.float64)).astype(np.float32).astype(np.float64)
+        other.__dict__.pop("_hydrology", None)
+        other._drain()
+        return other
+
     def with_rain(self, rain) -> "Earth":
         """This Earth under another rain (months x cells, mm a month): the relief, the sea, the drainage and the warmth
         are shared, and the water on land is worked out again when it is asked for. A diagnosis, not Earth."""
@@ -406,6 +423,53 @@ class Earth:
         return (hydrology or self.hydrology()).fields["river_discharge"].astype(np.float64).mean(axis=0) * YEAR_S / 1e9
 
 
+def river_books(earth: Earth, hydrology=None) -> dict:
+    """The books of the river at every cell, each entry worked out by itself (km3 a year; areas in thousand km2):
+      flow       the field river_discharge over the year
+      reaches    the land whose water arrives at the cell as the water runs: closed hollows keep the rest
+      shed       what that land sheds in a year, as if none of it were flooded
+      lost       of that water, what the lakes with an outlet on the way lose to the air: the yearly loss of every
+                 such lake whose outlet lies upstream of the cell or is the cell, and, for a cell inside such a lake
+                 that is not its outlet, the share of the water passing the cell that the lake will lose
+      kept_here  in a cell that lies partly or wholly under a closed lake: the part of the arriving water that has
+                 reached the lake inside the cell, which the field does not count as river
+      rain, demand   the rain on the land that reaches the cell, and the air's demand for water over it (km3)
+      unbalanced shed - lost - kept_here - flow, which is nothing if the books close
+    Needs the model's books (Earth.books); returns {} without them."""
+    from worldengine.library import drainage as dr
+    h = hydrology or earth.hydrology()
+    books = earth.books(h)
+    if not books:
+        return {}
+    flow = earth.yearly_flow(h)
+    area = earth.area.astype(np.float64)
+    land = earth.land
+    flows = books["flows"]
+    ways = flows["receivers"]
+    stack = dr.flow_stack(ways)
+    along = lambda v: dr.accumulate(stack, ways, v[None, :])[0] / 1e9
+    on_land = np.where(land, area, 0.0)
+    reaches, shed = along(on_land), along(books["shed"].sum(axis=0))
+    rain = along(on_land * earth.rain.sum(axis=0) / 1000.0)
+    demand = along(on_land * np.nansum(h.fields["potential_evapotranspiration"].astype(np.float64), axis=0) / 1000.0)
+    found = flows["lakes"]                                       # the lakes with an outlet: their loss leaves the river at the outlet
+    runs = found["overflows"].astype(bool)
+    outlet = np.asarray(books["table"]["spill_from_cell"])[found["row"][runs]]
+    at_outlet = np.zeros(area.size)
+    at_outlet[outlet] = found["loss"][runs]
+    lost_above = along(at_outlet)
+    keeps = np.zeros(len(books["table"]["parent"]))              # per hollow: the share of what reaches the lake that it loses
+    keeps[found["row"][runs]] = found["loss"][runs] / np.maximum(found["inflow"][runs], 1e-30)
+    crossing = flows["crossing"]
+    inside = (crossing >= 0) & ~np.isin(np.arange(area.size), outlet)
+    passing = flows["passing"].sum(axis=0) / 1e9
+    lost = lost_above + np.where(inside, passing * keeps[np.maximum(crossing, 0)], 0.0)
+    share = h.fields["lake_fraction"].astype(np.float64)
+    kept_here = np.where((crossing < 0) & (share > 0.0), share * passing, 0.0)
+    return {"flow": flow, "reaches": reaches, "shed": shed, "lost": lost, "kept_here": kept_here, "rain": rain, "demand": demand,
+            "unbalanced": shed - lost - kept_here - flow}
+
+
 def rivers_at_gauges(earth: Earth, hydrology=None) -> dict:
     """For each river of GAUGES, what the engine gives at its gauge under Earth's rain and warmth, taken apart.
 
@@ -417,40 +481,17 @@ def rivers_at_gauges(earth: Earth, hydrology=None) -> dict:
       basin             the land the mesh drains through that cell with every hollow full (the field drainage_area)
       reaches           the land whose water arrives at that cell as the water runs: closed hollows keep the rest
       sheds             what the land that reaches the cell sheds in a year, as if none of it were flooded
-      lost_in_lakes     of that water, what the lakes with an outlet on the way lose to the air: the yearly loss of
-                        every such lake whose outlet lies upstream of the cell, and, for a cell inside such a lake,
-                        the share of the water passing the cell that the lake will lose
+      lost_in_lakes     of that water, what the lakes with an outlet on the way lose to the air (river_books: lost)
+      kept_here         what a closed lake inside the cell itself keeps (river_books: kept_here)
       rain, demand      the rain on the land that reaches the cell, and the air's demand for water over it
-    The books must close: flow = reaches * sheds - lost_in_lakes, each side worked out by itself (`unbalanced` is
-    the difference, km3 a year). The last five need the model's books (Earth.books) and are missing without them."""
-    from worldengine.library import drainage as dr
+    The books must close: flow = reaches * sheds - lost_in_lakes - kept_here, each side worked out by itself
+    (`unbalanced` is the difference, km3 a year). The last six need the model's books (Earth.books) and are missing
+    without them."""
     h = hydrology or earth.hydrology()
     flow = earth.yearly_flow(h)
-    area = earth.area.astype(np.float64)
     land = earth.land
-    books = earth.books(h)
+    books = river_books(earth, h)
     drained = earth.drainage.fields["drainage_area"].astype(np.float64) / 1e9
-    if books:
-        flows = books["flows"]
-        ways = flows["receivers"]
-        stack = dr.flow_stack(ways)
-        along = lambda v: dr.accumulate(stack, ways, v[None, :])[0] / 1e9
-        on_land = np.where(land, area, 0.0)
-        reaches, unlost = along(on_land), along(books["shed"].sum(axis=0))
-        rain = along(on_land * earth.rain.sum(axis=0) / 1000.0)
-        demand = along(on_land * np.nansum(h.fields["potential_evapotranspiration"].astype(np.float64), axis=0) / 1000.0)
-        found = flows["lakes"]                                   # the lakes with an outlet: their loss leaves the river at the outlet
-        runs = found["overflows"].astype(bool)
-        outlet = np.asarray(books["table"]["spill_from_cell"])[found["row"][runs]]
-        at_outlet = np.zeros(area.size)
-        at_outlet[outlet] = found["loss"][runs]
-        lost_above = along(at_outlet)
-        keeps = np.zeros(len(books["table"]["parent"]))          # per hollow: the share of what reaches the lake that it loses
-        keeps[found["row"][runs]] = found["loss"][runs] / np.maximum(found["inflow"][runs], 1e-30)
-        crossing = flows["crossing"]
-        inside = (crossing >= 0) & ~np.isin(np.arange(area.size), outlet)
-        passing = flows["passing"].sum(axis=0) / 1e9
-        lost = lost_above + np.where(inside, passing * keeps[np.maximum(crossing, 0)], 0.0)
     out = {}
     for name, (lat, lon, measured, station_area) in GAUGES.items():
         near = np.flatnonzero(land & (earth.km_from(lat, lon) < NEAR_GAUGE_KM))
@@ -459,23 +500,32 @@ def rivers_at_gauges(earth: Earth, hydrology=None) -> dict:
         row = {"measured": measured, "station_area": station_area, "measured_depth": 1000.0 * measured / station_area,
                "cell": k, "flow": float(flow[k]), "basin": float(drained[k]), "no_river": bool(dry)}
         if books:
-            over = max(float(reaches[k]), 1e-9)
-            row.update(reaches=float(reaches[k]), sheds=1000.0 * float(unlost[k]) / over, lost_in_lakes=float(lost[k]),
-                       unbalanced=float(unlost[k] - lost[k] - flow[k]),
-                       rain=1000.0 * float(rain[k]) / over, demand=1000.0 * float(demand[k]) / over)
+            over = max(float(books["reaches"][k]), 1e-9)
+            row.update(reaches=float(books["reaches"][k]), sheds=1000.0 * float(books["shed"][k]) / over,
+                       lost_in_lakes=float(books["lost"][k]), kept_here=float(books["kept_here"][k]),
+                       unbalanced=float(books["unbalanced"][k]),
+                       rain=1000.0 * float(books["rain"][k]) / over, demand=1000.0 * float(books["demand"][k]) / over)
         out[name] = row
     return out
 
 
 WITHIN_A_THIRD = 1.5        # like_for_like: a basin counts as the real one's like if neither is this many times the other
+MUCH_OF_THE_RAIN = 0.6      # a measured runoff above this share of the rain handed in marks a basin where the comparison tests the rain
+                            # data or the basin more than the model [the share was set with the numbers in view: the Brahmaputra's
+                            # measured runoff is 1.09 of the rain handed in, the Columbia's 0.64, and the next basin's 0.57]
 
 # The Volga, which ends in a closed sea and is therefore not among GAUGES: a place at Volgograd, below its last great
 # tributary [the place is from memory, to the nearest tenth of a degree: UNVERIFIED], and what is published for its
 # basin: 1,360,000 km2, 585 mm of precipitation and 262 km3 of runoff a year, "based on the author's calculations
 # for current climatic conditions (since the late 1980s)" [DOCUMENTED: Kalugin 2022, Climate 10(7), 107,
-# https://www.mdpi.com/2225-1154/10/7/107, read out by a page reader on 2026-10-05]. In the form of GAUGES, with the
-# precipitation beside it.
-VOLGA = {"gauge": (48.7, 44.5, 262.0, 1360.0), "precipitation_mm": 585.0}
+# https://www.mdpi.com/2225-1154/10/7/107, read out by a page reader twice on 2026-10-05]. In the form of GAUGES, with
+# the precipitation beside it.
+# The source does not agree with itself about the runoff, and both figures are kept. 262 km3 over 1,360,000 km2 is
+# 193 mm, a third of the precipitation (0.33). The same paragraph says "The runoff coefficient of the Volga River is
+# 0.38", which makes 222 mm of the 585; and it gives the river's "water content" as 250 km3 a year, 184 mm
+# [DOCUMENTED: the same reading; found by the fourth check of build step 2, after I had used the 262 km3 alone].
+# Whether the engine sheds too much of a given rain on this basin depends on which figure is taken.
+VOLGA = {"gauge": (48.7, 44.5, 262.0, 1360.0), "precipitation_mm": 585.0, "runoff_coefficient": 0.38}
 
 
 def like_for_like(earth: Earth, hydrology=None, gauges=None) -> dict:
@@ -522,6 +572,86 @@ def like_for_like(earth: Earth, hydrology=None, gauges=None) -> dict:
                      "sheds": float(sheds), "rain": float(1000.0 * rain[k] / max(drained[k], 1e-9)),
                      "demand": float(1000.0 * demand[k] / max(drained[k], 1e-9)), "measured_depth": depth, "ratio": float(sheds / depth)}
     return out
+
+
+def like_together(rows: dict, leave_out=()) -> dict:
+    """like_for_like's rows taken together, over the basins that are alike and not named in `leave_out`:
+      basins     their names
+      ratio      the water they shed over the water that the measured depths would give on the same land. A mean
+                 weighted by water: one large wet basin can carry most of it
+      weights    per basin, its share of that weight (the measured depth times the basin's area)
+      median     the median of the basins' own ratios, in which each basin counts once
+      below_one, above_one, within_two   how many basins shed less than measured, more, and within a factor of two"""
+    alike = {name: r for name, r in rows.items() if r["like"] and name not in leave_out}
+    asked = {name: r["measured_depth"] * r["basin"] for name, r in alike.items()}
+    total = max(sum(asked.values()), 1e-30)
+    ratios = sorted(r["ratio"] for r in alike.values())
+    return {"basins": list(alike), "ratio": sum(r["sheds"] * r["basin"] for r in alike.values()) / total,
+            "weights": {name: v / total for name, v in asked.items()},
+            "median": float(np.median(ratios)) if ratios else float("nan"),
+            "below_one": sum(x < 1.0 for x in ratios), "above_one": sum(x >= 1.0 for x in ratios),
+            "within_two": sum(0.5 < x < 2.0 for x in ratios)}
+
+
+def demand_times(earth: Earth, factor: float) -> dict:
+    """The change to Hydrology's constants that multiplies the air's demand for water by `factor`, for
+    Earth.hydrology(constants): a diagnosis, not a setting of the engine. The demand is the Priestley-Taylor rule,
+    (1 + extra) times a share of the net radiation, so the factor goes into `extra`; a factor of 1 / (1 + extra)
+    is the rule with its extra taken away."""
+    extra = earth.h.params["models"]["slots"]["Hydrology"]["constants"]["demand"]["priestley_taylor_extra"]
+    return {"demand": {"priestley_taylor_extra": (1.0 + extra) * factor - 1.0}}
+
+
+def under_demand(earth: Earth, factor: float) -> dict:
+    """What the land's water comes to with the demand for water multiplied by `factor` (a diagnosis):
+      like_all, like_median, like_without_amazon   like_together's ratio and median over the like basins, and the
+                              ratio with the Amazon left out
+      like_lowest, like_highest, like_within_15   the lowest and the highest of the like basins' own ratios, and how
+                              many of them lie within 15 % of the measured depth
+      back_to_air, to_sea     land_water's
+      to_air_mm               what the land gives the air, as a depth (mm a year)
+      gauges_within           how many of the gauged rivers carry the measured flow within a factor of two"""
+    h = earth.hydrology() if factor == 1.0 else earth.hydrology(demand_times(earth, factor))
+    like = like_for_like(earth, h)
+    water = land_water(earth, h)
+    gauges = rivers_at_gauges(earth, h)
+    ratios = [r["ratio"] for r in like.values() if r["like"]]
+    return {"like_all": like_together(like)["ratio"], "like_median": like_together(like)["median"],
+            "like_without_amazon": like_together(like, ("Amazon",))["ratio"],
+            "like_lowest": min(ratios), "like_highest": max(ratios), "like_within_15": sum(0.85 < x < 1.15 for x in ratios),
+            "back_to_air": water["back_to_air"], "to_sea": water["to_sea"], "to_air_mm": water["to_air_mm"],
+            "gauges_within": sum(within_a_factor_of_two(r["measured"], r["flow"]) for r in gauges.values())}
+
+
+def tally(runs: list) -> dict:
+    """What a list of summaries (one per way of settling the ties) comes to, as counts:
+      runs               how many there are
+      mouths             per river of GREAT_RIVERS: in how many it leaves the land within MOUTH_WITHIN_KM of its mouth,
+                         and the nearest and the farthest it comes (km)
+      mouths_passing     the fewest and the most rivers that do so in one run
+      gauges             per river of GAUGES: in how many its flow is within a factor of two of the measured one, the
+                         least and the most it carries (km3 a year), in how many its basin is alike, and the least
+                         and the most its land then sheds over the measured depth
+      gauges_passing     the fewest and the most rivers within a factor of two in one run
+      like_all, back_to_air, to_sea, lakes_share   the least and the most of each
+      caspian_closed     in how many the lake at the Caspian's place keeps its water; caspian_overflow_km3,
+                         caspian_area_km2, caspian_level_m: the least and the most of each (the overflow among those
+                         that overflow)"""
+    span = lambda values: (min(values), max(values)) if values else (None, None)
+    near = lambda r, river: r["mouth_km"][river] < MOUTH_WITHIN_KM
+    ok = lambda r, river: within_a_factor_of_two(GAUGES[river][2], r["flow"][river])
+    mouths = {river: (sum(near(r, river) for r in runs), *span([r["mouth_km"][river] for r in runs])) for river in GREAT_RIVERS}
+    gauges = {}
+    for river in GAUGES:
+        alike = [r["like"][river][1] for r in runs if r["like"][river][0]]
+        gauges[river] = (sum(ok(r, river) for r in runs), *span([r["flow"][river] for r in runs]), len(alike), *span(alike))
+    lakes = [r["caspian"] for r in runs if r["caspian"] is not None]
+    return {"runs": len(runs), "mouths": mouths, "mouths_passing": span([sum(near(r, river) for river in GREAT_RIVERS) for r in runs]),
+            "gauges": gauges, "gauges_passing": span([sum(ok(r, river) for river in GAUGES) for r in runs]),
+            **{key: span([r[key] for r in runs]) for key in ("like_all", "back_to_air", "to_sea", "lakes_share")},
+            "caspian_closed": sum(not c["overflows"] for c in lakes),
+            "caspian_overflow_km3": span([c["outflow_km3"] for c in lakes if c["overflows"]]),
+            "caspian_area_km2": span([c["area_km2"] for c in lakes]), "caspian_level_m": span([c["level_m"] for c in lakes])}
 
 
 def volga(earth: Earth, hydrology=None) -> dict:
@@ -576,6 +706,86 @@ MOUTH_WITHIN_KM = 300.0     # the Earth tests ask that a great river leaves the 
 FLOW_WITHIN = 2.0           # ... and that it carries, at its last gauge, the measured flow within this factor
 
 
+def within_a_factor_of_two(measured, flow) -> bool:
+    """Whether a flow is within FLOW_WITHIN of the measured one: the one place where the tests and the tools ask it."""
+    return bool(measured / FLOW_WITHIN < flow < measured * FLOW_WITHIN)
+
+
+def land_water(earth: Earth, hydrology=None) -> dict:
+    """The water of all the land in a year, under Earth's rain and warmth (or under the Hydrology run given).
+    Thousand km3 a year unless a key says otherwise:
+      rain, to_air, to_sea    the rain on land, what the land and its lakes give back to the air, and what the
+                              rivers carry into the sea
+      back_to_air             to_air as a share of the rain
+      rain_mm, to_air_mm, demand_mm   the same rain and evaporation, and the air's demand for water, as depths over
+                              the land (mm a year)
+      lakes_share, lakes_km2  the share of the land under lakes, and their area
+      lakes, lakes_with_outlet    how many lakes there are, and how many overflow
+    and, where the model's books are at hand (Earth.books):
+      shed                    what the land sheds as if none of it were flooded
+      back_to_air_dry         the share of the rain that would go back to the air if no cell were flooded
+      lakes_with_outlet_lose  what the lakes with an outlet lose to the air beyond what the ground they cover would
+      closed_lakes_keep       the water that runs toward closed lakes
+      reaches_sea_share       the share of the land whose water reaches the sea as the water runs
+      closed_hollow_share     the share of the land that drains into a closed hollow (depression_id above 0)
+      under_water_if_full_share   the share of the land under water if every hollow were full: ground below the level
+                              at which the outermost hollow around it overflows (mesh_hollows)
+      level_with_the_water_share  the share of the land that would lie exactly at such a level: Drainage routes its
+                              water across the lake with the cells under it. On relief in whole metres it is much"""
+    from worldengine.library import drainage as dr
+    h = hydrology or earth.hydrology()
+    f = h.fields
+    area, land = earth.area.astype(np.float64), earth.land
+    of_land = area[land].sum()
+    rain = float((earth.rain.sum(axis=0) * area)[land].sum() / 1e15)                # mm on m2, to thousand km3
+    to_air = float((f["evapotranspiration"].astype(np.float64).sum(axis=0) * area)[land].sum() / 1e15)
+    asked = np.nansum(f["potential_evapotranspiration"].astype(np.float64), axis=0)
+    under_lakes = float((f["lake_fraction"].astype(np.float64) * area).sum())
+    lakes = h.tables["lakes"]
+    with_outlet = lakes["overflows"].astype(bool)
+    out = {"rain": rain, "to_air": to_air, "back_to_air": to_air / rain,
+           "to_sea": float(f["river_discharge"].astype(np.float64)[:, earth.wet].mean(axis=0).sum() * YEAR_S / 1e12),
+           "rain_mm": float(1e15 * rain / of_land), "to_air_mm": float(1e15 * to_air / of_land),
+           "demand_mm": float((asked * area)[land].sum() / of_land),
+           "lakes_share": float(under_lakes / of_land), "lakes_km2": under_lakes / 1e6,
+           "lakes": int(len(lakes["hollow"])), "lakes_with_outlet": int(with_outlet.sum())}
+    books = earth.books(h)
+    if books:
+        shed = float(books["shed"].sum(axis=0)[land].sum() / 1e12)
+        ways = books["flows"]["receivers"]
+        ends = dr.terminal(dr.flow_stack(ways), ways)
+        crossed = land & (earth.drainage.drivers["drainage_area"]["cell_is"] == 1)        # the cells Drainage routes across a full hollow
+        under = mesh_hollows(earth)["under"]
+        out.update(shed=shed, back_to_air_dry=1.0 - shed / rain,
+                   lakes_with_outlet_lose=float(lakes["loss_to_air_m3_per_year"][with_outlet].sum() / 1e12),
+                   closed_lakes_keep=float(lakes["inflow_m3_per_year"][~with_outlet].sum() / 1e12),
+                   reaches_sea_share=float(area[land & earth.wet[ends]].sum() / of_land),
+                   closed_hollow_share=float(area[land & (books["label"] > 0)].sum() / of_land),
+                   under_water_if_full_share=float(area[under].sum() / of_land),
+                   level_with_the_water_share=float(area[crossed & ~under].sum() / of_land))
+    return out
+
+
+def mesh_hollows(earth: Earth) -> dict:
+    """The closed hollows of the mesh, as Drainage finds them on the heights it was handed (beside raw_hollows, the
+    same for the data's own grid):
+      not_sea_share       the share of the planet that is not sea on the mesh
+      under               the land cells that lie under water when every hollow is full: those whose ground lies
+                          below the level at which the outermost hollow around them overflows (a mask over the cells)
+      under_share, under_share_60   their share of the land's area; the same between 60 south and 60 north
+      closed_hollow_share the share of the land that drains into a closed hollow"""
+    from worldengine.library import drainage as dr
+    area, land = earth.area.astype(np.float64), earth.land
+    label, table = earth.drainage.fields["depression_id"].astype(np.int64), earth.drainage.tables["hollows"]
+    full_level = table["spill_m"][dr.top_hollows(table)[label]]
+    under = land & (label > 0) & (earth.ground < np.where(np.isnan(full_level), np.inf, full_level))
+    mid = np.abs(earth.mesh.lat) < 60.0
+    return {"not_sea_share": float(area[land].sum() / area.sum()), "under": under,
+            "under_share": float(area[under].sum() / area[land].sum()),
+            "under_share_60": float(area[under & mid].sum() / area[land & mid].sum()),
+            "closed_hollow_share": float(area[land & (label > 0)].sum() / area[land].sum())}
+
+
 def summary(earth: Earth) -> dict:
     """The outcomes by which the Earth tests judge the rivers and lakes, for one way of settling the ties:
       mouth_km      per river of GREAT_RIVERS, how far from its real mouth it leaves the land with every hollow full
@@ -592,27 +802,21 @@ def summary(earth: Earth) -> dict:
       to_sea        thousand km3 a year that reach the sea
       lakes_share   the share of the land under lakes"""
     h = earth.hydrology()
-    f = h.fields
-    area, land = earth.area.astype(np.float64), earth.land
     basin = earth.drainage.fields["basin_id"]
     gauges = rivers_at_gauges(earth, h)
     like = like_for_like(earth, h)
     lake = earth.lake_at(*CASPIAN)
-    alike = [r for r in like.values() if r["like"]]
-    fell = (earth.rain.sum(axis=0) * area)[land].sum()
-    to_air = (f["evapotranspiration"].astype(np.float64).sum(axis=0) * area)[land].sum()
+    water = land_water(earth, h)
     return {
         "mouth_km": {name: earth.km(int(basin[earth.cell(*place)]), *mouth) for name, (place, mouth) in GREAT_RIVERS.items()},
         "flow": {name: r["flow"] for name, r in gauges.items()},
         "reaches": {name: r["reaches"] for name, r in gauges.items()},
         "like": {name: (r["like"], r["ratio"]) for name, r in like.items()},
-        "like_all": sum(r["sheds"] * r["basin"] for r in alike) / max(sum(r["measured_depth"] * r["basin"] for r in alike), 1e-30),
+        "like_all": like_together(like)["ratio"],
         "caspian": None if lake is None else {"area_km2": float(lake["area_m2"]) / 1e6, "level_m": float(lake["level_m"]),
                                               "overflows": bool(lake["overflows"]), "outflow_km3": float(lake["outflow_m3_per_year"]) / 1e9},
         "volga": like_for_like(earth, h, {"Volga": VOLGA["gauge"]})["Volga"],
-        "back_to_air": float(to_air / fell),
-        "to_sea": float(f["river_discharge"].astype(np.float64)[:, earth.wet].mean(axis=0).sum() * YEAR_S / 1e12),
-        "lakes_share": float((f["lake_fraction"].astype(np.float64) * area).sum() / area[land].sum())}
+        "back_to_air": water["back_to_air"], "to_sea": water["to_sea"], "lakes_share": water["lakes_share"]}
 
 
 def narrows(earth: Earth, places: dict | None = None) -> dict:
@@ -838,6 +1042,24 @@ def raw_hollows(flood: dict) -> dict:
             "ocean_share_of_planet": float((weight * ocean).sum() / weight.sum())}
 
 
+def data_points_of_cells(earth: Earth, flood: dict) -> dict:
+    """What the relief data hold inside each cell of the mesh, beside what the mesh makes of the cell:
+      ocean_share   the share of the cell's data points, by area, that are ocean in the data (raw_flood)
+      every_point   the height below which the share `valley_share` of ALL the cell's points lie, ocean points with
+                    their depths included. The valley rule of Earth counts the points above the mesh's sea alone, so
+                    a land cell that holds an arm of the sea is handed to Drainage at the height of its land, and a
+                    drowned valley that runs through such cells is closed on the mesh. `every_point` is the other
+                    reading, for comparison (Earth.with_ground): it opens drowned valleys and floods far more land,
+                    and is no better rule."""
+    lat, lon, height = flood["lat"], flood["lon"], flood["height"]
+    cells = cell_of_every_point(earth.mesh, lat, lon)
+    weight = flood["weight"].ravel()
+    n = earth.mesh.n
+    share = np.bincount(cells.ravel(), weights=weight * flood["ocean"].ravel(), minlength=n) / np.maximum(np.bincount(cells.ravel(), weights=weight, minlength=n), 1e-300)
+    every = cell_low_values(earth.mesh, lat, lon, height, earth.valley_share, cells)
+    return {"ocean_share": share, "every_point": np.where(np.isfinite(every), every, earth.mean)}
+
+
 def raw_at(flood: dict, lat, lon) -> dict:
     """The data's grid point nearest a place: its height, whether it is ocean, and the level at which it is joined
     to the ocean (see raw_flood)."""
@@ -890,7 +1112,9 @@ def raw_narrows(flood: dict, narrows: dict | None = None) -> dict:
 def earth_relief_file(mesh) -> tuple:
     """The mean height of ETOPO5 over each cell of the mesh, as a file for the process ReliefFromFile; returns
     (path, SHA-256). The heights are worked out afresh from the checked ETOPO5 file on every call, and the file is
-    written again if it does not hold exactly those heights: a file left there by anyone else is not trusted."""
+    written again if it does not hold exactly those heights: a file left there by anyone else is not trusted.
+    This writes outside the engine's own folders: a folder `mesh` inside the folder of the reference data (the one
+    place where a file made from that data belongs, and where the next call finds it)."""
     out = folder() / "mesh"
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"earth_relief_level{mesh.level}.npy"
@@ -920,7 +1144,11 @@ def earth_twin_explanations(explanations: dict) -> dict:
 def earth_twin_models(models: dict, mesh) -> dict:
     """The models file of the Earth twin. The Isostasy slot is filled by Earth's measured relief, and the Tectonics
     slot is left out: nothing after the relief reads the crust, and a twin with seeded plates under Earth's
-    mountains would answer questions about its crust falsely. Everything after the relief is the engine's own."""
+    mountains would answer questions about its crust falsely. Everything after the relief is the engine's own.
+    This changes two things outside itself: it writes the relief file (earth_relief_file), and it sets an
+    environment variable of the running process, RELIEF_FOLDER_VARIABLE, to the folder that holds it. The models
+    file names the file and the variable, not the folder, so that a world store holds no path of one machine; the
+    process ReliefFromFile reads the variable when the world is built."""
     path, digest = earth_relief_file(mesh)
     os.environ[RELIEF_FOLDER_VARIABLE] = str(Path(path).parent)
     twin = {**models, "slots": {name: slot for name, slot in models["slots"].items() if name != "Tectonics"}}

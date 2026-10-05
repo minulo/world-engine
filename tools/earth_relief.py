@@ -22,18 +22,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import earth_reference as ref                            # noqa: E402
+from worldengine import console                          # noqa: E402
 
 SEAS = {"the Black Sea": (43.0, 34.0), "the Red Sea": (20.0, 38.5), "the Baltic": (58.0, 20.0), "the Caspian": ref.CASPIAN,
         "the Mediterranean": (35.0, 18.0), "Hudson Bay": (60.0, -85.0)}
 
 
-def option(args, name, default, kind=float):
-    return kind(args[args.index(name) + 1]) if name in args else default
-
-
-def report(level=7, valley_share=ref.VALLEY_SHARE, say=print):
-    e = ref.Earth(level, valley_share)
-    m, area, land = e.mesh, e.area.astype(np.float64), e.land
+def report(level=7, valley_share=ref.VALLEY_SHARE, say=print, earth=None, flood=None):
+    """The report. `earth` is an Earth built already (its level and valley share then stand), `flood` the data's own
+    hollows worked out already (earth_reference.raw_flood)."""
+    e = earth if earth is not None else ref.Earth(level, valley_share)
+    valley_share = e.valley_share
+    m = e.mesh
     say(f"Earth's relief (ETOPO5) on {m.n} cells; valley floors at the lowest {valley_share:g} of each cell's land points")
 
     say("\n1. How coarse the heights are, and how often they tie")
@@ -50,20 +50,15 @@ def report(level=7, valley_share=ref.VALLEY_SHARE, say=print):
         f"of the cells is turned round, and of {100 * t['mouth_moved_by_width']:.1f} % when the wider way is left out and the cell numbers settle the ties")
 
     say("\n2. The closed hollows of the data on their own grid, and of the mesh")
-    f = ref.raw_flood()
+    f = flood if flood is not None else ref.raw_flood()
     r = ref.raw_hollows(f)
     say(f"the data: the ocean (water below 0 m joined to the open Pacific) covers {100 * r['ocean_share_of_planet']:.1f} % of the planet. Of all that is not "
         f"ocean, {100 * r['not_ocean']:.1f} % lies under water when every hollow of the data is full ({100 * r['not_ocean_60']:.1f} % between 60 south and "
         f"60 north); of the land above 0 m alone, {100 * r['land']:.1f} % ({100 * r['land_60']:.1f} %)")
-    from worldengine.library import drainage as dr
-    d = e.drainage
-    label, table = d.fields["depression_id"].astype(np.int64), d.tables["hollows"]
-    full_level = table["spill_m"][dr.top_hollows(table)[label]]
-    under = land & (label > 0) & (e.ground < np.where(np.isnan(full_level), np.inf, full_level))
-    mid = np.abs(m.lat) < 60.0
-    say(f"the mesh: {100 * area[land].sum() / area.sum():.1f} % of the planet is not sea. Of it, {100 * area[under].sum() / area[land].sum():.1f} % lies under "
-        f"water when every hollow is full ({100 * area[under & mid].sum() / area[land & mid].sum():.1f} % between 60 south and 60 north); "
-        f"{100 * area[land & (label > 0)].sum() / area[land].sum():.1f} % drains into a closed hollow")
+    h = ref.mesh_hollows(e)
+    say(f"the mesh: {100 * h['not_sea_share']:.1f} % of the planet is not sea. Of it, {100 * h['under_share']:.1f} % lies under "
+        f"water when every hollow is full ({100 * h['under_share_60']:.1f} % between 60 south and 60 north); "
+        f"{100 * h['closed_hollow_share']:.1f} % drains into a closed hollow")
 
     say("\n3. Narrows of six great rivers: in the data (5 minutes of arc), and on the mesh")
     say(f"{'':12s}{'the data: the river stands at':>30s}{'its valley rises to':>21s}{'joined to the ocean at':>24s} | {'the mesh: the valley rises to':>30s}{'the lake above stands at':>26s}")
@@ -101,10 +96,22 @@ def report(level=7, valley_share=ref.VALLEY_SHARE, say=print):
     return e, f
 
 
-if __name__ == "__main__":
-    args = sys.argv[1:]
-    if "--help" in args or "-h" in args:
-        sys.exit(__doc__)
+def parser():
+    p = console.tool_parser(__doc__, "python tools/earth_relief.py")
+    p.add_argument("--level", type=console.whole_number(3, 8), default=7, metavar="LEVEL")
+    p.add_argument("--valley-share", type=console.number_between(0.0, 1.0, open_low=True), default=ref.VALLEY_SHARE, metavar="SHARE")
+    return p
+
+
+def main(argv=None) -> int:
+    args = parser().parse_args(argv)
+    console.print_anywhere()
     if not ref.available():
-        sys.exit("the Earth reference data is not here: run python tools/fetch_reference_data.py")
-    report(option(args, "--level", 7, int), option(args, "--valley-share", ref.VALLEY_SHARE))
+        print("the Earth reference data is not here: run python tools/fetch_reference_data.py", file=sys.stderr)
+        return 1
+    report(args.level, args.valley_share)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

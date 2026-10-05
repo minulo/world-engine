@@ -13,7 +13,10 @@ Each round of 2 My:
   4. every `resample` rounds the points are replaced by one point per cell, filled from the three old points
      of the same plate nearest to it.
 
-Pass conditions, fixed before the first run:
+Pass conditions. The design fixes their form in its build order, step 1 (within one cell; no more than a stated
+share; fewer than a stated share), and it was approved before any code was written. The two shares, 2 % and 1 %,
+are set here. The trial came into the repository together with its first results, so no record shows that they
+were set before the first run [UNVERIFIED: I recall that they were]:
   A. after 125 rounds a marked patch of crust lies within one cell of the place its plate's motion gives;
   B. the area of continental crust has changed by no more than 2 % beyond what the closing of plates destroyed;
   C. fewer than 1 % of cells, on average, switch crust type and switch back within three rounds.
@@ -204,14 +207,14 @@ def trial(level, seed=20261004, resample=RESAMPLE, fill="even", log=print, save=
     if save:
         out = Path(__file__).resolve().parent / "results"
         out.mkdir(exist_ok=True)
-        (out / f"crust_points_level{level}_resample{resample}_{fill}.json").write_text(json.dumps(result, indent=1) + "\n")
+        (out / f"crust_points_level{level}_resample{resample}_{fill}.json").write_text(json.dumps(result, indent=1) + "\n", encoding="utf-8")
     return result
 
 
 OTHER_SEEDS = (1, 2, 3, 7, 10, 11, 13, 16, 25, 42)
 
 
-def other_seeds(level, log=print):
+def other_seeds(level, log=print, save=True):
     """The trial on ten other seeded worlds, to see what holds beyond the default world. One file for all ten."""
     keep = ("seed", "patch_travelled_cells", "patch_left_share", "patch_miss_cells", "patch_centre_miss_cells",
             "crust_drift_mean_cells", "crust_drift_95_in_100_below_cells", "crust_drift_largest_cells",
@@ -222,23 +225,50 @@ def other_seeds(level, log=print):
         result = trial(level, seed=seed, log=lambda line: None, save=False)
         rows.append({k: result[k] for k in keep})
         log(f"  {rows[-1]}")
-    out = Path(__file__).resolve().parent / "results"
-    out.mkdir(exist_ok=True)
-    (out / f"crust_points_level{level}_ten_seeds.json").write_text(json.dumps(
-        {"level": level, "rounds": ROUNDS, "resample_every": RESAMPLE, "fresh_points_filled": "even", "worlds": rows}, indent=1) + "\n")
+    if save:
+        out = Path(__file__).resolve().parent / "results"
+        out.mkdir(exist_ok=True)
+        (out / f"crust_points_level{level}_ten_seeds.json").write_text(json.dumps(
+            {"level": level, "rounds": ROUNDS, "resample_every": RESAMPLE, "fresh_points_filled": "even", "worlds": rows}, indent=1) + "\n",
+            encoding="utf-8")
     return rows
 
 
-if __name__ == "__main__":
-    args = sys.argv[1:]
-    seeds = bool(args) and args[0] == "seeds"
-    levels = [int(a) for a in args[1 if seeds else 0:]] or [5, 7]
+def parser():
+    from worldengine import console
+    p = console.tool_parser(__doc__ + """
+    python trials/crust_points_trial.py [seeds] [LEVEL ...] [--write]
+
+The results are printed. With --write they are also written to trials/results/, over the files kept there. [On the
+machine they were made on, a new run at mesh level 5 differed from the kept files in the seconds a run took and in
+nothing else: MEASURED by the fourth check of build step 2.]
+""", "python trials/crust_points_trial.py")
+    p.add_argument("what", nargs="*", metavar="seeds | LEVEL", help="the word seeds for the ten other seeds; mesh levels (default: 5 and 7)")
+    p.add_argument("--write", action="store_true")
+    return p
+
+
+def main(argv=None) -> int:
+    from worldengine import console
+    args = parser().parse_args(argv)
+    console.print_anywhere()
+    seeds = bool(args.what) and args.what[0] == "seeds"
+    try:
+        levels = [int(a) for a in args.what[1 if seeds else 0:]] or [5, 7]
+    except ValueError:
+        print(f"a mesh level is a whole number, and the word seeds comes first: {' '.join(args.what)}", file=sys.stderr)
+        return 2
     for level in levels:
         if seeds:
             print(f"crust trial at mesh level {level}, ten other seeds, resampling every {RESAMPLE} rounds, fresh points filled even")
-            other_seeds(level)
+            other_seeds(level, save=args.write)
             continue
         for fill in FILLS:
             for every in (RESAMPLE, 10, 60):                    # the paper resamples every 10 to 60 steps
                 print(f"crust trial at mesh level {level}, resampling every {every} rounds, fresh points filled {fill}")
-                trial(level, resample=every, fill=fill)
+                trial(level, resample=every, fill=fill, save=args.write)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -57,12 +57,18 @@ HAIR = 1.0e-9          # ... and so does less than this share of what reaches a 
 HEIGHTS_AGREE = 1.0e-6     # in check_table: a pass may differ from the ground handed over by this share of its height (and by this many metres)
 
 
-def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, ground: np.ndarray) -> None:
+def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, ground: np.ndarray, nbr: np.ndarray) -> None:
     """Refuse a table of hollows that does not keep the rules this module relies on (data/tables.yaml states them).
 
     label   per cell, the hollow it drains into (the field depression_id)
     recv    per cell, its receiver; sea: per cell, whether it is sea; ground: per cell, the height of the ground
+    nbr     per cell, its neighbours (-1 where a cell has fewer)
     Raises ValueError naming the first rule broken.
+
+    What it cannot show: that the pass a hollow names is its lowest. A table that names a higher pass, with the
+    right cells and the right height, keeps every rule here, and its lake then stands too high. To show otherwise
+    would be to find the hollows again [MEASURED by the fourth check of step 2: a pass at 894 m named for one at
+    530 m is accepted].
     """
     def refuse(what):
         raise ValueError(f"the table of hollows does not keep its rules: {what}")
@@ -99,6 +105,11 @@ def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, gro
     has_parent[dr.SEA] = False
     if (parent[has_parent] <= row[has_parent]).any() or (parent[has_parent] >= rows).any():
         refuse("a parent must stand in a later row than its parts")
+    named = np.bincount(parent[has_parent], minlength=rows)  # how many rows name each row as their parent
+    if (named[merged] != 2).any() or (named[~merged] != 0).any():
+        k = int(row[np.where(merged, named != 2, named != 0)][0])
+        refuse(f"row {k} is named as parent by {int(named[k])} rows: a hollow made of two is the parent of its two parts "
+               f"and of no other row, and a hollow with one bottom is the parent of none")
     sib = sibling[has_parent]
     if ((sib < 1) | (sib >= rows)).any() or (parent[np.clip(sib, 0, rows - 1)] != parent[has_parent]).any() \
             or (sib == row[has_parent]).any():
@@ -121,6 +132,9 @@ def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, gro
         refuse(f"cell {c}: depression_id is {int(label[c])}, but down its receivers its water ends "
                + ("in the sea" if drains_into[c] == dr.SEA else f"at the bottom of hollow {int(drains_into[c])}")
                + ": depression_id must be the hollow with one bottom that the cell drains into (0 for the sea)")
+    if not np.isfinite(low[1:]).all():
+        k = 1 + int(np.flatnonzero(~np.isfinite(low[1:]))[0])
+        refuse(f"row {k}: bottom_m must be a height, and it is {low[k]}")
     one, two = first[merged], second[merged]                 # a hollow made of two: its bottom is that of its deeper part
     deepest = np.minimum(low[one], low[two])
     if (((bottom[merged] != bottom[one]) | (low[one] > deepest)) & ((bottom[merged] != bottom[two]) | (low[two] > deepest))).any():
@@ -137,10 +151,14 @@ def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, gro
         refuse("a hollow inside another must name its pass")
     no_pass = ~has_pass
     no_pass[dr.SEA] = False
-    if (~np.isnan(spill[no_pass])).any() or (here[no_pass] >= 0).any() or (into[no_pass] >= 0).any():
+    if (~np.isnan(spill[no_pass])).any() or (here[no_pass] != -1).any() or (beyond[no_pass] != -1).any() or (into[no_pass] != -1).any():
         refuse("a hollow with no way out has no value for spill_m, and -1 for the cells of its pass and for spill_into_hollow")
-    if np.isnan(spill[has_pass]).any() or ((here[has_pass] < 0) | (here[has_pass] >= n) | (beyond[has_pass] >= n)).any():
-        refuse("a hollow with a pass must give its level and its two cells")
+    if not np.isfinite(spill[has_pass]).all() or ((here[has_pass] < 0) | (here[has_pass] >= n) | (beyond[has_pass] >= n)).any():
+        refuse("a hollow with a pass must give its level, a height, and its two cells")
+    k = row[has_pass]
+    if not (nbr[here[k]] == beyond[k][:, None]).any(axis=1).all():
+        j = int(k[np.flatnonzero(~(nbr[here[k]] == beyond[k][:, None]).any(axis=1))[0]])
+        refuse(f"row {j}: the two cells of a pass must be neighbours, and cells {int(here[j])} and {int(beyond[j])} are not")
     if (into[has_pass] != label[beyond[has_pass]]).any():
         k = int(row[has_pass][np.flatnonzero(into[has_pass] != label[beyond[has_pass]])[0]])
         refuse(f"row {k}: spill_into_hollow must be the hollow with one bottom that the cell beyond the pass drains into "
@@ -151,8 +169,16 @@ def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, gro
         if parent[k] >= 0:
             inside[k] = inside[parent[k]]
     k = row[has_pass]
-    if (inside[label[here[k]]] != inside[k]).any():
-        refuse("the cell on a hollow's own side of its pass must drain into that hollow")
+    up = label[here[k]]                                      # the outlet cell drains into the row itself, or into a part of it
+    for _ in range(rows):
+        done = (up == k) | (up <= dr.SEA) | (parent[np.maximum(up, 0)] < 0)
+        if done.all():
+            break
+        up = np.where(done, up, parent[np.maximum(up, 0)])
+    if (up != k).any():
+        j = int(k[np.flatnonzero(up != k)[0]])
+        refuse(f"row {j}: the cell on a hollow's own side of its pass must drain into that hollow, and cell {int(here[j])} "
+               f"drains into " + ("the sea" if label[here[j]] == dr.SEA else f"hollow {int(label[here[j]])}, which is no part of it"))
     in_sibling = has_parent.copy()
     if in_sibling.any():                                     # the water of a part runs into its sibling
         k = row[in_sibling]
@@ -181,6 +207,15 @@ def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, gro
         refuse(f"row {j}: spill_m is {spill[j]:.3f} m, but the higher of the two cells of its pass stands at "
                f"{float(np.maximum(ground[here[j]], ground[beyond[j]])):.3f} m in the field elevation: the heights of the table "
                f"must be those of that field")
+    far = inside[into[tops]]                                 # the hollow inside no other around the cell beyond the pass (0: the sea)
+    onward = np.where(far == dr.SEA, -np.inf, np.where(np.isnan(spill[far]), np.inf, spill[far]))
+    higher = onward > spill[tops] + HEIGHTS_AGREE * np.maximum(np.abs(spill[tops]), 1.0)
+    if higher.any():
+        j = int(tops[np.flatnonzero(higher)[0]])
+        f = int(inside[into[j]])
+        refuse(f"row {j} overflows at {spill[j]:.3f} m into the ground of hollow {f}, which "
+               + ("has no way out" if np.isnan(spill[f]) else f"overflows only at {spill[f]:.3f} m")
+               + ": a hollow inside no other overflows into ground whose own hollow overflows no higher")
     tree_order(table)                                        # refuses a ring of hollows that overflow into one another
 
 
@@ -384,7 +419,9 @@ def _through_lakes(stack, recv, values, crossing, held):
     share is applied, and per row of the table the share a lake that overflows passes on and the water that
     reaches it in the year. A closed lake needs no rule here: its cells drain to its bottom, which has no receiver,
     so nothing that enters it is handed on. [MEASURED: on 60 rough grounds under random climates no cell of a closed
-    lake had a receiver outside that lake]"""
+    lake had a receiver outside that lake, and on 1,110 more of the fourth check of build step 2. That check also built
+    the one case in which a cell has: a hollow that receives less than a millionth of a cubic metre of water a year,
+    over ground that loses nothing when flooded. The water concerned is that millionth.]"""
     months, n = values.shape
     passing = values.copy()
     passed = np.zeros(held.size)

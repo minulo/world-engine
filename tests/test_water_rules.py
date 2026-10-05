@@ -144,58 +144,93 @@ def test_the_count_of_ties_is_the_count_a_walk_over_the_cells_gives():
     assert min(want.values()) > 10 and want["tied"] == want["by_bed"] + want["by_width"] + want["by_number"]
 
 
-def test_the_ties_of_a_mesh_go_to_the_wider_way_and_rounding_errors_seldom_settle_them():
-    m = get_mesh(4)
+def symmetries(m):
+    """Three of the 120 turns and mirrorings that map the mesh onto itself: a fifth of a turn about the axis through
+    the poles, a third of a turn about the middle of a face, and the mirroring in the plane through the poles and
+    the first corner beside the north pole. Each as (name, matrix)."""
+    turn = np.deg2rad(72.0)
+    about_the_poles = np.array([[np.cos(turn), -np.sin(turn), 0.0], [np.sin(turn), np.cos(turn), 0.0], [0.0, 0.0, 1.0]])
+    k = m.xyz[[0, 1, 2]].sum(axis=0)                                             # the north pole and two corners beside it: a face
+    k = k / np.linalg.norm(k)                                                    # ... of the icosahedron, and its middle
+    cross = np.array([[0.0, -k[2], k[1]], [k[2], 0.0, -k[0]], [-k[1], k[0], 0.0]])
+    third = np.deg2rad(120.0)
+    about_a_face = np.eye(3) + np.sin(third) * cross + (1.0 - np.cos(third)) * cross @ cross
+    mirror = np.diag([1.0, -1.0, 1.0])
+    return (("a fifth of a turn about the poles", about_the_poles), ("a third of a turn about a face", about_a_face), ("a mirroring", mirror))
+
+
+@pytest.mark.parametrize("level, families", [(4, 72), (5, 272), (6, 1056)])
+def test_the_ties_of_a_mesh_go_to_the_wider_way_and_images_of_one_boundary_tie_exactly(level, families):
+    """mesh_ties: the longer boundary is the wider way, and boundaries that are images of each other under a symmetry
+    of the mesh count as exactly equal, though their lengths as worked out differ in the last digits. The numbers of
+    families are those an independent count gave [MEASURED by the fourth check of step 2, from the 120 symmetries
+    themselves: 272, 1,056 and 4,160 at levels 5, 6 and 7]."""
+    from scipy.spatial import cKDTree
+    m = get_mesh(level)
     t = dr.mesh_ties(m)
-    assert np.array_equal(t.rank, np.arange(m.n)) and t.edge.shape == (m.edge_cells.shape[0],)
+    assert dr.mesh_ties(m) is t                                                  # worked out once for a mesh
+    assert np.array_equal(t.rank, np.arange(m.n)) and t.edge.shape == (m.edge_cells.shape[0],) and t.passes is None
     valid = m.nbr >= 0
     assert np.array_equal(t.way[valid], t.edge[m.nbr_edge[valid]]) and np.all(np.isneginf(t.way[~valid]))
-    wider = np.argsort(m.edge_dual)
-    assert np.all(np.diff(t.edge[wider]) >= 0) and np.unique(t.edge).size > 20   # the longer boundary never ranks lower
-    # A fifth of a turn about the axis maps the mesh onto itself. The boundaries around a cell and around its image
-    # are the same lengths, but worked out from other numbers, so they differ in their last digits: as ties they
-    # must still count as equal.
-    turn = np.deg2rad(72.0)
-    rz = np.array([[np.cos(turn), -np.sin(turn), 0.0], [np.sin(turn), np.cos(turn), 0.0], [0.0, 0.0, 1.0]])
-    goes_to = np.argmax(m.xyz @ rz.T @ m.xyz.T, axis=1)
-    assert np.array_equal(np.sort(t.way, axis=1), np.sort(t.way[goes_to], axis=1))
-    lengths = np.where(valid, m.nbr_dual, -np.inf)
-    assert not np.array_equal(np.sort(lengths, axis=1), np.sort(lengths[goes_to], axis=1))      # the case: the raw lengths differ
-    # two boundaries a part in ten billion apart count as one width; a part in a hundred million apart do not
-    class Two:
-        edge_dual = np.array([1.0, 1.0 + 1e-10, 1.0 - 1e-8])
-        nbr = np.array([[1, 2, -1], [0, 2, -1], [0, 1, -1]])
-        nbr_edge = np.array([[0, 1, -1], [0, 2, -1], [1, 2, -1]])
-        n = 3
-    two = dr.mesh_ties(Two)
-    assert two.edge[0] == two.edge[1] and two.edge[2] < two.edge[0]
-    # ... but the rounding is a grid and not a tolerance: two lengths on either side of a rounding step are told
-    # apart however near they are. Here they differ by two parts in ten trillion
-    Two.edge_dual = np.array([1.0, 0.5 + 0.4999e-9, 0.5 + 0.5001e-9])
-    split = dr.mesh_ties(Two)
-    assert split.edge[2] == split.edge[1] + 1.0
+    family = dr.boundary_families(m)
+    sizes = np.bincount(family)
+    assert sizes.size == families and set(sizes.tolist()) <= {60, 120}           # an image under each of 120 symmetries, or under 60
+    # one width to a family, and another to every other family; the longer family has the larger width
+    length = np.asarray(m.edge_dual, dtype=np.float64)
+    shortest, longest = np.full(families, np.inf), np.full(families, -np.inf)
+    np.minimum.at(shortest, family, length)
+    np.maximum.at(longest, family, length)
+    width = np.full(families, -1.0)
+    width[family] = t.edge
+    assert np.array_equal(width[family], t.edge) and np.unique(width).size == families
+    assert np.array_equal(np.argsort(shortest, kind="stable"), np.argsort(width, kind="stable"))
+    # the case: within a family the lengths as worked out do differ, by rounding errors and by far less than
+    # families differ from each other on these meshes
+    spread = (longest - shortest).max() / length.max()
+    assert 0.0 < spread < 1.0e-10 and (longest > shortest).sum() > 0.9 * families
+    assert np.diff(np.sort(shortest)).min() / length.max() > 10.0 * spread
+    # a symmetry of the mesh carries the widths around a cell onto the widths around its image, exactly
+    tree = cKDTree(m.xyz)
+    for name, matrix in symmetries(m):
+        away, goes_to = tree.query(m.xyz @ matrix.T)
+        assert away.max() < 1e-9, name                                           # the mesh does map onto itself
+        assert np.array_equal(np.sort(t.way, axis=1), np.sort(t.way[goes_to], axis=1)), name
+        raw = np.where(valid, m.nbr_dual, -np.inf)
+        assert not np.array_equal(np.sort(raw, axis=1), np.sort(raw[goes_to], axis=1)), name       # which the worked-out lengths do not
 
 
-@pytest.mark.parametrize("level", [5, 6])
-def test_how_often_the_rounding_errors_of_the_mesh_still_settle_a_tie(level):
-    """What mesh_ties says of itself. The mesh has boundaries that are mirror images of each other and exactly as
-    long; worked out, they differ by rounding errors. In the sorted list of all lengths those are the neighbours
-    that differ by less than 1e-11 of the longest: nearly all of the list. The rounding must make them equal, so
-    that the order of the cells settles such a tie and not the rounding error, and it does but for the few that
-    fall on either side of a rounding step [MEASURED in the build environment: none of 30,448 at level 5, 2 of
-    121,824 at level 6, 29 of 487,377 at level 7. The counts may differ on another processor, so the test asks
-    for under one in a thousand]."""
-    m = get_mesh(level)
-    order = np.argsort(m.edge_dual)
-    raw, rounded = m.edge_dual[order], dr.mesh_ties(m).edge[order]
-    gap = np.diff(raw) / raw.max()
-    alike = gap < 1e-11
-    assert alike.sum() > 0.9 * gap.size                                         # the case: the mesh is full of such pairs
-    assert (np.diff(raw)[alike] > 0).sum() > 0.5 * alike.sum()                   # ... and their worked-out lengths do differ
-    split = alike & (np.diff(rounded) != 0)
-    assert split.sum() < 1e-3 * alike.sum(), (int(split.sum()), int(alike.sum()))
-    # unlike lengths stay unlike where they differ by more than a few rounding steps
-    assert np.all(np.diff(rounded)[gap > 2.0 * dr.EQUAL_WIDTHS] > 0)
+def test_on_the_standard_mesh_images_tie_exactly_as_well_though_two_families_lie_nearer_than_the_rounding():
+    """The standard mesh is the case the test above leaves out: its families of boundaries are 4,160, and the two
+    nearest in length differ by less than the rounding errors inside one family (5e-12 of the longest boundary
+    against 1.5e-11). So which of those two counts as the wider is an accident of the rounding
+    (docs/BUILD_NOTES.md, section 7, item 20). What must hold all the same: every boundary has the width of its
+    family, and a symmetry of the mesh carries the widths around a cell onto those around its image, exactly. The
+    three symmetries tried generate all 120 [INFERRED: a fifth of a turn about a corner and a third of a turn about
+    a face beside it generate the 60 turns of the icosahedron, and one mirroring gives the rest]."""
+    from scipy.spatial import cKDTree
+    m = get_mesh(7)
+    t = dr.mesh_ties(m)
+    family = dr.boundary_families(m)
+    sizes = np.bincount(family)
+    assert sizes.size == 4160 and set(sizes.tolist()) <= {60, 120}
+    length = np.asarray(m.edge_dual, dtype=np.float64)
+    shortest, longest = np.full(sizes.size, np.inf), np.full(sizes.size, -np.inf)
+    np.minimum.at(shortest, family, length)
+    np.maximum.at(longest, family, length)
+    width = np.full(sizes.size, -1.0)
+    width[family] = t.edge
+    assert np.array_equal(width[family], t.edge) and np.unique(width).size == sizes.size
+    spread = (longest - shortest).max() / length.max()
+    nearest = np.diff(np.sort(shortest)).min() / length.max()
+    assert 0.0 < nearest < spread < 1.0e-10                                      # the case
+    valid = m.nbr >= 0
+    tree = cKDTree(m.xyz)
+    for name, matrix in symmetries(m):
+        away, goes_to = tree.query(m.xyz @ matrix.T)
+        assert away.max() < 1e-9, name
+        assert np.array_equal(np.sort(t.way, axis=1), np.sort(t.way[goes_to], axis=1)), name
+        raw = np.where(valid, m.nbr_dual, -np.inf)
+        assert not np.array_equal(np.sort(raw, axis=1), np.sort(raw[goes_to], axis=1)), name
 
 
 def test_drainage_settles_its_ties_by_the_mesh_and_not_by_the_cell_numbers():
@@ -444,7 +479,7 @@ def rough():
     surface = np.where(sea, shore, ground)
     recv = dr.receivers(surface, sea, m.nbr, bed)
     label, table = dr.hollows(surface, sea, recv, dr.flow_stack(recv), m.edge_cells, area, bed)
-    lk.check_table(table, label, recv, sea, surface)                              # as written, it keeps its rules
+    lk.check_table(table, label, recv, sea, surface, m.nbr)                       # as written, it keeps its rules
     return dict(m=m, table=table, label=label, recv=recv, sea=sea, ground=surface)
 
 
@@ -482,7 +517,7 @@ class Case:
         self.a, self.b = 1, 2                                                     # two hollows with one bottom
 
     def check(self):
-        lk.check_table(self.t, self.label, self.recv, self.sea, self.ground)
+        lk.check_table(self.t, self.label, self.recv, self.sea, self.ground, self.m.nbr)
 
 
 @breaks("it has no column sibling")
@@ -546,9 +581,36 @@ def a_part_names_no_sibling(c):
     c.t["sibling"][c.t["first_child"][c.merged]] = -1
 
 
+@breaks("the two parts of a hollow must name each other as sibling")
+def a_part_names_a_row_of_another_hollow_as_sibling(c):
+    """The row named exists and is not the part itself; it is only not the other part of the same hollow. No other
+    rule looks at it: when the changes on purpose of the fourth check were run again, this clause could be taken out
+    of the check and no test noticed."""
+    k = int(c.t["first_child"][c.merged])
+    other = int(next(x for x in range(1, c.rows) if x != k and c.t["parent"][x] != c.t["parent"][k]))
+    assert other != c.t["sibling"][k]
+    c.t["sibling"][k] = other
+
+
 @breaks("a hollow inside no other has no sibling")
 def a_hollow_inside_no_other_names_a_sibling(c):
     c.t["sibling"][c.top] = 1 if c.top != 1 else 2
+
+
+@breaks("is named as parent by 3 rows: a hollow made of two is the parent of its two parts and of no other row")
+def a_third_row_names_a_hollow_made_of_two_as_its_parent(c):
+    """A hollow inside no other claims a larger hollow as its parent and one of that hollow's parts as its sibling.
+    The larger hollow and its two parts say nothing else than before. Unrefused, Hydrology loses the water that this
+    hollow overflows with [MEASURED by the fourth check of step 2: an eighth of the rain on a ground built for it]."""
+    k = int(next(k for k in range(c.single + 1, c.rows) if c.t["first_child"][k] >= 0))
+    x = int(next(x for x in c.tops if x <= c.single))
+    c.t["parent"][x], c.t["sibling"][x] = k, c.t["first_child"][k]
+
+
+@breaks("is named as parent by 1 rows: .* a hollow with one bottom is the parent of none")
+def a_hollow_with_one_bottom_is_named_as_parent(c):
+    x, y = [int(x) for x in c.tops if x <= c.single][:2]
+    c.t["parent"][x], c.t["sibling"][x] = y, y
 
 
 @breaks("depression_id must be 0 or the row of a hollow with one bottom")
@@ -613,6 +675,21 @@ def the_height_of_a_bottom_is_fifty_metres_out(c):
     c.t["bottom_m"][c.a] += 50.0
 
 
+@breaks("bottom_m must be a height, and it is nan")
+def the_height_of_a_bottom_is_missing(c):
+    c.t["bottom_m"][c.a] = np.nan
+
+
+@breaks("bottom_m must be a height, and it is nan")
+def the_height_of_the_bottom_of_a_hollow_made_of_two_is_missing(c):
+    c.t["bottom_m"][c.merged] = np.nan
+
+
+@breaks("bottom_m must be a height, and it is -inf")
+def the_height_of_a_bottom_is_infinite(c):
+    c.t["bottom_m"][c.b] = -np.inf
+
+
 @breaks("a hollow inside another must name its pass")
 def a_hollow_inside_another_names_no_pass(c):
     c.t["spill_into_cell"][c.part] = -1
@@ -630,9 +707,26 @@ def a_hollow_without_a_pass_still_names_where_it_overflows(c):
     c.t["spill_m"][c.top] = np.nan
 
 
-@breaks("a hollow with a pass must give its level and its two cells")
+@breaks("a hollow with no way out has no value for spill_m, and -1 for the cells of its pass")
+def a_hollow_without_a_pass_has_minus_two_for_a_cell_of_its_pass(c):
+    c.t["spill_m"][c.top] = np.nan
+    c.t["spill_from_cell"][c.top], c.t["spill_into_cell"][c.top], c.t["spill_into_hollow"][c.top] = -2, -1, -1
+
+
+@breaks("a hollow with no way out has no value for spill_m, and -1 for the cells of its pass")
+def a_hollow_without_a_pass_has_minus_two_for_the_cell_beyond(c):
+    c.t["spill_m"][c.top] = np.nan
+    c.t["spill_from_cell"][c.top], c.t["spill_into_cell"][c.top], c.t["spill_into_hollow"][c.top] = -1, -2, -1
+
+
+@breaks("a hollow with a pass must give its level, a height, and its two cells")
 def a_hollow_with_a_pass_has_no_level(c):
     c.t["spill_m"][c.top] = np.nan
+
+
+@breaks("a hollow with a pass must give its level, a height, and its two cells")
+def the_level_of_a_pass_is_infinite(c):
+    c.t["spill_m"][c.top] = np.inf
 
 
 @breaks("spill_into_hollow must be the hollow with one bottom that the cell beyond the pass drains into")
@@ -645,24 +739,59 @@ def the_pass_is_said_to_lead_into_another_hollow(c):
     c.t["spill_into_hollow"][c.part] = [k for k in range(1, c.single + 1) if k != c.t["spill_into_hollow"][c.part]][0]
 
 
+@breaks("the two cells of a pass must be neighbours")
+def the_two_cells_of_a_pass_are_not_neighbours(c):
+    """A part's outlet cell is the higher of the two, so any lower cell of the far hollow keeps the height right:
+    one that does not touch the outlet cell is named."""
+    for k in range(1, c.rows):
+        here, beyond = int(c.t["spill_from_cell"][k]), int(c.t["spill_into_cell"][k])
+        if c.t["parent"][k] < 0 or c.ground[here] != c.t["spill_m"][k]:
+            continue
+        far = np.flatnonzero((c.label == c.label[beyond]) & (c.ground < c.ground[here]) & ~np.isin(np.arange(c.label.size), c.m.nbr[here]))
+        if far.size:
+            c.t["spill_into_cell"][k] = far[0]
+            return
+    raise AssertionError("no such pass on this ground")
+
+
 @breaks("the cell on a hollow's own side of its pass must drain into that hollow")
 def the_outlet_cell_lies_outside_its_hollow(c):
+    """The outlet cell named is another neighbour of the cell beyond the pass, outside the hollow."""
     inside = np.isin(c.label, list(leaves_of(c.t, c.top)))
-    c.t["spill_from_cell"][c.top] = np.flatnonzero(~inside & ~c.sea)[0]
+    beyond = int(c.t["spill_into_cell"][c.top])
+    c.t["spill_from_cell"][c.top] = next(int(j) for j in c.m.nbr[beyond] if j >= 0 and not inside[j] and not c.sea[j])
+
+
+@breaks("the cell on a hollow's own side of its pass must drain into that hollow")
+def the_two_cells_of_a_pass_change_places(c):
+    """The outlet cell of a part then lies in its sibling's ground; the two cells are still neighbours and the height
+    of the pass is still that of the higher."""
+    k = c.part
+    here, beyond = int(c.t["spill_from_cell"][k]), int(c.t["spill_into_cell"][k])
+    c.t["spill_from_cell"][k], c.t["spill_into_cell"][k], c.t["spill_into_hollow"][k] = beyond, here, c.label[here]
 
 
 @breaks("the pass of a part of a hollow must lead into the other part")
 def the_pass_of_a_part_leads_past_its_sibling(c):
-    k = c.part
-    kin = leaves_of(c.t, c.t["sibling"][k]) | {k}
-    cell = int(np.flatnonzero(~np.isin(c.label, list(kin)) & (c.label > 0))[0])
-    c.t["spill_into_cell"][k], c.t["spill_into_hollow"][k] = cell, c.label[cell]
+    """The cell beyond is another neighbour of the outlet cell, in ground that is neither the part's nor its sibling's."""
+    for k in range(1, c.rows):
+        if c.t["parent"][k] < 0:
+            continue
+        kin = leaves_of(c.t, c.t["sibling"][k]) | leaves_of(c.t, k)
+        here = int(c.t["spill_from_cell"][k])
+        past = [int(j) for j in c.m.nbr[here] if j >= 0 and int(c.label[j]) not in kin and not c.sea[j]]
+        if past:
+            c.t["spill_into_cell"][k], c.t["spill_into_hollow"][k] = past[0], c.label[past[0]]
+            return
+    raise AssertionError("no such pass on this ground")
 
 
 @breaks("a hollow inside no other cannot overflow into itself")
 def a_hollow_inside_no_other_overflows_into_its_own_ground(c):
-    c.t["spill_into_cell"][c.top] = c.t["bottom_cell"][c.top]
-    c.t["spill_into_hollow"][c.top] = c.label[c.t["bottom_cell"][c.top]]
+    """The cell beyond is the outlet cell's own receiver: a neighbour, inside the hollow."""
+    top = next(int(k) for k in c.tops if c.t["spill_from_cell"][k] >= 0 and c.recv[c.t["spill_from_cell"][k]] >= 0)
+    own = int(c.recv[c.t["spill_from_cell"][top]])
+    c.t["spill_into_cell"][top], c.t["spill_into_hollow"][top] = own, c.label[own]
 
 
 @breaks("a hollow cannot overflow lower than its parts do")
@@ -693,6 +822,40 @@ def the_field_of_heights_is_on_another_datum(c):
     c.t["bottom_m"] = c.t["bottom_m"] + 100.0                                     # the bottoms follow; the passes do not
 
 
+@breaks("overflows only at .* m: a hollow inside no other overflows into ground whose own hollow overflows no higher")
+def a_hollow_overflows_into_ground_whose_hollow_overflows_higher(c):
+    """One hollow overflows into the ground of a second. The second is given another pass of its own, a real one with
+    the right cells and the right height, but higher than the first hollow's: the first could then never drain."""
+    a, b = c.m.edge_cells[:, 0], c.m.edge_cells[:, 1]
+    top_of = dr.top_hollows(c.t)
+    for t1 in c.tops:
+        into = int(c.t["spill_into_hollow"][t1])
+        if into <= 0:
+            continue
+        t2 = int(top_of[into])
+        mine = np.isin(c.label, list(leaves_of(c.t, t2)))
+        for e in np.argsort(np.maximum(c.ground[a], c.ground[b]), kind="stable"):
+            i, j = (int(a[e]), int(b[e])) if mine[a[e]] else (int(b[e]), int(a[e]))
+            if mine[i] == mine[j] or c.sea[j]:
+                continue
+            height = max(c.ground[i], c.ground[j])
+            if height <= c.t["spill_m"][t1] + 1.0 or top_of[c.label[j]] == t1 or (c.label[j] > 0 and top_of[c.label[j]] == t2):
+                continue
+            c.t["spill_m"][t2], c.t["spill_from_cell"][t2], c.t["spill_into_cell"][t2], c.t["spill_into_hollow"][t2] = height, i, j, c.label[j]
+            return
+    raise AssertionError("no such pair of hollows on this ground")
+
+
+@breaks("which has no way out: a hollow inside no other overflows into ground whose own hollow overflows no higher")
+def a_hollow_overflows_into_ground_whose_hollow_has_no_way_out(c):
+    top_of = dr.top_hollows(c.t)
+    t1 = next(int(k) for k in c.tops if c.t["spill_into_hollow"][k] > 0)
+    t2 = int(top_of[c.t["spill_into_hollow"][t1]])
+    c.t["spill_m"][t2] = np.nan
+    for name in ("spill_from_cell", "spill_into_cell", "spill_into_hollow"):
+        c.t[name][t2] = -1
+
+
 @pytest.mark.parametrize("change, words", BREAKAGES)
 def test_a_table_of_hollows_that_breaks_one_rule_is_refused_in_the_words_of_that_rule(rough, change, words):
     """Hydrology takes the table of hollows from whatever process fills the Drainage slot, and data/tables.yaml states
@@ -706,22 +869,59 @@ def test_a_table_of_hollows_that_breaks_one_rule_is_refused_in_the_words_of_that
         case.check()
 
 
-def test_a_ring_of_hollows_whose_passes_are_all_in_order_is_refused():
-    """Three pits, each overflowing into the next and the last toward the sea. The last is made to overflow into the
-    first instead: from its true outlet cell into the bottom of the first pit, at the height of the higher of those
-    two cells, so that every rule about a single pass is kept. Only the order in which to fill them has no end."""
-    m = get_mesh(6)
+def test_a_pass_into_the_sea_must_lead_to_a_sea_cell_beside_the_outlet():
+    """A hollow whose outlet cell stands beside the sea. Its pass is rewritten to lead into a sea cell on the far side
+    of the planet: the height of a pass into the sea is only bounded from below, and the far cell is sea as before,
+    so nothing but the rule of neighbours refuses it. Unrefused, a river would leave the land there [MEASURED by the
+    fourth check of step 2: 100,651 m3/s arrived in a sea cell 19,239 km away]."""
+    m = get_mesh(4)
     area = m.area * R * R
-    ground, sea = three_pits(m)
-    base = lake_case(m, ground, sea, area, area.copy(), np.zeros((2, m.n)))
-    t, label = base["table"], base["label"]
-    assert list(t["spill_into_hollow"][1:4]) == [2, 3, 0] and len(t["parent"]) == 4
-    ring = {name: np.array(col) for name, col in t.items()}
-    here, beyond = int(t["spill_from_cell"][3]), int(t["bottom_cell"][1])
-    ring["spill_into_cell"][3], ring["spill_into_hollow"][3] = beyond, 1
-    ring["spill_m"][3] = max(ground[here], ground[beyond])
+    here = 100
+    ring, (one, two, three) = ring_of(m, here)
+    ground = hill_with_a_hole(m, here)
+    ground[here], ground[one], ground[two] = 10.0, -100.0, -3000.0
+    sea = np.zeros(m.n, dtype=bool)
+    sea[two] = True
+    far = int(np.argmin(m.xyz @ m.xyz[here]))                                    # the cell opposite
+    sea[far], ground[far] = True, -3000.0
+    surface = np.where(sea, 0.0, ground)
+    recv = dr.receivers(surface, sea, m.nbr, ground)
+    label, table = dr.hollows(surface, sea, recv, dr.flow_stack(recv), m.edge_cells, area, ground)
+    lk.check_table(table, label, recv, sea, ground, m.nbr)
+    k = int(label[one])
+    assert (table["spill_from_cell"][k], table["spill_into_cell"][k], table["spill_into_hollow"][k]) == (here, two, 0)
+    moved = {name: np.array(col) for name, col in table.items()}
+    moved["spill_into_cell"][k] = far
+    with pytest.raises(ValueError, match=f"row {k}: the two cells of a pass must be neighbours, and cells {here} and {far} are not"):
+        lk.check_table(moved, label, recv, sea, ground, m.nbr)
+
+
+def test_a_ring_of_hollows_whose_passes_are_all_in_order_is_refused():
+    """Two pits beside one cell that stands at 100 m, on a planet without a sea: each pit overflows at 100 m, and
+    Drainage makes one larger hollow of the two. The table is rewritten so that each stays a hollow inside no other
+    and overflows into the other's ground: every rule about a single pass is kept (neighbouring cells, the right
+    heights, the outlet in its own ground, the far ground overflowing no higher), and only the order in which to
+    fill them has no end."""
+    m = get_mesh(4)
+    area = m.area * R * R
+    here = 100
+    ring, (one, two, three) = ring_of(m, here)
+    ground = hill_with_a_hole(m, here)
+    ground[here], ground[one], ground[two] = 100.0, 10.0, 20.0
+    sea = np.zeros(m.n, dtype=bool)
+    recv = dr.receivers(ground, sea, m.nbr, ground)
+    label, table = dr.hollows(ground, sea, recv, dr.flow_stack(recv), m.edge_cells, area, ground)
+    lk.check_table(table, label, recv, sea, ground, m.nbr)
+    a, b = int(label[one]), int(label[two])
+    assert label[here] == a and len(table["parent"]) == 4 and table["parent"][a] == table["parent"][b] == 3 and np.isnan(table["spill_m"][3])
+    assert (table["spill_from_cell"][b], table["spill_into_cell"][b], table["spill_m"][b]) == (two, here, 100.0)
+    ringed = {name: np.array(col[:3]) for name, col in table.items()}             # rows 0 to 2: the sea and the two pits
+    for name in ("parent", "sibling"):
+        ringed[name][:] = -1
+    ringed["spill_from_cell"][a], ringed["spill_into_cell"][a], ringed["spill_into_hollow"][a], ringed["spill_m"][a] = here, two, b, 100.0
+    ringed["spill_from_cell"][b], ringed["spill_into_cell"][b], ringed["spill_into_hollow"][b], ringed["spill_m"][b] = two, here, a, 100.0
     with pytest.raises(ValueError, match="hollow .* overflows, by way of others, into itself"):
-        lk.check_table(ring, label, base["recv"], sea, ground)
+        lk.check_table(ringed, label, recv, sea, ground, m.nbr)
 
 
 def test_hydrology_refuses_a_table_of_hollows_that_breaks_its_rules():
@@ -759,3 +959,45 @@ def test_under_a_closed_lake_a_cell_counts_the_runoff_of_its_dry_part_only():
     assert np.allclose(local[:, part], (runoff * area / 1000.0 / month_s)[:, part], rtol=1e-5)
     whole = share == 1
     assert whole.sum() > 5 and not local[:, whole].any()
+
+
+def test_the_written_rules_of_the_table_of_hollows_are_the_ones_the_check_enforces():
+    """data/tables.yaml states the rules for whoever writes another Drainage, and library/lakes.check_table enforces
+    them. The two are written apart, so each written rule is tied here to the refusals that enforce it: a rule
+    struck from the file while the check still enforced it (or the other way round) would leave a replacement's
+    author with a refusal that no written rule explains. [The fourth check of build step 2 deleted a rule from
+    the file, and no test noticed.]"""
+    import yaml
+    from conftest import DATA
+    written = yaml.safe_load((DATA / "tables.yaml").read_text(encoding="utf-8"))["tables"]["hollows"]["rules"]
+    said = {1: ("Row 0 is the sea",),
+            2: ("one for every land cell without a receiver", "depression_id holds the row of that bottom"),
+            3: ("name it as their parent and each other as sibling", "no other row names it as parent", "A parent stands in a later row"),
+            4: ("always names its pass", "The two cells of a pass are neighbours", "never a larger hollow around that cell"),
+            5: ("The pass of a part leads into its sibling", "share one spill_m", "no hollow overflows lower than its parts"),
+            6: ("never without a value or infinite", "the higher of the two cells of the pass", "the bottom of its deeper part"),
+            7: ("overflows into the sea, or into ground whose own hollow has a way out and overflows no higher", "no ring of hollows overflows into itself",
+                "no value for spill_m, and -1 for the cells of its pass")}
+    assert len(written) == len(said) == 7
+    for number, phrases in said.items():
+        for phrase in phrases:
+            assert phrase in written[number - 1], (number, phrase)
+    # ... and each of the seven is enforced: at least one of the ways of breaking the table (BREAKAGES) is refused in
+    # words that belong to it
+    enforced = {1: ("row 0 must stand for the sea",),
+                2: ("every land cell without a receiver must be the bottom of one hollow", "depression_id must be 0 or the row of a hollow with one bottom"),
+                3: ("a part of a hollow must name that hollow as its parent", "the two parts of a hollow must name each other as sibling",
+                    "a hollow made of two is the parent of its two parts and of no other row", "a parent must stand in a later row than its parts"),
+                4: ("a hollow inside another must name its pass", "the two cells of a pass must be neighbours",
+                    "spill_into_hollow must be the hollow with one bottom that the cell beyond the pass drains into"),
+                5: ("the pass of a part of a hollow must lead into the other part", "the two parts of a hollow meet at one pass, at one level",
+                    "a hollow cannot overflow lower than its parts do"),
+                6: ("bottom_m must be a height, and it is nan", "spill_m is .* m, but the higher of the two cells of its pass stands at",
+                    "has the bottom of its deeper part for its bottom"),
+                7: ("a hollow inside no other overflows into ground whose own hollow overflows no higher", "a hollow inside no other cannot overflow into itself",
+                    "a hollow with no way out has no value for spill_m, and -1 for the cells of its pass")}
+    words = [case.values[1] for case in BREAKAGES]
+    assert len(words) >= 49 and len(set(words)) >= 34
+    for number, refusals in enforced.items():
+        for refusal in refusals:
+            assert any(refusal in w for w in words), (number, refusal)

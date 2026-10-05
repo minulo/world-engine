@@ -25,6 +25,10 @@ no third-party code. With another Python version the lock file may not install; 
 ".[test]"` then takes current versions, and a world may differ in its last digits from one built
 with the pinned ones.
 
+Nothing was run on Windows. Paths, text encodings and line endings are written for it and tested
+as far as Linux can show (docs/BUILD_NOTES.md, sections 5.3 and 6); the first install there is a
+test of its own.
+
 ## Use
 
     python -m worldengine order                                  # the running order computed from the declarations
@@ -38,13 +42,15 @@ with the pinned ones.
     python -m worldengine build --profile preview --interventions data/examples/frozen_region.yaml --out worlds/frozen.zarr
     python -m worldengine build --profile preview --interventions data/examples/place_label.yaml --out worlds/forest.zarr
 
-The folder comes with `worlds/first.zarr`, the default world on the preview mesh, so `serve` works
-at once. The times are from a two-core machine whose speed changes from day to day by a factor of
-two (docs/BUILD_NOTES.md, section 4.7); nothing was timed on a laptop.
+The archive that was handed over comes with `worlds/first.zarr`, the default world on the preview
+mesh, so `serve` works at once. A clone of the repository does not hold it (`worlds/` is not under
+version control): the second command above builds it. The times are from a two-core machine whose
+speed changes from day to day by a factor of two (docs/BUILD_NOTES.md, section 4.7); nothing was
+timed on a laptop.
 
 The same seed and parameters always give the same world, bit for bit, on one machine with the pinned
 versions. On a machine with another kind of processor the last digits can differ (docs/BUILD_NOTES.md,
-section 5.2); a world store carries its fingerprints, so a difference shows. A world store is written
+section 5.3); a world store carries its fingerprints, so a difference shows. A world store is written
 once and never changed.
 
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, switch to the flat map, play
@@ -86,26 +92,32 @@ on Earth's own relief (docs/BUILD_NOTES.md, sections 4.3 to 4.6). They are not k
 
     python tools/fetch_reference_data.py           # fetches 35 MB from one pinned commit and checks every file
     python tools/earth_relief.py                   # what the relief data hold before any process runs: closed valleys, exact ties
-    python tools/earth_rivers.py --settlements 20  # Earth's great rivers and lakes as the engine makes them, beside the measured ones
+    python tools/earth_rivers.py --settlements 20  # Earth's great rivers and lakes as the engine makes them, beside the measured
+                                                   # ones, and how often each outcome comes when the exact ties of the relief
+                                                   # are settled at random; --settlements 100 --demands prints the numbers of
+                                                   # section 4.4 of the notes, in about 6 minutes where it was built
     python tools/earth_rivers.py --trace Danube    # one river's way over the mesh, cell by cell
-    python tools/earth_demand.py                   # the air's demand for water over land, beside measured radiation
+    python tools/earth_demand.py                   # the air's demand for water over land, beside a published budget of the land
     python tools/earth_twin.py --profile preview   # the whole engine on Earth's relief, printed beside Earth
 
 Read section 4.4 of the notes before any single river. The relief file comes in whole metres and
-holds closed valleys of its own, so where a river runs on it is decided mostly by the data and by how
-exact ties are settled, not by the engine. What the yardstick does measure: the water of all the
-land, and what the land of a great basin sheds, like for like (0.68 of the measured depth).
+holds closed valleys of its own, so where a river runs on it is decided mostly by the data, by the
+rule that puts them on the mesh and by how exact ties are settled, not by the engine. What the
+yardstick does measure: the water of all the land, and what the land of a great basin sheds, like
+for like. There the engine's land sheds 0.68 of the measured depth, and why is not established.
 
 Without the data the tests that need it are skipped. The precipitation file asks that GPCP be cited
 in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 643 tests, about 9 minutes where it was built
+    python -m pytest                    # 787 tests, about 9 minutes where it was built
 
-34 of them are expected failures: patterns of Earth, and one condition of the design, that the
-engine is known to miss, each with the number measured. They are the list of known errors in
-runnable form; `python -m pytest -rx` prints them.
+34 of them are expected failures: patterns of Earth, and two conditions of the design (the dry
+belt of the north and the closed Caspian), that the engine is known to miss, each with the number
+measured. `python -m pytest -rx` prints them. They are not the whole list of known errors: the
+notes' sections 4.4, 4.6 and 8 name misses that no test states. Without the Earth data the
+97 tests that need it are skipped.
 
 Extra checks that are not part of the test run:
 
@@ -113,8 +125,14 @@ Extra checks that are not part of the test run:
     python trials/crust_points_trial.py seeds      # the same on ten other seeds
     python trials/climate_round_cost.py standard   # what a climate round costs on this machine
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
-    python tools/why_scan.py worlds/first.zarr     # reads every "why" answer for water on land against the numbers of its cell
-    python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks; needs playwright
+    python tools/why_scan.py worlds/first.zarr     # reads the "why" answers of every cell against the numbers of the cell
+    python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks in a headless browser
+
+The two trials print their results. The files in `trials/results/` are the records of build step 1,
+and a trial writes over them only when run with `--write`. `tools/viewer_check.py` needs the
+package playwright and a Chromium, which the engine and its tests do not:
+`pip install -r requirements-viewer-check.lock`. Every tool explains itself with `--help` and
+refuses an option it does not know.
 
 ## Layout
 
@@ -134,6 +152,8 @@ Extra checks that are not part of the test run:
       causes.py           the "why" walk
       store.py            the world store (Zarr)
       server.py, cli.py   the local server and the command line
+      console.py          what the command line and the tools share: one way of reading arguments, and text
+                          that prints on any system
       testing.py          the harness that runs one process alone
       library/            shared mathematics: mesh operators, flooding, transport, orbit, noise, drainage, snow,
                           soil water, the demand for water, lakes

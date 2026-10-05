@@ -263,3 +263,101 @@ def test_constant_given_per_mesh_level():
     m["slots"]["ToySource"]["constants"] = {"gain": {"by_level": {7: 0.25}}}
     with pytest.raises(ParameterError):
         toy(models=m)
+
+
+# ---------------------------------------------------------------------------------------------- what a schema refuses
+# [The fourth check of build step 2 took five of the checks below out of params.py, one at a time, and no test noticed.]
+@pytest.mark.parametrize("value, schema, words", [
+    (2.5, {"type": "integer"}, "expected a whole number, found 2.5"),                                  # a fraction where a whole number is asked
+    (True, {"type": "integer"}, "expected a number, found bool True"),
+    ([1.0, 2.0, 3.0], {"type": "list", "length": 2, "items": {"type": "number"}}, "expected 2 entries, found 3"),
+    ([1.0], {"type": "list", "length": 2, "items": {"type": "number"}}, "expected 2 entries, found 1"),
+    ("day_cell_month", {"type": "string", "choices": ["cell", "month_cell"]}, "'day_cell_month' is not one of cell, month_cell"),
+    (None, {"type": "number"}, "expected a number, found NoneType None"),                             # no value, where the schema does not allow none
+    (None, {"type": "map", "keys": {}}, "expected a map of keys, found NoneType"),
+    (None, {"type": "list"}, "expected a list, found NoneType"),
+    (None, {"type": "string"}, "expected text, found NoneType None"),
+    ({"a": 1.0, "b": None}, {"type": "map", "keys": {"a": {"type": "number"}, "b": {"type": "number"}}}, "x.yaml.b: expected a number, found NoneType None"),
+    (float("nan"), {"type": "number"}, "is not a number (NaN)"),
+    (float("inf"), {"type": "number", "finite": True}, "is infinite"),
+    (3.0, {"type": "number", "above": 3.0}, "3.0 must be above 3.0"), (3.0, {"type": "number", "below": 3.0}, "3.0 must be below 3.0"),
+    (2.9, {"type": "number", "min": 3.0}, "2.9 must be at least 3.0"), (3.1, {"type": "number", "max": 3.0}, "3.1 must be at most 3.0"),
+    ("1e-5", {"type": "number"}, "is text, not a number"),
+])
+def test_a_schema_refuses_a_value_of_the_wrong_kind_in_words_that_name_it(value, schema, words):
+    from worldengine.params import validate
+    with pytest.raises(ParameterError) as err:
+        validate(value, schema, "x.yaml")
+    assert words in str(err.value) and str(err.value).startswith("x.yaml")
+
+
+@pytest.mark.parametrize("value, schema", [
+    (3, {"type": "integer", "min": 1}), (3.0, {"type": "number", "min": 3.0, "max": 3.0}), (None, {"type": "number", "nullable": True}),
+    (None, {"type": "list", "length": 2, "nullable": True}), ([1.0, 2], {"type": "list", "length": 2, "items": {"type": "number"}}),
+    ("cell", {"type": "string", "choices": ["cell", "month_cell"]}), (float("inf"), {"type": "number"}), (None, {"type": "any"}),
+])
+def test_a_schema_accepts_what_it_describes(value, schema):
+    from worldengine.params import validate
+    validate(value, schema, "x.yaml")
+
+
+def test_the_data_files_break_their_schemas_where_a_schema_check_is_all_that_stands_in_the_way():
+    """The same checks, on the engine's own files: a mesh level that is no whole number, a valid range of three
+    numbers, a layout that fields.yaml does not know, and a constant set to nothing where a number must stand."""
+    p = toy_file("profiles")
+    p["profiles"]["toy"]["mesh_level"] = 2.5
+    with pytest.raises(ParameterError, match="mesh_level: expected a whole number, found 2.5"):
+        toy(profiles=p)
+    f = toy_file("fields")
+    f["fields"]["a"]["range"] = [0.0, 50.0, 100.0]
+    with pytest.raises(ParameterError, match=r"fields.a.range: expected 2 entries, found 3"):
+        toy(fields=f)
+    f = toy_file("fields")
+    f["fields"]["a"]["shape"] = "cell_month"
+    with pytest.raises(ParameterError, match="fields.a.shape: 'cell_month' is not one of cell, month_cell, day_cell"):
+        toy(fields=f)
+    f = toy_file("fields")
+    f["fields"]["a"]["unit"] = None
+    with pytest.raises(ParameterError, match="fields.a.unit: expected text, found NoneType None"):
+        toy(fields=f)
+
+
+def test_the_fingerprint_of_the_parameters_holds_every_file_of_the_data_folder(tmp_path):
+    """Beside the nine named files a data folder may hold lists and tables that fields.yaml or models.yaml name
+    (biomes.yaml: the outlines of the biomes and the list of climate classes). A change to one changes worlds, and
+    must change the fingerprint that a store keeps of its parameters."""
+    import shutil
+    from conftest import TOY
+    from worldengine.params import FILES
+    data = tmp_path / "data"
+    shutil.copytree(TOY, data)
+    (data / "extra_list.yaml").write_text("names: [alpha, beta]\n", encoding="utf-8")
+    before = Parameters(data)
+    assert "extra_list" in before.data and "extra_list" not in FILES and before.extra_files["extra_list"] == {"names": ["alpha", "beta"]}
+    assert Parameters(data).fingerprint() == before.fingerprint()
+    (data / "extra_list.yaml").write_text("names: [alpha, gamma]\n", encoding="utf-8")
+    assert Parameters(data).fingerprint() != before.fingerprint()
+    plain = Parameters(TOY).fingerprint()
+    assert plain != before.fingerprint()                         # and a file more is another set of parameters
+    from conftest import DATA
+    assert "biomes" in Parameters(DATA).extra_files              # the engine's own data folder has such a file
+
+
+def test_a_fields_own_tolerances_decide_when_its_loop_is_settled():
+    """fields.yaml may give a field that is read from the previous round its own tolerances for the settle test, in
+    place of the profile's default (build step 2 relies on it for the snow and for the water returned to the air,
+    whose units the default was not written for). The toy loop comes to rest at b = 8, its gap shrinking by a fixed
+    share each round: with the default of a millionth it stops after 52 rounds, with a tenth after 12, with a
+    hundredth after 20, and with a thousand-millionth after 76. [The fourth check of build step 2 took the field's
+    own tolerances out of the settle test, and no test noticed: the only test of them looked at the fingerprint.]"""
+    def rounds(settle=None):
+        f = toy_file("fields")
+        if settle:
+            f["fields"]["b"]["settle"] = settle
+        w = toy(fields=f).build()
+        gap = next(g for g in w.settle_log[-1]["gaps"] if g["name"] == "b")
+        return w.rounds_used["climate"], w.settled["climate"], gap["mean_gap"], float(w.fields["b"][0])
+    assert rounds()[:2] == (52, True)
+    for tolerance, stops_after in ((0.1, 12), (0.01, 20), (1.0e-9, 76)):
+        used, settled, gap, b = rounds({"mean": tolerance, "cell": tolerance})
+        assert (used, settled) == (stops_after, True) and gap <= tolerance < 2.0 * gap / 0.84 and abs(b - 8.0) < 2.0 * tolerance, (tolerance, used, gap, b)

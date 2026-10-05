@@ -34,6 +34,7 @@ values:
             units: {type: map, values: {type: string}}
             base: {type: boolean}
             always: {type: boolean}
+            aside: {type: boolean}
             group: {type: string}
       cases:
         type: list
