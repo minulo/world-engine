@@ -57,12 +57,17 @@ def main(path):
     print("wind toward the north by band:", vv.round(1))
     rain = f["precipitation"].astype(np.float64).sum(axis=0)
     evap = f["ocean_evaporation"].astype(np.float64).sum(axis=0)
-    print(f"rain: global {mean(rain):.0f} mm/yr; land {mean(rain, land):.0f}; sea {mean(rain, wet):.0f}; evaporation over rain {mean(evap) / mean(rain):.6f}")
+    from_land = f["evapotranspiration"].astype(np.float64).sum(axis=0) if "evapotranspiration" in f else np.zeros(m.n)
+    print(f"rain: global {mean(rain):.0f} mm/yr; land {mean(rain, land):.0f}; sea {mean(rain, wet):.0f}; "
+          f"evaporation (sea and land) over rain {(mean(evap) + mean(from_land)) / mean(rain):.6f}")
     lat5, lr = op.zonal_mean(m, rain, 5.0, mask=land.astype(np.float64))
     _, ar = op.zonal_mean(m, rain, 5.0)
     for sign, name in ((1, "north"), (-1, "south")):
         side = (sign * lat5 > 0) & (sign * lat5 < 60) & ~np.isnan(lr)
-        print(f"  driest land band, {name}: {sign * lat5[side][np.argmin(lr[side])]:.0f} degrees, {lr[side].min():.0f} mm/yr")
+        belt = side & (sign * lat5 < 50)
+        storm = lr[(sign * lat5 > 40) & (sign * lat5 < 55)].mean()
+        print(f"  driest land band, {name}: {sign * lat5[side][np.argmin(lr[side])]:.0f} degrees, {lr[side].min():.0f} mm/yr; equatorward of 50: "
+              f"{sign * lat5[belt][np.argmin(lr[belt])]:.0f} degrees, {lr[belt].min():.0f} mm/yr; land of the storm belt at 40 to 55: {storm:.0f} mm/yr")
     lifted = v.driver("precipitation", "from_rising_ground").astype(np.float64).sum(axis=0)
     print(f"  wettest cell {rain.max():.0f} mm/yr ({'land' if land[np.argmax(rain)] else 'sea'}); wettest land cell {rain[land].max():.0f}; "
           f"rain of rising ground: {mean(lifted, land):.0f} mm/yr over land, {(lifted * area).sum() / (rain * area).sum():.3f} of all rain")
@@ -81,7 +86,46 @@ def main(path):
         if n != "ocean":
             groups[n[0] if n[0] != "B" else n[:2]] = groups.get(n[0] if n[0] != "B" else n[:2], 0.0) + float(s)
     print("climate classes, share of the land:", {g: round(s, 3) for g, s in sorted(groups.items())})
+    if "river_discharge" in f:
+        water(v, m, f, area, land, wet, rain, from_land, mean, share)
     print("timings (s):", {key: round(val, 1) for key, val in v.attrs["timings"].items() if val > 1})
+
+
+def water(v, m, f, area, land, wet, rain, from_land, mean, share):
+    """Water on land (build step 2): what falls, what goes back to the air, what the rivers carry, the lakes, the snow."""
+    year_s = v.attrs["planet"]["year_length_s"]
+    demand = np.nansum(f["potential_evapotranspiration"].astype(np.float64), axis=0)
+    shed = f["runoff_annual"].astype(np.float64)
+    print(f"water on land, mm/yr: rain {mean(rain, land):.0f}; back to the air {mean(from_land, land):.0f} ({mean(from_land, land) / mean(rain, land):.3f} of the rain); "
+          f"the air's demand {mean(demand, land):.0f}; runoff {mean(shed, land):.0f}")
+    river = f["river_discharge"].astype(np.float64).mean(axis=0)
+    to_sea = river[wet].sum() * year_s
+    kept = ((rain - from_land) * area)[land].sum() / 1000.0
+    print(f"  rivers reaching the sea {to_sea / 1e12:.1f} thousand km3 a year; rain less evaporation over land {kept / 1e12:.1f}; ratio {to_sea / kept:.6f}")
+    recv = f["flow_receiver"]
+    coast = np.flatnonzero(land & (recv >= 0) & wet[np.maximum(recv, 0)])
+    top = coast[np.argsort(-river[coast])[:5]]
+    print("  largest rivers at the coast (m3/s at lat, lon):", [(int(river[c]), round(float(m.lat[c]), 1), round(float(m.lon[c]), 1)) for c in top])
+    hollows, lakes = v.table("hollows"), v.table("lakes")
+    in_hollow = f["depression_id"] > 0
+    print(f"  closed hollows: {int((hollows['first_child'][1:] < 0).sum())} with one bottom, {int((hollows['first_child'] >= 0).sum())} made of two; "
+          f"{share(land & in_hollow) / share(land):.3f} of the land drains into one")
+    flooded = f["lake_fraction"].astype(np.float64)
+    order = np.argsort(-lakes["area_m2"])[:5]
+    print(f"  lakes: {len(lakes['hollow'])}, of which {int(lakes['overflows'].sum())} overflow; {(flooded * area).sum() / (area * land).sum():.3f} of the land under water; "
+          f"largest (km2): {[int(a / 1e6) for a in lakes['area_m2'][order]]}; closed lakes take {lakes['loss_to_air_m3_per_year'][~lakes['overflows']].sum() / 1e12:.2f} thousand km3 a year")
+    basins = np.unique(f["basin_id"][land])
+    sizes = np.sort(f["drainage_area"][basins])[::-1]
+    print(f"  river basins with every hollow full: {basins.size}; the largest drains {sizes[0] / (area * land).sum():.3f} of the land")
+    snow = f["snow_water"].astype(np.float64)
+    print(f"  snow: on the ground all year on {share(land & (snow.min(axis=0) > 0)) / share(land):.3f} of the land, in some month on "
+          f"{share(land & (snow.max(axis=0) > 0)) / share(land):.3f}; deepest store of a cell that loses its snow {snow[:, snow.min(axis=0) == 0].max():.0f} mm")
+    moisture = f["soil_moisture"].astype(np.float64)
+    print(f"  soil: {np.nanmean(moisture[:, land]):.2f} full on average; rounds {v.attrs['meta']['rounds_used'].get('climate')}")
+    lat10, land_rain = op.zonal_mean(m, rain, 10.0, mask=land.astype(np.float64))
+    _, land_air = op.zonal_mean(m, from_land, 10.0, mask=land.astype(np.float64))
+    print("  land rain by 10-degree band, south to north:", np.nan_to_num(land_rain).round(0))
+    print("  land evaporation by 10-degree band:        ", np.nan_to_num(land_air).round(0))
 
 
 if __name__ == "__main__":
