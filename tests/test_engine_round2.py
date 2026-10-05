@@ -1,6 +1,7 @@
 """Edge cases of the engine found by the second review of build steps 0 and 1. Each test states the rule it guards."""
 import copy
 import json
+import re
 import shutil
 import threading
 import urllib.error
@@ -345,6 +346,27 @@ def test_the_fingerprint_of_a_field_holds_everything_that_shaped_it():
     assert plain["b"]["fingerprint"] != prints([heat(0.5)], profile={"mesh_level": 3})["b"]["fingerprint"]
 
 
+def test_the_fingerprint_of_a_climate_field_holds_the_tolerances_that_decide_when_its_rounds_stop():
+    """fields.yaml may give a field that is read from the previous round its own tolerances for the settle test.
+    They decide in which round the climate stops, so they shape every field of the stage; the fingerprint left
+    them out (build step 2 relied on them for the snow and for the water returned to the air)."""
+    def lineage(settle=None):
+        b = dict(toy_file("fields")["fields"]["b"])
+        if settle:
+            b["settle"] = settle
+        e = engine({}, {"b": b}, keep_trio=True)
+        e.build()
+        return e.world.lineage, e.world.rounds_used["climate"]
+    plain, _ = lineage()
+    loose, _ = lineage({"mean": 0.5, "cell": 0.5})
+    climate = [f for f in plain if plain[f]["stage"] == "climate"]
+    assert "b" in climate and len(climate) >= 2
+    for field in climate:                                                         # every field of the climate stage, not only b
+        assert plain[field]["fingerprint"] != loose[field]["fingerprint"]
+    assert loose["b"]["fingerprint"] == lineage({"mean": 0.5, "cell": 0.5})[0]["b"]["fingerprint"]
+    assert loose["b"]["fingerprint"] != lineage({"mean": 0.5, "cell": 0.25})[0]["b"]["fingerprint"]
+
+
 def test_the_fingerprint_changes_with_the_rounds_of_a_push_and_with_a_push_on_a_group_the_writer_reads():
     def elev(pushes):
         T.Ground.seen = []
@@ -387,12 +409,12 @@ def test_a_push_file_given_on_the_command_line_is_read_with_the_same_rules(tmp_p
     """It was read with plain YAML: a key written twice went through, and the second value was used."""
     pushes = tmp_path / "pushes.yaml"
     pushes.write_text("- id: lift\n  region: {circle: {lat: 0.0, lon: 0.0, radius_km: 30000}}\n"
-                      "  pushes:\n    - {field: a, add: 2.0, add: 3.0}\n")
+                      "  pushes:\n    - {field: a, add: 2.0, add: 3.0}\n", encoding="utf-8")
     assert cli.main(["order", "--data", str(TOY), "--profile", "toy", "--interventions", str(pushes)]) == 2
     assert "the key 'add' is written twice" in capsys.readouterr().err
     assert cli.main(["order", "--data", str(TOY), "--profile", "toy", "--interventions", str(tmp_path / "none.yaml")]) == 2
     assert "the push file is missing" in capsys.readouterr().err
-    pushes.write_text("- id: lift\n  region: {circle: {lat: 0.0, lon: 0.0, radius_km: 30000}}\n  pushes:\n    - {field: a, add: 2.0}\n")
+    pushes.write_text("- id: lift\n  region: {circle: {lat: 0.0, lon: 0.0, radius_km: 30000}}\n  pushes:\n    - {field: a, add: 2.0}\n", encoding="utf-8")
     assert cli.main(["order", "--data", str(TOY), "--profile", "toy", "--interventions", str(pushes)]) == 0
     assert "Push[lift:a]" in capsys.readouterr().out
 
@@ -499,7 +521,7 @@ def test_a_stale_file_where_the_partial_store_goes_does_not_stop_a_save(tmp_path
     e = engine({}, keep_trio=True)
     w = e.build()
     target = tmp_path / "w.zarr"
-    (tmp_path / "w.zarr.partial").write_text("left behind by something else")
+    (tmp_path / "w.zarr.partial").write_text("left behind by something else", encoding="utf-8")
     assert StoreView(store.save(w, e, target)).field_names() and sorted(p.name for p in tmp_path.iterdir()) == ["w.zarr"]
 
 
@@ -597,6 +619,132 @@ def test_a_sum_with_nothing_in_it_says_so_and_leads_on_instead_of_ending_on_a_co
     assert [step["field"] for step in explain(view, 20, "trickle")["chain"]] == ["trickle"]        # where it flows, the pattern is as before
 
 
+def test_a_sentence_pattern_may_name_only_what_its_process_records():
+    """Build step 2: the walk passes over a driver that its pattern names and the process did not record. A misspelt
+    driver, or a pattern left behind when a process was replaced by one that records other terms, left the answer
+    short without a word. The engine now refuses such a pattern on loading, and a pattern for a field its slot does
+    not write. Patterns for a slot that the world does not fill are not used, and the plan says so."""
+    slots = {"Trickle": slot("Trickle", ["trickle"]), "Marker": slot("Marker", ["ones", "month_no", "heading"])}
+    fields = {**GEO_FIELDS, "trickle": number()}
+    good = {"Trickle": {"trickle": {"says": "The trickle is {value}:", "form": "sum", "drivers": {
+        "from_spring": {"says": "a spring gives {v}"}, "from_rain": {"says": "rain gives {v}"}}}}}
+    assert engine(slots, fields, explanations=good).plan.notes == []
+    for bad, words in (
+            ({"drivers": {"from_sprnig": {"says": "a spring gives {v}"}}},
+             "explanations.yaml: Trickle.trickle: the pattern names the driver from_sprnig, which Trickle does not record for trickle "
+             "(it records: from_spring, from_rain)"),
+            ({"drivers": {"from_spring": {"says": "a spring at {at} gives {v}", "at": "where"}}}, "names the driver where, which Trickle does not record"),
+            ({"cases": [{"when": {"ground": "sea"}, "says": "This is sea."}]}, "names the driver ground, which Trickle does not record")):
+        with pytest.raises(ParameterError, match=re.escape(words)):
+            engine(slots, fields, explanations={"Trickle": {"trickle": {"says": "The trickle is {value}.", **bad}}})
+    with pytest.raises(ParameterError, match=re.escape("explanations.yaml: Trickle.trickel: Trickle does not write trickel")):
+        engine(slots, fields, explanations={"Trickle": {"trickel": {"says": "It is {value}."}}})
+    notes = engine(slots, fields, explanations={**good, "Trikle": {"trickle": {"says": "It is {value}."}}}).plan.notes
+    assert notes == ["explanations.yaml holds sentence patterns for Trikle, which this world does not fill: they are not used"]
+
+
+def test_a_driver_can_say_that_the_chain_ends_with_it():
+    """Build step 2: asked why a river basin has its mouth where it does, the answer walked back to the thickness of
+    the crust, said that "the seeded starting condition varies it", and stopped, with no entry to say that the chain
+    had ended there and why. A driver may now carry the closing sentence. It is given where the driver is one of
+    those the walk would follow, straight after the step, and the walk still goes on along the other drivers."""
+    e = engine({"Trickle": slot("Trickle", ["trickle"]), "Marker": slot("Marker", ["ones", "month_no", "heading"])},
+               {**GEO_FIELDS, "trickle": number()})
+    w = e.build()
+    view = MemoryView(w, e)
+    view.attrs["explanations"] = {"Trickle": {"trickle": {"says": "The trickle is {value}:", "form": "sum", "drivers": {
+        "from_spring": {"says": "a spring gives {v}", "follows": ["ones"]},
+        "from_rain": {"says": "rain gives {v}", "ends": "The chain ends here: the rain at {lat} is a number of the test."}}}}}
+    chain = explain(view, 20, "trickle")["chain"]
+    assert [(step["field"], bool(step.get("end"))) for step in chain[:3]] == [("trickle", False), ("trickle", True), ("ones", False)]
+    assert chain[1]["text"].startswith("The chain ends here: the rain at ") and chain[1]["text"].endswith(" is a number of the test.")
+    assert not [step for step in explain(view, 3, "trickle")["chain"] if step.get("end")]     # where nothing trickles, no driver is followed
+    view.attrs["explanations"]["Trickle"]["trickle"]["drivers"]["from_rain"].pop("ends")
+    assert [step["field"] for step in explain(view, 20, "trickle")["chain"][:2]] == ["trickle", "ones"]
+
+
+def test_after_a_push_a_sum_states_the_value_that_is_stored_and_does_not_say_it_is_nothing():
+    """The sentence for an empty sum was chosen by the recorded parts, which describe the value before any push. A
+    cell pushed from nothing to 5 answered "Nothing trickles here", and then that a push had acted."""
+    pushes = [{"id": "pour", "reason": "a test", "region": WHOLE_PLANET, "pushes": [{"field": "trickle", "add": 5.0}]}]
+    e = engine({"TrickleInTheLoop": slot("TrickleInTheLoop", ["trickle"])}, {"trickle": number()}, pushes=pushes)
+    w = e.build()
+    view = MemoryView(w, e)
+    view.attrs["explanations"] = {"TrickleInTheLoop": {"trickle": {"says": "The trickle is {value}:", "form": "sum",
+        "says_zero": "Nothing trickles here.", "follows_zero": ["trickle"],
+        "drivers": {"from_spring": {"says": "a spring gives {v}"}, "from_rain": {"says": "rain gives {v}"}}}}}
+    assert np.all(w.fields["trickle"][:10] == 5.0) and np.all(w.fields["trickle"][10:] == 8.0)
+    chain = explain(view, 3, "trickle")["chain"]
+    assert chain[0]["text"] == "The trickle is 5.00 none. Its process found nothing here; what changed the value afterwards follows."
+    assert chain[1]["push"] == "pour:trickle" and "Before the push the value was 0.00 none." in chain[1]["text"]
+    chain = explain(view, 20, "trickle")["chain"]                                 # where the parts are something, they are said as before
+    assert chain[0]["text"] == "The trickle is 8.00 none: rain gives 2.00 none; a spring gives 1.00 none."
+    assert "Before the push the value was 3.00 none." in chain[1]["text"]
+
+
+POND_TABLES = {"tables": {"toy_items": {"columns": {"item": "int32", "volume_m3": "float64", "area_m2": "float64"}}}}
+POND_PATTERN = {"says": "The pond holds {value}:", "form": "sum", "says_zero": "No pond here.", "drivers": {
+    "from_stream": {"says": "a stream gives {v}"}, "from_spring": {"says": "a spring gives {v}"},
+    "ground": {"names": ["land", "lake", "sea"]},
+    "lake": {"row_of": "toy_items", "units": {"volume_m3": "km3_from_m3", "area_m2": "km2_from_m2"},
+             "says": "the lake of row {row} holds {volume_m3} over {area_m2}"}},
+    "cases": [{"when": {"ground": "sea"}, "says": "This is sea, and {value} is no pond.", "quiet": True, "follows": ["ones"]},
+              {"when": {"ground": ["lake", "marsh"]}, "says": "A lake lies here and holds {value}:"}]}
+
+
+def pond_view(columns):
+    T.TableMaker.columns = columns
+    try:
+        e = engine({"TableMaker": slot("TableMaker", ["table:toy_items"]), "Pond": slot("Pond", ["pond"]),
+                    "Marker": slot("Marker", ["ones", "month_no", "heading"])},
+                   {**GEO_FIELDS, "pond": dict(family="Toy", unit="none", shape="month_cell", kind="number")}, tables=POND_TABLES)
+        w = e.build()
+    finally:
+        T.TableMaker.columns = {"item": [0, 1], "value": [1.0, 2.5]}
+    view = MemoryView(w, e)
+    view.attrs["explanations"] = {"Pond": {"pond": copy.deepcopy(POND_PATTERN)}}
+    return view
+
+
+def test_a_case_of_a_pattern_replaces_its_sentence_where_a_class_driver_says_so():
+    """Build step 2: one sentence per field could not be true of land, lake and sea alike. A pattern may now list
+    cases, each tied to the class that a driver holds; the first that holds replaces the entries it names."""
+    view = pond_view({"item": [0, 1], "volume_m3": [1.0e9, 2.5e9], "area_m2": [5.0e6, 1.234e9]})
+    land, lake, sea = explain(view, 25, "pond")["chain"], explain(view, 15, "pond")["chain"], explain(view, 3, "pond")["chain"]
+    assert land[0]["text"] == "The pond holds 3.00 none: a spring gives 2.00 none; a stream gives 1.00 none."
+    # the second case, whose class is one of a list; the row of the table speaks after the parts, in the units named
+    assert lake[0]["text"] == "A lake lies here and holds 4.00 none: a stream gives 4.00 none; the lake of row 1 holds 2.5 km³ over 1,234 km²."
+    # the first case is quiet: no part and no row is added, and the walk goes where the case sends it
+    assert sea[0]["text"] == "This is sea, and 0.00 none is no pond." and sea[1]["field"] == "ones"
+    assert [step["field"] for step in land] == ["pond"]
+    # without the cases the sea falls to the sentence of an empty sum
+    del view.attrs["explanations"]["Pond"]["pond"]["cases"]
+    assert explain(view, 3, "pond")["chain"][0]["text"] == "No pond here."
+    assert explain(view, 15, "pond")["chain"][0]["text"].startswith("The pond holds 4.00 none: a stream gives 4.00 none; the lake of row 1")
+
+
+@pytest.mark.parametrize("volume,area,said", [
+    (4.401e12, 3.583892e12, "holds 4,401 km³ over 3,583,892 km²"),               # a thousand cubic kilometres and more: whole numbers
+    (2.78e10, 1.7768e10, "holds 27.8 km³ over 17,768 km²"),                      # tens: one decimal
+    (4.75e8, 5.0e5, "holds 0.475 km³ over 0 km²"),                               # less than one: three figures
+    (0.0, 0.0, "holds 0 km³ over 0 km²"),
+])
+def test_the_numbers_of_a_table_row_are_said_in_the_units_the_pattern_names(volume, area, said):
+    """A lake's row was said as "6510329596378 m³ ... 7627148522395 m²": true, and unreadable."""
+    view = pond_view({"item": [0, 1], "volume_m3": [1.0, volume], "area_m2": [1.0, area]})
+    assert said in explain(view, 15, "pond")["chain"][0]["text"]
+    view.attrs["explanations"]["Pond"]["pond"]["drivers"]["lake"].pop("units")    # without a unit: the plain number, rounded for reading
+    plain = explain(view, 15, "pond")["chain"][0]["text"]
+    assert f"holds {volume:.0f} over {area:.0f}" in plain if volume >= 1000 else "holds 0.00 over 0.00" in plain
+
+
+def test_a_share_can_be_said_as_a_percentage():
+    view = pond_view({"item": [0, 1], "volume_m3": [1.0, 1.0], "area_m2": [1.0, 1.0]})
+    view.attrs["explanations"]["Pond"]["pond"] = {"says": "Ponds cover {value} of this cell.", "unit": "percent_from_share"}
+    view.attrs["fields"]["pond"]["unit"] = "0 to 1"
+    assert explain(view, 25, "pond")["chain"][0]["text"].startswith("Ponds cover 300 % of this cell.")
+
+
 def test_a_driver_that_names_a_class_or_a_row_is_read_whatever_it_is_stored_as():
     """A class driver stored as fractions raised a TypeError; so did a table with a column called row."""
     T.TableMaker.columns = {"row": [10, 20], "value": [1.0, 2.5]}
@@ -609,7 +757,7 @@ def test_a_driver_that_names_a_class_or_a_row_is_read_whatever_it_is_stored_as()
         "regime": {"names": ["calm", "stormy"], "says": "the regime is {v}"},
         "item": {"row_of": "toy_items", "says": "see row {row_number}, whose own column row holds {row} and whose value is {value}"}}}}}
     text = explain(view, 2, "c")["chain"][0]["text"]
-    assert "the regime is stormy" in text and "see row 1, whose own column row holds 20 and whose value is 2.5" in text
+    assert text == "c is 1.00 none: the regime is stormy; see row 1, whose own column row holds 20 and whose value is 2.50."
 
 
 def test_the_page_shows_every_kind_of_notice_and_a_fault_in_an_answer_comes_back_as_an_answer(tmp_path, monkeypatch):

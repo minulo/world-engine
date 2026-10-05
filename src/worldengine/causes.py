@@ -10,16 +10,25 @@ A pattern entry, under the slot and the field it writes:
     says_missing:  sentence used in its place where the field has no value in the cell;
               follows_missing: the fields the walk then continues to
     form:     sum (the drivers add up to the field), rule (a driver names the rule that fired), or plain
-    says_zero:     for form sum: the sentence used where no driver has anything to say (the sum is nothing);
+    says_zero:     for form sum: the sentence used where no driver has anything to say and the value is nothing;
               follows_zero: the fields the walk then continues to
-    unit:     how to print numbers: C_from_K, K_difference, km2_from_m2, or any text put after the number
+    cases:    a list; each case has `when` (a driver that holds a class -> the class name, or a list of names)
+              and any of the entries says, says_zero, follows, follows_zero, form, unit and ends, which replace
+              those of the pattern in the cells where every driver named under `when` holds one of its names.
+              The first case that holds is taken. `quiet: true` keeps the drivers from adding to the sentence.
+    unit:     how to print numbers: C_from_K, K_difference, km2_from_m2, km3_from_m3, percent_from_share, or any
+              text put after the number
     ends:     text saying why the chain ends here (a parameter, a seeded starting condition)
     follows:  fields the walk continues to when no driver says otherwise
-    drivers:  per driver: says (slot {v}), follows (fields), at (a driver holding the cell to continue at),
+    drivers:  per driver: says (slot {v}, and {at} for the cell that the driver named under "at" holds),
+              follows (fields), at (a driver holding the cell to continue at),
+              ends (text saying why the chain ends at this driver: it is given, once, where the driver is one of
+              those that the walk would follow),
               names (for a driver that holds a class), follows_by (class name -> fields),
               cell (the driver holds a cell number: it is used by "at" and not spoken),
               row_of (the driver holds a row of this table: says may then use {row}, or {row_number} if the table has
-              a column called row, and one slot per column; values maps a column's codes to words)
+              a column called row, and one slot per column; values maps a column's codes to words, and units
+              maps a column to the unit its number is printed in)
 """
 from __future__ import annotations
 
@@ -42,6 +51,11 @@ def _fmt(v, unit):
         return f"{v:+.1f} °C"
     if unit == "km2_from_m2":
         return f"{v / 1e6:,.0f} km²"
+    if unit == "km3_from_m3":
+        a = abs(v) / 1e9
+        return f"{v / 1e9:,.0f} km³" if a >= 100 else f"{v / 1e9:.1f} km³" if a >= 1 else f"{v / 1e9:.3g} km³"
+    if unit == "percent_from_share":
+        return f"{v * 100:.0f} %"
     if isinstance(v, (bool, np.bool_)):
         return "true" if v else "false"
     if isinstance(v, (int, np.integer)):
@@ -162,25 +176,41 @@ def explain(view, cell: int, field: str) -> dict:
         if writer not in slots_on_path:
             slots_on_path.append(writer)
         pat = (patterns.get(writer) or {}).get(f) or {}
-        unit = pat.get("unit", spec["unit"] if spec["kind"] in ("number", "direction") else "")
         value = cell_value(view, f, c)
         absent = isinstance(value, float) and value != value          # the field has no value in this cell
-        shown = value.replace("_", " ") if isinstance(value, str) else _fmt(value, unit)
         dpat = pat.get("drivers") or {}
         terms = [t for t in dpat if t in recorded.get(f, [])] + [t for t in recorded.get(f, []) if t not in dpat]
         dvals = {t: _driver_value(view, f, t, c) for t in terms}
         base = [t for t in terms if (dpat.get(t) or {}).get("base")]       # a fixed starting value, not a cause to weigh
-        slots = _Safe(value=shown, lat=f"{abs(lat[c]):.1f}° {'north' if lat[c] >= 0 else 'south'}",
-                      lon=f"{abs(lon[c]):.1f}° {'east' if lon[c] >= 0 else 'west'}", planet=attrs["planet"], field=f)
         names = {}
         for t, v in dvals.items():
             p = dpat.get(t) or {}
             if "names" in p:                                 # a driver that holds a class, whatever type it was stored in
                 code = int(v) if v == v else -1
                 names[t] = p["names"][code] if 0 <= code < len(p["names"]) else f"no class (code {v})"
-                slots[t] = names[t].replace("_", " ")
-            else:
-                slots[t] = _fmt(v, p.get("unit", unit))
+        for case in pat.get("cases") or []:                  # the first case whose classes all hold here replaces entries
+            when = case.get("when") or {}
+            if when and all(names.get(t) in (want if isinstance(want, list) else [want]) for t, want in when.items()):
+                pat = {**pat, **{k: v for k, v in case.items() if k != "when"}}
+                break
+        unit = pat.get("unit", spec["unit"] if spec["kind"] in ("number", "direction") else "")
+        shown = value.replace("_", " ") if isinstance(value, str) else _fmt(value, unit)
+        slots = _Safe(value=shown, lat=f"{abs(lat[c]):.1f}° {'north' if lat[c] >= 0 else 'south'}",
+                      lon=f"{abs(lon[c]):.1f}° {'east' if lon[c] >= 0 else 'west'}", planet=attrs["planet"], field=f)
+        for t, v in dvals.items():
+            p = dpat.get(t) or {}
+            slots[t] = names[t].replace("_", " ") if t in names else _fmt(v, p.get("unit", unit))
+        quiet = bool(pat.get("quiet"))
+
+        def said_by(t, p, text):
+            """A driver's sentence, with {v} for its value and {at} for the cell that its "at" driver names."""
+            given = _Safe(v=slots[t])
+            other = dvals.get(p.get("at"), -1) if p.get("at") else -1
+            if p.get("at"):
+                given["at"] = "no other cell" if other < 0 else (
+                    f"cell {int(other)}, at {abs(lat[int(other)]):.1f}° {'N' if lat[int(other)] >= 0 else 'S'}, "
+                    f"{abs(lon[int(other)]):.1f}° {'E' if lon[int(other)] >= 0 else 'W'}")
+            return text.format_map(given)
         if absent:
             text = (pat.get("says_missing") or f"{f} has no value here.").format_map(slots)
         elif pat.get("says"):
@@ -189,7 +219,7 @@ def explain(view, cell: int, field: str) -> dict:
             src = ", ".join(line["reads"] + line["reads_lagged"]) or "the planet parameters"
             text = f"{f} is {shown}: {writer} ({line['model']}) computed it from {src}."
         parts, order = [], []
-        if absent:
+        if absent or quiet:
             pass                                             # the drivers of a value that is not there have nothing to add
         elif pat.get("form") == "sum":
             order = sorted((t for t in dvals if not any((dpat.get(t) or {}).get(k) for k in ("names", "cell", "row_of"))),
@@ -199,7 +229,7 @@ def explain(view, cell: int, field: str) -> dict:
                 p = dpat.get(t) or {}
                 if abs(dvals[t]) <= WORTH_SAYING * largest and not p.get("always") and t not in base:
                     continue
-                said = (p.get("says") or (t.replace("_", " ") + " {v}")).format_map(_Safe(v=slots[t]))
+                said = said_by(t, p, p.get("says") or (t.replace("_", " ") + " {v}"))
                 if p.get("group"):                               # name each member of the sum that acts in this cell
                     members = []
                     for member, arr in sorted(view.group_members(p["group"]).items()):
@@ -216,12 +246,13 @@ def explain(view, cell: int, field: str) -> dict:
             for t in order:
                 p = dpat.get(t) or {}
                 if p.get("says") and dvals[t] == dvals[t]:      # a driver whose value is missing here has nothing to say
-                    parts.append(p["says"].format_map(_Safe(v=slots[t])))
+                    parts.append(said_by(t, p, p["says"]))
                 if "says_by" in p and names.get(t) in p["says_by"]:
                     parts.append(p["says_by"][names[t]].format_map(slots))
+        rows_said = []
         for t in terms:                                      # a driver that names a row of a table: say what the row holds
             p = dpat.get(t) or {}
-            if not p.get("row_of") or dvals[t] < 0:
+            if not p.get("row_of") or dvals[t] < 0 or absent or quiet:
                 continue
             table = view.table(p["row_of"])
             row = int(dvals[t])
@@ -229,15 +260,26 @@ def explain(view, cell: int, field: str) -> dict:
                 held = {name: table[name][row].item() for name in table}
                 for name, words in (p.get("values") or {}).items():     # (a stored world holds the codes as text)
                     held[name] = words.get(held.get(name), words.get(str(held.get(name)), held.get(name)))
-                held = {name: _fmt(v, "") if isinstance(v, float) else v for name, v in held.items()}
-                parts.append(p["says"].format_map(_Safe({"row": row, "row_number": row, **held})))
-        nothing = pat.get("form") == "sum" and not absent and not parts      # a sum none of whose parts is worth a word
-        if parts:
-            text = text.rstrip() + " " + "; ".join(parts) + "."
-        elif nothing and pat.get("says_zero"):
+                units = p.get("units") or {}
+                held = {name: _fmt(v, units.get(name, "")) if isinstance(v, float) else v for name, v in held.items()}
+                rows_said.append(p["says"].format_map(_Safe({"row": row, "row_number": row, **held})))
+        # a sum none of whose parts is worth a word. Its own sentence for that case speaks only if the value shown is
+        # nothing as well: after a push, or after another process changed the field, the parts no longer add up to it.
+        nothing = pat.get("form") == "sum" and not absent and not quiet and not parts
+        empty = nothing and isinstance(value, float) and value == 0.0
+        parts += rows_said
+        if empty and pat.get("says_zero"):
             text = pat["says_zero"].format_map(slots)
-        elif nothing and text.rstrip().endswith(":"):                        # nothing follows the colon: end the sentence
-            text = text.rstrip()[:-1] + "."
+            if rows_said:
+                text = text.rstrip() + " " + "; ".join(rows_said) + "."
+        elif parts:
+            text = text.rstrip() + " " + "; ".join(parts) + "."
+        else:
+            if text.rstrip().endswith(":"):                                  # nothing follows the colon: end the sentence
+                text = text.rstrip()[:-1] + "."
+            pushed = any(float(view.push_arrays(pid)["weight"][c]) > 0.0 for pid in line.get("pushes", []) if pid in push_meta)
+            if nothing and not empty and (pushed or line.get("modified_by")):
+                text += " Its process found nothing here; what changed the value afterwards follows."
         for m in line.get("modified_by", []):                # processes that changed the field after its writer
             text += f" After {writer} wrote it, {m} changed it ({(models.get(m) or {}).get('model') or 'a process that modifies this field'})."
         step = {"field": f, "cell": int(c), "writer": writer, "model": line["model"], "value": shown, "text": text,
@@ -287,14 +329,19 @@ def explain(view, cell: int, field: str) -> dict:
                 if g in specs:
                     visit(g, int(c), depth + 1, g in line["reads_lagged"], path)
             return
-        if pat.get("form") == "sum":
+        if quiet:
+            candidates = []
+        elif pat.get("form") == "sum":
             largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
             worth = [t for t in order if t not in base and abs(dvals[t]) > 0.0 and abs(dvals[t]) >= WORTH_FOLLOWING * largest]
             candidates = worth[:FOLLOW_TOP if depth <= 1 else 1]
         else:
             candidates = order
+        closes = None
         for t in candidates:
             p = dpat.get(t) or {}
+            if closes is None and p.get("ends"):             # the chain ends at this driver: a seed, a parameter
+                closes = p["ends"]
             fol = list(p.get("follows", []))
             if "follows_by" in p and names.get(t) in p["follows_by"]:
                 fol += p["follows_by"][names[t]]
@@ -304,18 +351,20 @@ def explain(view, cell: int, field: str) -> dict:
             for g in fol:
                 if (g, at) not in nexts:
                     nexts.append((g, at))
-        if nothing and pat.get("follows_zero"):
+        if empty and pat.get("follows_zero"):
             nexts = [(g, c) for g in pat["follows_zero"]]
         if not nexts:
             nexts = [(g, c) for g in pat.get("follows", [])]
         if not nexts and not terms and not pat:
             nexts = [(g, c) for g in line["reads"]][:FOLLOW_TOP]
+        if closes is not None:
+            chain.append({"field": f, "cell": int(c), "end": True, "text": closes.format_map(slots)})
         for g, at in nexts[:3]:
             if g in specs:
                 visit(g, int(at), depth + 1, g in line["reads_lagged"], path)
         if not nexts and not line["reads"] and not line["reads_lagged"] and not terms:
             chain.append({"field": f, "cell": int(c), "end": True,
-                          "text": f"The chain ends here: {f} follows from the planet parameters and the mesh alone."})
+                          "text": f"The chain ends here: {writer} read no other field to give {f}. Its model: {line['model']}."})
 
     visit(field, int(cell), 0, False, ())
     notices = []

@@ -16,7 +16,7 @@ from worldengine.server import make_server
 
 
 def geometry_only():
-    models = yaml.safe_load((DATA / "models.yaml").read_text())
+    models = yaml.safe_load((DATA / "models.yaml").read_text(encoding="utf-8"))
     models["slots"] = {"PlanetGeometry": models["slots"]["PlanetGeometry"]}
     return Engine(DATA, profile="preview", overrides={"models": models, "interventions": []})
 
@@ -97,7 +97,11 @@ def test_server_answers_the_page(served, geometry_store):
     why = json.loads(get(served + "/api/explain?cell=5&field=coriolis_parameter")[0])
     assert why["chain"][-1]["end"] is True
     stats = json.loads(get(served + "/api/stats?name=cell_area")[0])
-    assert stats["min"] < stats["max"]
+    area = w.fields["cell_area"].astype(np.float64)
+    assert stats["min"] == area.min() and stats["max"] == area.max()
+    low, high, top = np.percentile(area, [2.0, 98.0, 99.9])
+    assert np.isclose(stats["low"], low) and np.isclose(stats["high"], high) and np.isclose(stats["top"], top)
+    assert stats["low"] < stats["high"] <= stats["top"] <= stats["max"]            # top: the scale of a field a few cells of which hold most
 
 
 def test_same_request_in_two_server_sessions_gives_the_same_bytes(served, geometry_store):

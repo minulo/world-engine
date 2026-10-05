@@ -320,6 +320,10 @@ class Engine:
             groups=set(self.registry.groups), tables=self.registry.table_names(), labels=self.registry.labels,
             kind=self.registry.kind, structural=self.registry.structural,
             steps_of_dated={s: c.get("step", "day") for s, c in self.stage_cfg.items() if c["clock"] == "dated"})
+        unused = sorted(slot for slot in (p["explanations"] or {}) if slot not in self.procs)
+        if unused:                                           # (a world built from some of the slots, or a misspelt slot)
+            self.plan.notes.append(f"explanations.yaml holds sentence patterns for {', '.join(unused)}, which this world does "
+                                   f"not fill: they are not used")
         self.push_by_step = {PUSH % q.id: q for q in self.pushes}
         self.push_by_id = {q.id: q for q in self.pushes}
         self.stage_of = {f: self.plan.steps[w]["stage"] for f, w in self.plan.producer.items()}
@@ -400,6 +404,25 @@ class Engine:
                 if c.field not in self.registry.fields:
                     problems.append(f"push {q.id} tests {c.field}, which fields.yaml does not declare")
             problems += iv.check(q, self.registry, self.months)
+        # A sentence pattern of the "why" answers may name only what its process records. The walk passes over a
+        # driver it does not find, so a misspelt one would leave the answer short without a word.
+        for slot, patterns in (self.params["explanations"] or {}).items():
+            if slot not in self.procs:
+                continue                                     # a slot this world does not fill: the next loop says so
+            d, recorded = self.decls[slot], self.procs[slot].drivers
+            written = set(d["writes"]) | set(d["modifies"]) | set(d["contributes"].values())
+            for field, pattern in (patterns or {}).items():
+                where = f"explanations.yaml: {slot}.{field}"
+                if field not in written:
+                    problems.append(f"{where}: {slot} does not write {field}, so this pattern would never be used")
+                    continue
+                spoken = (pattern or {}).get("drivers") or {}
+                named = set(spoken) | {p["at"] for p in spoken.values() if p and p.get("at")}
+                named |= {t for case in (pattern or {}).get("cases") or [] for t in (case.get("when") or {})}
+                unknown = sorted(named - set(recorded.get(field, ())))
+                if unknown:
+                    problems.append(f"{where}: the pattern names the driver {', '.join(unknown)}, which {slot} does not record "
+                                    f"for {field} (it records: {', '.join(recorded.get(field, ())) or 'none'})")
         if problems:
             raise ParameterError("; ".join(problems))
 
@@ -950,6 +973,14 @@ class Engine:
                 if value is not None and not (lo <= value <= hi):
                     self.world.notice("model_outside_range", slot=slot, parameter=key, value=value, expected=[lo, hi])
 
+    def _settle_of(self, stage) -> dict:
+        """The tolerances of the settle test that fields.yaml sets for what this stage reads from its previous round."""
+        out = {f: self.registry.fields[f].settle for f in self.lagged_fields
+               if self.stage_of.get(f) == stage and self.registry.fields[f].settle}
+        read_here = {g for d in self.plan.steps.values() if d["stage"] == stage for g in d["lagged_group"]}
+        out.update({"group:" + g: self.registry.groups[g].settle for g in sorted(read_here) if self.registry.groups[g].settle})
+        return out
+
     def _lineage(self):
         w = self.world
         for f, writer in self.plan.producer.items():
@@ -974,7 +1005,9 @@ class Engine:
                       "mesh_level": self.level,
                       "stage": self.stage_cfg[d["stage"]],           # the clock, and the length and number of its rounds
                       "seed": self.seed if draws else None,          # the seed counts where a draw is made
-                      "climate": self.profile["climate"] if self.clocks[d["stage"]] == "climate" else None}
+                      "climate": self.profile["climate"] if self.clocks[d["stage"]] == "climate" else None,
+                      # the tolerances that decide when the rounds of the stage stop shaped every field of it
+                      "settle": self._settle_of(d["stage"]) if self.clocks[d["stage"]] == "climate" else None}
             w.lineage[f] = {
                 "writer": writer, "stage": d["stage"], "model": proc.model if proc else "the engine's default for a label field",
                 "version": proc.version if proc else __version__,

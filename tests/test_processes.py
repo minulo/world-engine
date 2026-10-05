@@ -582,8 +582,8 @@ def test_albedo_returns_the_table_value_of_each_surface_type(h):
     warm = np.full((12, h.mesh.n), 300.0)
     a = h.run("Albedo", reads=albedo_inputs(h, sea), lagged={"surface_temperature": warm}, constants=bare).fields["albedo"]
     assert np.allclose(a[:, sea], 0.07) and np.allclose(a[:, ~sea], 0.20)
-    snowy = np.full((12, h.mesh.n), 20.0)
-    cold = h.run("Albedo", reads=albedo_inputs(h, sea), lagged={"surface_temperature": warm - 100.0, "snow_water": snowy},
+    snowy = np.ones((12, h.mesh.n))
+    cold = h.run("Albedo", reads=albedo_inputs(h, sea), lagged={"surface_temperature": warm - 100.0, "snow_cover": snowy},
                  constants=bare).fields["albedo"]
     assert np.allclose(cold, 0.658)                                    # ice on the sea, snow on the land
     dry = h.run("Albedo", reads=albedo_inputs(h, sea), lagged={"surface_temperature": warm - 100.0}, constants=bare).fields["albedo"]
@@ -593,8 +593,8 @@ def test_albedo_returns_the_table_value_of_each_surface_type(h):
 def test_albedo_with_cloud_and_ice_gives_the_published_values_and_its_drivers_add_up(h):
     sea = h.mesh.xyz[:, 0] > 0
     t = np.where(h.mesh.lat > 60, 250.0, 300.0) * np.ones((12, 1))
-    snowy = np.where(h.mesh.lat > 60, 20.0, 0.0) * np.ones((12, 1))
-    out = h.run("Albedo", reads=albedo_inputs(h, sea), lagged={"surface_temperature": t, "snow_water": snowy})
+    snowy = np.where(h.mesh.lat > 60, 1.0, 0.0) * np.ones((12, 1))
+    out = h.run("Albedo", reads=albedo_inputs(h, sea), lagged={"surface_temperature": t, "snow_cover": snowy})
     a = out.fields["albedo"].astype(np.float64)
     assert np.allclose(a[:, h.mesh.lat > 60], 0.62, atol=2e-3)         # ice-covered cells reflect the 0.62 of North et al. 1981
     free = h.mesh.lat <= 60
@@ -611,12 +611,12 @@ def _year(mean_c, swing):
     return 273.15 + mean_c + swing * np.array([np.cos(2 * np.pi * (m - 6.5) / 12) for m in range(12)])
 
 
-def _white_months(h, sea, temperature, snow_water=0.0):
+def _white_months(h, sea, temperature, snow_cover=0.0):
     """Per month, the share of the surface that Albedo covers with snow or ice, with the cloud and the low sun left out."""
     n = h.mesh.n
     t = np.asarray(temperature, dtype=np.float64).reshape(12, 1) * np.ones((1, n))
-    snow = np.broadcast_to(np.asarray(snow_water, dtype=np.float64).reshape(-1, 1), (12, n))
-    out = h.run("Albedo", reads=albedo_inputs(h, np.full(n, sea)), lagged={"surface_temperature": t, "snow_water": snow},
+    snow = np.broadcast_to(np.asarray(snow_cover, dtype=np.float64).reshape(-1, 1), (12, n))
+    out = h.run("Albedo", reads=albedo_inputs(h, np.full(n, sea)), lagged={"surface_temperature": t, "snow_cover": snow},
                 constants={"cloud_share": 0.0, "low_sun_term": 0.0})
     return out.drivers["albedo"]["from_snow_and_ice"][:, 0].astype(np.float64) / (0.658 - (0.07 if sea else 0.20))
 
@@ -627,26 +627,27 @@ def test_ice_lies_on_the_sea_where_the_mean_of_the_year_is_below_minus_ten(h):
     assert np.allclose(_white_months(h, True, _year(-15.0, 20.0)), 1.0)    # ice in every month, the warm ones included
     assert np.allclose(_white_months(h, True, _year(-9.5, 0.0)), 0.25, atol=1e-4)     # inside the ramp, 2 K wide, the ice is partial
     assert np.all(_white_months(h, True, _year(-8.9, 0.0)) == 0.0)
-    assert np.allclose(_white_months(h, True, _year(-15.0, 20.0), snow_water=0.0), 1.0)  # sea ice asks for no snow
-    assert np.all(_white_months(h, True, _year(-5.0, 12.0), snow_water=500.0) == 0.0)   # and snow does not whiten the open sea
+    assert np.allclose(_white_months(h, True, _year(-15.0, 20.0), snow_cover=0.0), 1.0)  # sea ice asks for no snow
+    assert np.all(_white_months(h, True, _year(-5.0, 12.0), snow_cover=1.0) == 0.0)     # and snow does not whiten the open sea
 
 
-def test_land_is_white_in_proportion_to_the_snow_that_lies_on_it_and_fully_from_fifteen_millimetres(h):
-    """The snow store is Hydrology's (tests/test_water.py follows it by hand). Albedo turns the store of the last round
-    into cover: min(1, store / 15 mm), the rule of Dutra et al. 2010, equation A2. The earlier rule, snow in every month
-    below freezing and no other, made cold dry ground white and froze one seeded world in 32 (second review)."""
-    store = [5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 30.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    white = _white_months(h, False, 273.15 + np.array([-5.0] * 6 + [5.0] * 6), store)
-    assert np.allclose(white, [1 / 3, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0], atol=1e-5)
+def test_land_is_white_by_the_share_of_the_ground_that_lay_under_snow(h):
+    """The snow store and the share of the ground it covers are Hydrology's (tests/test_water.py follows both by
+    hand: cover = min(1, store / 15 mm), the rule of Dutra et al. 2010, equation A2, taken day by day). Albedo draws
+    the land white by that share, as it stood in the last round. The earlier rule, snow in every month below
+    freezing and no other, made cold dry ground white and froze one seeded world in 32 (second review)."""
+    cover = [1 / 3, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0]
+    white = _white_months(h, False, 273.15 + np.array([-5.0] * 6 + [5.0] * 6), cover)
+    assert np.allclose(white, cover, atol=1e-5)
     assert np.all(_white_months(h, False, np.full(12, 220.0), 0.0) == 0.0)           # no snow on the ground, no white, however cold
-    assert np.allclose(_white_months(h, False, np.full(12, 300.0), 1.2), 1.2 / 15.0, atol=1e-6)     # and it asks only for the store
+    assert np.allclose(_white_months(h, False, np.full(12, 300.0), 0.08), 0.08, atol=1e-6)          # and it asks only for the cover
 
 
 def test_albedo_says_so_when_snow_and_ice_cover_more_than_a_third_of_the_planet(h):
     sea = h.mesh.xyz[:, 0] > 0
     t = np.where(np.abs(h.mesh.lat) > 15, 240.0, 300.0) * np.ones((12, 1))            # ice down to 15 degrees: three quarters of the surface
-    snowy = np.where(np.abs(h.mesh.lat) > 15, 20.0, 0.0) * np.ones((12, 1))
-    out = h.run("Albedo", reads=albedo_inputs(h, sea), lagged={"surface_temperature": t, "snow_water": snowy})
+    snowy = np.where(np.abs(h.mesh.lat) > 15, 1.0, 0.0) * np.ones((12, 1))
+    out = h.run("Albedo", reads=albedo_inputs(h, sea), lagged={"surface_temperature": t, "snow_cover": snowy})
     notes = [n for n in out.notices if n["kind"] == "process_note"]
     assert len(notes) == 1 and "deep ice age" in notes[0]["what"] and abs(notes[0]["share_covered"] - (1 - np.sin(np.deg2rad(15)))) < 0.02
 
@@ -910,7 +911,7 @@ def test_rain_on_rising_ground_follows_the_surface_wind_and_falls_on_the_higher_
     uphill = has & ~plateau[:, None] & plateau[nb]
     pushed = c["rising_ground_efficiency"] * np.maximum(out_speed, 0.0) * (m.nbr_dual * R) * (1 - share) * uphill
     area = geometry(h)["cell_area"]
-    month_s = 31558150.0 / 12
+    month_s = h.planet["year_length_s"] / 12
     by_hand = np.bincount(nb.ravel(), weights=(pushed * (humidity * water)[:, None]).ravel(), minlength=n) / area * month_s
     assert np.allclose(lift, by_hand, rtol=2e-3, atol=1e-3)
 

@@ -23,7 +23,7 @@ def toy(**overrides):
 
 
 def toy_file(name):
-    return yaml.safe_load((TOY / f"{name}.yaml").read_text())
+    return yaml.safe_load((TOY / f"{name}.yaml").read_text(encoding="utf-8"))
 
 
 def with_slot(name, cls, writes, keep=("ToySource", "ToyFollower", "ToyModifier")):
@@ -236,7 +236,7 @@ def test_outline_region():
 # ---------------------------------------------------------------------------------------------- parameter files
 def test_number_written_as_text_is_refused_with_advice(tmp_path):
     for f in TOY.glob("*.yaml"):
-        (tmp_path / f.name).write_text(f.read_text().replace("star_output_w_m2: 1361.0", "star_output_w_m2: 1e3"))
+        (tmp_path / f.name).write_text(f.read_text(encoding="utf-8").replace("star_output_w_m2: 1361.0", "star_output_w_m2: 1e3"), encoding="utf-8")
     with pytest.raises(ParameterError) as err:
         Parameters(tmp_path)
     assert "is text, not a number" in str(err.value) and "1.0e-5" in str(err.value)
@@ -244,7 +244,7 @@ def test_number_written_as_text_is_refused_with_advice(tmp_path):
 
 def test_unknown_key_and_meaningless_value_are_refused(tmp_path):
     for f in TOY.glob("*.yaml"):
-        (tmp_path / f.name).write_text(f.read_text().replace("radius_m: 6.371e+6", "radius_m: 0.0\ncolour: blue"))
+        (tmp_path / f.name).write_text(f.read_text(encoding="utf-8").replace("radius_m: 6.371e+6", "radius_m: 0.0\ncolour: blue"), encoding="utf-8")
     with pytest.raises(ParameterError) as err:
         Parameters(tmp_path)
     assert "radius_m: 0.0 must be above 0" in str(err.value) and "the key 'colour' is not allowed" in str(err.value)

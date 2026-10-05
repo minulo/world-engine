@@ -597,3 +597,40 @@ class Trickle(Process):
         ctx.write("trickle", 3.0 * flows)
         ctx.driver("trickle", "from_spring", 1.0 * flows)
         ctx.driver("trickle", "from_rain", 2.0 * flows)
+
+
+# ---------------------------------------------------------------- toy processes for the cases of build step 2's review
+class Pond(Process):
+    """A sum of two parts with a driver that says what the cell is, and one that names a row of a table.
+    Cells 0 to 9 are sea and hold nothing, cells 10 to 19 are lake, the rest is land."""
+    stage = "climate"
+    reads = ("table:toy_items",)
+    writes = ("pond",)
+    drivers = {"pond": ("from_stream", "from_spring", "ground", "lake")}
+    additive = ("pond",)
+
+    def run(self, ctx):
+        ctx.read("table:toy_items")
+        cells = np.arange(ctx.mesh.n)
+        ground = np.where(cells < 10, 2, np.where(cells < 20, 1, 0))
+        stream = np.where(ground == 2, 0.0, np.where(ground == 1, 4.0, 1.0))
+        spring = np.where(ground == 0, 2.0, 0.0)
+        ctx.write("pond", np.broadcast_to(stream + spring, (ctx.months, ctx.mesh.n)))
+        ctx.driver("pond", "from_stream", stream)
+        ctx.driver("pond", "from_spring", spring)
+        ctx.driver("pond", "ground", ground.astype(np.int32))
+        ctx.driver("pond", "lake", np.where(ground == 1, 1, -1).astype(np.int32))
+
+
+class TrickleInTheLoop(Process):
+    """The sum of Trickle, in the climate stage, so that a push can change it after it is written."""
+    stage = "climate"
+    writes = ("trickle",)
+    drivers = {"trickle": ("from_spring", "from_rain")}
+    additive = ("trickle",)
+
+    def run(self, ctx):
+        flows = (np.arange(ctx.mesh.n) >= 10).astype(np.float64)
+        ctx.write("trickle", 3.0 * flows)
+        ctx.driver("trickle", "from_spring", 1.0 * flows)
+        ctx.driver("trickle", "from_rain", 2.0 * flows)

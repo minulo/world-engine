@@ -6,8 +6,11 @@ import numpy as np
 
 from .units import TWO_PI
 
+KEPLER_STEPS = 12              # Newton steps for Kepler's equation: far more than an orbit of any planet-like eccentricity needs
+GRAZING = 1.0e-12              # cos(latitude) * cos(declination) below this: the sun does not rise or does not set (a pole)
 
-def solar_longitude(year_fraction, eccentricity, perihelion_longitude, equinox_fraction, iterations: int = 12):
+
+def solar_longitude(year_fraction, eccentricity, perihelion_longitude, equinox_fraction, iterations: int = KEPLER_STEPS):
     """Angle travelled along the orbit since the northward equinox, and the squared ratio of the mean to the
     present distance from the star, at times given as fractions of the year from the start of month 1.
 
@@ -36,7 +39,7 @@ def daily_insolation(lat, longitude, tilt, star_output, distance_factor=1.0):
     dec = np.arcsin(np.sin(tilt) * np.sin(longitude))
     sl, cl, sd, cd = np.sin(lat), np.cos(lat), np.sin(dec), np.cos(dec)
     den = cl * cd
-    cos_h0 = np.where(np.abs(den) > 1e-12, -sl * sd / np.where(np.abs(den) > 1e-12, den, 1.0), np.where(sl * sd > 0, -1.0, 1.0))
+    cos_h0 = np.where(np.abs(den) > GRAZING, -sl * sd / np.where(np.abs(den) > GRAZING, den, 1.0), np.where(sl * sd > 0, -1.0, 1.0))
     h0 = np.arccos(np.clip(cos_h0, -1.0, 1.0))                         # 0 in polar night, pi in polar day
     return star_output / np.pi * distance_factor * (h0 * sl * sd + cl * cd * np.sin(h0))
 

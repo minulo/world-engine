@@ -6,11 +6,13 @@ and ice lie:
   * ice on the sea wherever the mean temperature of the year is below -10 C. This is the rule
     of the seasonal model in North, Cahalan and Coakley 1981 (page 102: "an ice cap whose edge
     is at the mean annual -10 C isotherm"), applied to the sea only [INFERRED: my reading];
-  * snow on land wherever snow lay on the ground in the last round: Hydrology's snow store,
-    which snowfall fills and warmth empties. The ground counts as fully white once the store
-    holds a set amount of water (the form of the older ECMWF land scheme, Dutra et al. 2010,
-    equation A2). Land where more snow falls in a year than the year can melt keeps its snow
-    all year: that is the ice sheet on land.
+  * snow on land wherever snow lay on the ground in the last round: the share of the ground
+    under snow that Hydrology works out from its snow store, which snowfall fills and warmth
+    empties. The ground counts as fully white once the store holds a set amount of water (the
+    form of the older ECMWF land scheme, Dutra et al. 2010, equation A2), and a month is as
+    white as its days are on average: a month in which the snow goes in the first week is
+    white for a quarter of it. Land where more snow falls in a year than the year can melt
+    keeps its snow all year: that is the ice sheet on land.
 The paper's own rule for land is simpler: "a seasonally moving snow line on land whose edge is
 at the instantaneous 0 C isotherm", snow or no snow. An earlier version of this process used
 it. With it, ground that is cold but dry, and high ground that is cold only by its height,
@@ -53,9 +55,9 @@ from ..process import Process
 class SurfaceTableAlbedo(Process):
     stage = "climate"
     reads = ("ocean_mask", "latitude", "cell_area")
-    reads_lagged = ("surface_temperature", "snow_water")
+    reads_lagged = ("surface_temperature", "snow_cover")
     writes = ("albedo",)
-    shared = ("sea_ice_yearly_mean_below_k", "snow_full_cover_mm")
+    shared = ("sea_ice_yearly_mean_below_k",)
     model = "surface table with sea ice by the year's mean, snow on land where the snow store holds snow, a constant cloud share and a low-sun term"
     drivers = {"albedo": ("from_surface_type", "from_snow_and_ice", "from_cloud_and_sun_angle")}
     additive = ("albedo",)
@@ -66,12 +68,11 @@ class SurfaceTableAlbedo(Process):
         s = np.sin(np.deg2rad(ctx.read("latitude")))
         area = ctx.read("cell_area")
         temperature = ctx.read_lagged("surface_temperature").astype(np.float64)
-        snow = ctx.read_lagged("snow_water").astype(np.float64)
+        on_ground = np.clip(ctx.read_lagged("snow_cover").astype(np.float64), 0.0, 1.0)
         legendre = (3 * s * s - 1) / 2                                   # the second Legendre polynomial
         # Ice on the sea: the same in every month.
         sea_ice = np.clip(0.5 + (ctx.shared["sea_ice_yearly_mean_below_k"] - temperature.mean(axis=0)) / c["ice_ramp_k"], 0.0, 1.0)
-        # Snow on land: white in proportion to the water the snow store holds, up to full cover.
-        on_ground = np.clip(snow / ctx.shared["snow_full_cover_mm"], 0.0, 1.0)
+        # Snow on land: white in proportion to the share of the ground that lay under snow in the month.
         ice = np.where(sea, sea_ice, on_ground)
         base = np.where(sea, c["surface"]["sea"], c["surface"]["land"])
         through = (1 - c["cloud_share"]) ** 2                            # sunlight that passes the cloud twice

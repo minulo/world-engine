@@ -27,7 +27,7 @@ WITH_GEO = {"stages": [{"name": "setup", "clock": "once"},
 
 
 def toy_file(name):
-    return yaml.safe_load((TOY / f"{name}.yaml").read_text())
+    return yaml.safe_load((TOY / f"{name}.yaml").read_text(encoding="utf-8"))
 
 
 def number(**more):
@@ -38,7 +38,8 @@ def slot(cls, writes, **more):
     return {"implementation": f"toy_processes:{cls}", "writes": writes, **more}
 
 
-def engine(slots, fields=None, groups=None, pushes=(), stages=None, tables=None, max_rounds=None, keep_trio=False, profile=None):
+def engine(slots, fields=None, groups=None, pushes=(), stages=None, tables=None, max_rounds=None, keep_trio=False, profile=None,
+           explanations=None):
     """An engine on the toy data with the given slots; the three toy processes of the loop are left out unless kept."""
     models = {"shared": {"one": 1.0}, "slots": dict(toy_file("models")["slots"]) if keep_trio else {}}
     models["slots"].update(slots)
@@ -50,6 +51,8 @@ def engine(slots, fields=None, groups=None, pushes=(), stages=None, tables=None,
         overrides["stages"] = stages
     if tables:
         overrides["tables"] = tables
+    if explanations is not None:
+        overrides["explanations"] = explanations
     p = toy_file("profiles")
     if max_rounds:
         p["profiles"]["toy"]["climate"]["max_rounds"] = max_rounds
@@ -164,9 +167,15 @@ def test_a_group_can_carry_its_own_tolerances_for_the_settle_test():
     loose = engine(slots, HEAT_FIELDS, groups={"toy_heat": {"unit": "W/m2", "shape": "cell", "settle": {"mean": 0.1, "cell": 0.1}}}).build()
     assert loose.settled["climate"] and loose.rounds_used["climate"] == 5              # 0.0625 is the first gap below a tenth
     assert loose.settle_log[-1]["gaps"][0]["name"] == "group:toy_heat" and abs(loose.settle_log[-1]["gaps"][0]["mean_gap"] - 0.0625) < 1e-9
-    for bad in ({"mean": 0.1}, {"mean": -1.0, "cell": 0.1}):
-        with pytest.raises(ParameterError):
+    for bad in ({"mean": 0.1}, {"mean": -1.0, "cell": 0.1}, {"mean": float("inf"), "cell": 0.1}, {"mean": 0.1, "cell": float("inf")}):
+        with pytest.raises(ParameterError):                                            # (an infinite tolerance would settle anything)
             engine(slots, HEAT_FIELDS, groups={"toy_heat": {"unit": "W/m2", "shape": "cell", "settle": bad}})
+    # The tolerances decide in which round the stage stops, and so what every field of the stage holds. They count in
+    # the fingerprint of those fields: the two worlds above differ in sum_lagged and must not carry one fingerprint.
+    assert np.abs(plain.fields["sum_lagged"] - loose.fields["sum_lagged"]).max() > 0.05
+    assert plain.lineage["sum_lagged"]["fingerprint"] != loose.lineage["sum_lagged"]["fingerprint"]
+    again = engine(slots, HEAT_FIELDS, groups={"toy_heat": {"unit": "W/m2", "shape": "cell", "settle": {"mean": 0.1, "cell": 0.1}}}).build()
+    assert again.lineage["sum_lagged"]["fingerprint"] == loose.lineage["sum_lagged"]["fingerprint"]
 
 
 def test_a_member_must_have_the_layout_of_its_group():
@@ -445,8 +454,8 @@ def test_a_key_written_twice_in_a_parameter_file_is_refused(tmp_path):
     """YAML keeps the last of two equal keys and says nothing: a constant set twice took its second value."""
     data = tmp_path / "data"
     shutil.copytree(TOY, data)
-    text = (data / "models.yaml").read_text()
-    (data / "models.yaml").write_text(text.replace("    constants: {gain: 0.5}", "    constants: {gain: 0.5}\n    constants: {gain: 0.9}"))
+    text = (data / "models.yaml").read_text(encoding="utf-8")
+    (data / "models.yaml").write_text(text.replace("    constants: {gain: 0.5}", "    constants: {gain: 0.5}\n    constants: {gain: 0.9}"), encoding="utf-8")
     with pytest.raises(ParameterError) as err:
         Engine(data, profile="toy")
     assert "models.yaml" in str(err.value) and "the key 'constants' is written twice" in str(err.value)

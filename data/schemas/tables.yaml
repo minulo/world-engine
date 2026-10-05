@@ -10,3 +10,4 @@ keys:
       keys:
         columns: {type: map, values: {type: string, choices: [float32, float64, int16, int32, int64, bool]}}
         description: {type: string}
+        rules: {type: list, items: {type: string}}

@@ -12,6 +12,9 @@ bits. Numba compiles them; fastmath is off (design, Layer 8).
 import numpy as np
 from numba import njit
 
+W_SAT = 8                      # where the saturation column stands among the coefficients that a Ladder is handed
+NEWTON_SHARE = 0.1             # a cell's own balance is solved to this share of the tolerance of a sweep
+
 
 @njit(cache=True)
 def sweep(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_coef, w_sat, rain_scale, rain_steepness,
@@ -103,8 +106,6 @@ def residual(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, eva
 class Ladder:
     """The meshes from coarse to fine, with the budget's coefficients on each."""
 
-    W_SAT = 8                                            # where the saturation column stands among the coefficients
-
     def __init__(self, meshes, coefficients):
         self.meshes, self.co = meshes, coefficients      # coefficients[k]: what sweep() takes after w, with the orders last
 
@@ -144,14 +145,14 @@ class Ladder:
         default world, the answer lies up to six times the tolerance from the fully settled one (third check).
         A budget that nothing feeds settles toward nothing far more slowly than that, because air that holds
         little water rains little; the caller does not send such a budget here."""
-        newton_tolerance = 0.1 * tolerance
+        newton_tolerance = NEWTON_SHARE * tolerance
         humidity = start_humidity
         w, trips, change = None, 0, 0.0
         for k, mesh in enumerate(self.meshes):
             if humidity.size < mesh.n:                    # carry the coarser answer onto the finer mesh
                 pa, pb = mesh.parents[humidity.size:, 0], mesh.parents[humidity.size:, 1]
                 humidity = np.concatenate([humidity, 0.5 * (humidity[pa] + humidity[pb])])
-            w_sat = self.co[k][self.W_SAT]
+            w_sat = self.co[k][W_SAT]
             w = humidity * w_sat
             zero = np.zeros(mesh.n)
             for trips in range(1, max_trips + 1):

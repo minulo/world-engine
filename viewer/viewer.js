@@ -5,9 +5,12 @@
 const $ = (id) => document.getElementById(id);
 const DATA_W = 1024;
 const NO_CLASS = [217, 26, 191];           // the colour of a class code that the field's list does not hold
+const NO_VALUE = [115, 115, 115];          // a cell without a value
+const NOTHING_ON_LAND = [176, 166, 148];   // on a log scale, a cell that holds exactly zero: no colour of the scale is its own,
+const NOTHING_AT_SEA = [70, 86, 108];      // so land and sea each get a plain one, and a dry valley does not look like the sea
 const state = {
   world: null, field: null, part: "", month: 1, flat: false, lon0: 0, lat0: 20, zoom: 0.92, panX: 0, panY: 0,
-  idmap: null, idW: 0, idH: 0, data: null, stats: null, selected: -1, playing: null, cache: new Map(),
+  idmap: null, idW: 0, idH: 0, data: null, stats: null, selected: -1, playing: null, cache: new Map(), sea: null,
 };
 
 // ---------------------------------------------------------------- colour
@@ -29,6 +32,7 @@ const FIELD_MAP = {
   river_discharge: ["water", false, "log"], drainage_area: ["water", false, "log"], lake_fraction: ["water", false],
   runoff: ["rain", false], runoff_annual: ["rain", false], evapotranspiration: ["rain", false],
   potential_evapotranspiration: ["rain", false], soil_moisture: ["rain", false], snow_water: ["water", false, "log"],
+  snow_cover: ["water", false],
   slope: ["viridis", false, "log"],
 };
 const LOG_DECADES = 4;                    // a log scale spans this many powers of ten below its top
@@ -69,8 +73,8 @@ const VS = `#version 300 es
 in vec2 aPos; out vec2 vPos; void main() { vPos = aPos; gl_Position = vec4(aPos, 0.0, 1.0); }`;
 const FS = `#version 300 es
 precision highp float; precision highp int; precision highp usampler2D;
-uniform usampler2D uIds; uniform sampler2D uData; uniform sampler2D uLut; uniform sampler2D uPal;
-uniform int uFlat, uCategorical, uClasses, uSplit, uSel, uReady, uLog, uZeroNone; uniform ivec2 uIdSize; uniform mat3 uRot;
+uniform usampler2D uIds; uniform sampler2D uData; uniform sampler2D uLut; uniform sampler2D uPal; uniform sampler2D uSea;
+uniform int uFlat, uCategorical, uClasses, uSplit, uSel, uReady, uLog, uZeroNone, uHasSea; uniform ivec2 uIdSize; uniform mat3 uRot;
 uniform float uZoom, uLo, uHi, uAspect; uniform vec2 uPan; uniform vec3 uSpace;
 in vec2 vPos; out vec4 frag;
 const float PI = 3.141592653589793;
@@ -94,14 +98,14 @@ void main() {
   int id = int(texelFetch(uIds, ivec2(ix, iy), 0).r);
   float v = texelFetch(uData, ivec2(id % ${DATA_W}, id / ${DATA_W}), 0).r;
   vec3 c;
-  if (isnan(v)) c = vec3(0.45);
+  if (isnan(v)) c = vec3(${NO_VALUE.map((x) => (x / 255).toFixed(3)).join(", ")});
   else if (uCategorical == 1) {                           // a code outside the list of classes has a colour of its own
     int k = int(floor(v + 0.5));
     c = (k < 0 || k >= uClasses) ? vec3(${NO_CLASS.map((x) => (x / 255).toFixed(3)).join(", ")}) : texelFetch(uPal, ivec2(k, 0), 0).rgb;
   }
   else if (uCategorical == 2) {                           // a number that names a thing (a plate, a basin): one colour each
     float k = floor(v + 0.5);
-    if (k < 0.0 || (uZeroNone == 1 && k == 0.0)) c = vec3(0.45);
+    if (k < 0.0 || (uZeroNone == 1 && k == 0.0)) c = vec3(${NO_VALUE.map((x) => (x / 255).toFixed(3)).join(", ")});
     else {
       float h = fract(k * 0.61803398875) * 6.0, l = 0.40 + 0.22 * fract(k * 0.36787944117), s = 0.55;
       float a = s * min(l, 1.0 - l);
@@ -110,11 +114,14 @@ void main() {
     }
   }
   else {
-    float t;
+    float t = 0.0; bool nothing = false;
     if (uSplit == 1) t = v <= 0.0 ? 0.498 - 0.498 * clamp(v / min(uLo, -1e-30), 0.0, 1.0) : 0.502 + 0.498 * clamp(v / max(uHi, 1e-30), 0.0, 1.0);
-    else if (uLog == 1) t = v > 0.0 ? clamp(log(v / uLo) / log(uHi / uLo), 0.0, 1.0) : 0.0;
+    else if (uLog == 1) { if (v > 0.0) t = clamp(log(v / uLo) / log(uHi / uLo), 0.0, 1.0); else nothing = true; }
     else t = clamp((v - uLo) / max(uHi - uLo, 1e-30), 0.0, 1.0);
-    c = texture(uLut, vec2(t, 0.5)).rgb;
+    if (nothing) {                                        // exactly zero has no place on a log scale
+      bool sea = uHasSea == 1 && texelFetch(uSea, ivec2(id % ${DATA_W}, id / ${DATA_W}), 0).r > 0.5;
+      c = sea ? vec3(${NOTHING_AT_SEA.map((x) => (x / 255).toFixed(3)).join(", ")}) : vec3(${NOTHING_ON_LAND.map((x) => (x / 255).toFixed(3)).join(", ")});
+    } else c = texture(uLut, vec2(t, 0.5)).rgb;
   }
   if (id == uSel) c = mix(c, vec3(1.0), 0.65);
   frag = vec4(c * shade, 1.0);
@@ -131,14 +138,15 @@ function initGL() {
   const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(prog, "aPos"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  for (const n of ["uIds", "uData", "uLut", "uPal", "uFlat", "uCategorical", "uClasses", "uSplit", "uLog", "uZeroNone", "uSel", "uReady", "uIdSize", "uRot", "uZoom",
-    "uLo", "uHi", "uAspect", "uPan", "uSpace"]) uni[n] = gl.getUniformLocation(prog, n);
-  ["ids", "data", "lut", "pal"].forEach((n, i) => { tex[n] = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i);
+  for (const n of ["uIds", "uData", "uLut", "uPal", "uSea", "uFlat", "uCategorical", "uClasses", "uSplit", "uLog", "uZeroNone", "uHasSea", "uSel", "uReady",
+    "uIdSize", "uRot", "uZoom", "uLo", "uHi", "uAspect", "uPan", "uSpace"]) uni[n] = gl.getUniformLocation(prog, n);
+  ["ids", "data", "lut", "pal", "sea"].forEach((n, i) => { tex[n] = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i);
     gl.bindTexture(gl.TEXTURE_2D, tex[n]);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, n === "lut" ? gl.LINEAR : gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, n === "lut" ? gl.LINEAR : gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); });
-  gl.uniform1i(uni.uIds, 0); gl.uniform1i(uni.uData, 1); gl.uniform1i(uni.uLut, 2); gl.uniform1i(uni.uPal, 3);
+  gl.uniform1i(uni.uIds, 0); gl.uniform1i(uni.uData, 1); gl.uniform1i(uni.uLut, 2); gl.uniform1i(uni.uPal, 3); gl.uniform1i(uni.uSea, 4);
+  gl.uniform1i(uni.uHasSea, 0);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   return true;
 }
@@ -201,10 +209,20 @@ async function loadField() {
     state.cache.set(key, arr);
   }
   state.data = arr;
-  const h = Math.ceil(arr.length / DATA_W), padded = new Float32Array(DATA_W * h); padded.set(arr);
+  const [filled, h] = padded(arr);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tex.data);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, DATA_W, h, 0, gl.RED, gl.FLOAT, padded);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, DATA_W, h, 0, gl.RED, gl.FLOAT, filled);
   draw();
+}
+function padded(arr) { const h = Math.ceil(arr.length / DATA_W), out = new Float32Array(DATA_W * h); out.set(arr); return [out, h]; }
+function named(field, v) {                // a number that names a thing is a whole number, and one of them means "none"
+  if (v === null || v === undefined || Number.isNaN(v)) return "no value";
+  const k = Math.round(v);
+  return k < 0 || (ZERO_IS_NONE[field] && k === 0) ? `none (${k})` : String(k);
+}
+function swatch(rgb, text) {
+  const li = document.createElement("li"), sw = document.createElement("span");
+  sw.className = "sw"; sw.style.background = `rgb(${rgb.join(",")})`; li.append(sw, text); return li;
 }
 function fmt(v, unit) {
   if (v === null || v === undefined || Number.isNaN(v)) return "no value";
@@ -213,7 +231,7 @@ function fmt(v, unit) {
   return unit && !/^(category|index|true or false|0 to 1)$/.test(unit) ? `${t} ${unit}` : t;
 }
 async function selectField() {
-  const s = spec(), cat = s.kind === "category" || s.kind === "boolean", named = s.kind === "index";
+  const s = spec(), cat = s.kind === "category" || s.kind === "boolean", names_a_thing = s.kind === "index";
   $("fielddesc").textContent = s.description || "";
   $("partrow").hidden = s.kind !== "direction";
   $("monthrow").style.opacity = isMonthly() ? 1 : 0.4; $("month").disabled = $("play").disabled = !isMonthly();
@@ -237,10 +255,11 @@ async function selectField() {
     }
     legend.append(ul);
     gl.uniform1i(uni.uClasses, names.length);
-  } else if (named) {
+  } else if (names_a_thing) {
     await loadField();
     const note = document.createElement("p"); note.className = "muted small";
-    note.textContent = "Each number has a colour of its own; grey means none" + (ZERO_IS_NONE[state.field] ? " (0)." : " (-1).");
+    note.textContent = "The colours tell one number from the next and have no order; two numbers far apart can look alike. " +
+      "Click a cell for its number. Grey means none" + (ZERO_IS_NONE[state.field] ? " (0)." : " (-1).");
     legend.append(note);
   } else {
     state.stats = await getJSON("/api/stats?name=" + encodeURIComponent(state.field));
@@ -257,12 +276,24 @@ async function selectField() {
     const bar = document.createElement("canvas"); bar.width = 256; bar.height = 1;
     const img = bar.getContext("2d").createImageData(256, 1); img.data.set(table); bar.getContext("2d").putImageData(img, 0, 0);
     const ends = document.createElement("div"); ends.className = "ends";
-    const mid = split ? `<span>0</span>` : log ? `<span>equal steps are equal ratios</span>` : "";
+    const mid = split ? `<span>0</span>` : "";
     ends.innerHTML = `<span>${log ? "≤ " : ""}${fmt(lo, "")}</span>${mid}<span>${fmt(hi, s.unit)}</span>`;
     legend.append(bar, ends);
     await loadField();
+    const extra = document.createElement("ul");
+    if (log) {
+      const note = document.createElement("p"); note.className = "muted small";
+      note.textContent = "Equal steps of colour are equal ratios.";
+      legend.append(note);
+      if (state.data.some((v) => v === 0)) {
+        extra.append(swatch(NOTHING_ON_LAND, state.sea ? "exactly zero, on land" : "exactly zero"));
+        if (state.sea) extra.append(swatch(NOTHING_AT_SEA, "exactly zero, at sea"));
+      }
+    }
+    if (state.data.some(Number.isNaN)) extra.append(swatch(NO_VALUE, "no value"));
+    if (extra.children.length) legend.append(extra);
   }
-  gl.uniform1i(uni.uCategorical, cat ? 1 : named ? 2 : 0); gl.uniform1i(uni.uSplit, split ? 1 : 0);
+  gl.uniform1i(uni.uCategorical, cat ? 1 : names_a_thing ? 2 : 0); gl.uniform1i(uni.uSplit, split ? 1 : 0);
   gl.uniform1i(uni.uLog, log ? 1 : 0); gl.uniform1i(uni.uZeroNone, ZERO_IS_NONE[state.field] ? 1 : 0);
   gl.uniform1f(uni.uLo, lo); gl.uniform1f(uni.uHi, hi);
   const line = state.world.lineage[state.field], m = line && state.world.models[line.writer];
@@ -287,6 +318,7 @@ async function showCell(id) {
       shown = `${fmt(sp, s.unit)}, toward ${((Math.atan2(pair[0], pair[1]) * 180 / Math.PI + 360) % 360).toFixed(0)}° from north`;
     } else if (s.kind === "category") shown = (Array.isArray(v) ? v[state.month - 1] : v).replace(/_/g, " ");
     else if (s.kind === "boolean") shown = v ? "true" : "false";
+    else if (s.kind === "index") shown = named(name, v);
     else if (Array.isArray(v)) { const ok = v.filter((x) => x !== null); const mean = ok.reduce((a, b) => a + b, 0) / Math.max(ok.length, 1);
       shown = `${fmt(v[state.month - 1], s.unit)} <span class="muted">(year ${fmt(mean, "")})</span>`; }
     else shown = fmt(v, s.unit);
@@ -326,7 +358,8 @@ function wire() {
   canvas.addEventListener("pointermove", (e) => {
     const ll = screenToLatLon(e.clientX, e.clientY);
     if (ll && state.data) { const id = cellAt(ll[0], ll[1]), v = state.data[id], s = spec();
-      const shown = s.kind === "category" ? (s.categories[v] || `no class (code ${v})`).replace(/_/g, " ") : s.kind === "boolean" ? (v ? "true" : "false") : fmt(v, s.unit);
+      const shown = s.kind === "category" ? (s.categories[v] || `no class (code ${v})`).replace(/_/g, " ") : s.kind === "boolean" ? (v ? "true" : "false")
+        : s.kind === "index" ? named(state.field, v) : fmt(v, s.unit);
       $("status").textContent = `${Math.abs(ll[0]).toFixed(1)}° ${ll[0] >= 0 ? "N" : "S"}, ${Math.abs(ll[1]).toFixed(1)}° ${ll[1] >= 0 ? "E" : "W"} · ${shown}`; }
     if (!drag) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
@@ -368,6 +401,13 @@ async function start() {
   state.idmap = new Uint32Array(await getBuffer("/api/idmap?width=" + width)); state.idW = width; state.idH = width / 2;
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex.ids);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, state.idW, state.idH, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, state.idmap);
+  if (w.fields.ocean_mask) {                                // where the sea lies, for the cells a log scale has no colour for
+    state.sea = new Float32Array(await getBuffer("/api/field?name=ocean_mask"));
+    const [filled, h] = padded(state.sea);
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex.sea);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, DATA_W, h, 0, gl.RED, gl.FLOAT, filled);
+    gl.uniform1i(uni.uHasSea, 1);
+  }
   await selectField();
   $("status").textContent = "";
   window.viewerReady = true;

@@ -1,61 +1,73 @@
 """Fetch the Earth reference data and check it (the list is in tools/reference_data.yaml).
 
-    python tools/fetch_reference_data.py              fetch what is missing, then check every file
-    python tools/fetch_reference_data.py --check      check only; fetch nothing
+    python tools/fetch_reference_data.py              fetch what is missing or wrong, then check every file
+    python tools/fetch_reference_data.py --check      check only; fetch nothing, remove nothing
 
 The files go to reference_data/ at the top of the repository, which git ignores (or to the folder named by the
-environment variable WORLDENGINE_REFERENCE_DATA). About 35 MB. A file whose SHA-256 differs from the list is refused
-and removed: the tests would otherwise be judged against data nobody looked at.
+environment variable WORLDENGINE_REFERENCE_DATA). About 35 MB. A file whose size or SHA-256 differs from the list
+is refused: it is removed and fetched once more, and if it is still wrong it is removed again. The tests would
+otherwise be judged against data nobody looked at.
 """
-import hashlib
+import http.client
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
-import yaml
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from worldengine import reference                        # noqa: E402
-
-LIST = Path(__file__).resolve().parent / "reference_data.yaml"
+import earth_reference as reference                      # noqa: E402
 
 
-def sha256(path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            h.update(block)
-    return h.hexdigest()
+def right(path, entry) -> bool:
+    return path.exists() and path.stat().st_size == entry["bytes"] and reference.sha256(path) == entry["sha256"]
 
 
-def main(check_only=False) -> int:
-    listed = yaml.safe_load(LIST.read_text())
-    source, folder = listed["source"], reference.folder()
+def fetch(url, target) -> str:
+    """Fetch one file; returns nothing on success, or a sentence saying what went wrong."""
+    part = target.with_suffix(target.suffix + ".part")
+    try:
+        with urllib.request.urlopen(url, timeout=300) as response, open(part, "wb") as out:
+            for block in iter(lambda: response.read(1 << 20), b""):
+                out.write(block)
+    except (urllib.error.URLError, http.client.HTTPException, OSError) as problem:
+        part.unlink(missing_ok=True)
+        return f"could not be fetched from {url}: {problem}"
+    part.replace(target)
+    return ""
+
+
+def main(check_only=False, listed=None, folder=None, say=print) -> int:
+    listed = listed or reference.listed()
+    source, folder = listed["source"], Path(folder) if folder else reference.folder()
     folder.mkdir(parents=True, exist_ok=True)
     bad = 0
     for name, entry in listed["files"].items():
         target = folder / name
-        if not target.exists():
-            if check_only:
-                print(f"missing   {name}")
-                bad += 1
-                continue
-            url = f"{source['raw']}/{source['commit']}/{entry['path']}"
-            print(f"fetching  {name} ({entry['bytes'] / 1e6:.1f} MB) from {url}")
-            part = target.with_suffix(target.suffix + ".part")
-            with urllib.request.urlopen(url, timeout=300) as response, open(part, "wb") as out:
-                for block in iter(lambda: response.read(1 << 20), b""):
-                    out.write(block)
-            part.replace(target)
-        found = sha256(target)
-        if found != entry["sha256"] or target.stat().st_size != entry["bytes"]:
-            print(f"REFUSED   {name}: SHA-256 {found}, expected {entry['sha256']}; the file is removed")
+        if right(target, entry):
+            say(f"checked   {name}")
+            continue
+        if check_only:
+            say(f"missing   {name}" if not target.exists() else f"REFUSED   {name}: it is not the file the list names")
+            bad += 1
+            continue
+        if target.exists():
+            say(f"REFUSED   {name}: it is not the file the list names; it is removed and fetched again")
+            target.unlink()
+        url = f"{source['raw']}/{source['commit']}/{entry['path']}"
+        say(f"fetching  {name} ({entry['bytes'] / 1e6:.1f} MB) from {url}")
+        problem = fetch(url, target)
+        if problem:
+            say(f"FAILED    {name} {problem}")
+            bad += 1
+        elif not right(target, entry):
+            say(f"REFUSED   {name}: SHA-256 {reference.sha256(target)}, {target.stat().st_size} bytes; expected "
+                f"{entry['sha256']}, {entry['bytes']} bytes. The file is removed")
             target.unlink()
             bad += 1
         else:
-            print(f"checked   {name}")
-    print(f"reference data in {folder}: " + ("complete" if not bad else f"{bad} file(s) missing or refused"))
+            say(f"checked   {name}")
+    say(f"reference data in {folder}: " + ("complete" if not bad else f"{bad} file(s) missing or refused"))
     return 1 if bad else 0
 
 

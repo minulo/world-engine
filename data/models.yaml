@@ -7,9 +7,6 @@
 shared:
   lapse_rate_k_per_km: 6.5                     # cooling of air with height [UNVERIFIED: the standard atmosphere's value]
   freezing_point_k: 273.15                     # snow on the ground melts in months warmer than this
-  snow_full_cover_mm: 15.0                     # the ground counts as fully covered once the snow store holds this much water: Albedo
-                                               # draws it white from there, and Hydrology lets it give the air nothing
-                                               # [DOCUMENTED: Dutra et al. 2010, eq. A2, the older ECMWF rule: cover = min(1, S / 15), S in kg/m2]
   sea_ice_yearly_mean_below_k: 263.15          # ice lies on the sea where the mean temperature of the year is below this, -10 C.
                                                # [DOCUMENTED: North, Cahalan and Coakley 1981, eq. 15 and p. 102, put the edge of
                                                #  their ice cap at "the mean annual -10 C isotherm"; INFERRED: applying it to the
@@ -142,7 +139,7 @@ slots:
   Albedo:
     implementation: worldengine.processes.albedo_surface_table:SurfaceTableAlbedo
     standing: Rule
-    model: "A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection at low sun angles. Ice lies on the sea where the year's mean temperature is below -10 C (North, Cahalan and Coakley 1981). Snow lies on land where Hydrology's snow store held snow in the last round."
+    model: "A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection at low sun angles. Ice lies on the sea where the year's mean temperature is below -10 C (North, Cahalan and Coakley 1981). Snow lies on land where Hydrology's snow store held snow in the last round: land is white by the share of the ground under snow on the month's average."
     ignores: "Where clouds actually form, plant cover, dust, sea ice that comes and goes with the seasons, the darkening of old snow and of snow under trees."
     wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics. Clouds are the largest known gap in the climate stage. While land is too dry, snow on land is too thin and melts too early. A planet can still freeze over, more easily than in fuller models; the process says so in a note when snow and ice cover more than a third of the surface."
     writes: [albedo]
@@ -295,11 +292,11 @@ slots:
   Hydrology:
     implementation: worldengine.processes.hydrology_bucket_lakes:BucketHydrology
     standing: Assembled
-    model: "A snow store with degree-day melt (Hock 2003); the air's demand for water by the Priestley-Taylor rule (Davis et al. 2017); soil water as Manabe's bucket; runoff summed down the flow paths into rivers; lakes that spread in closed hollows until their loss to the air matches the water arriving, or overflow at their pass (after Fill-Spill-Merge, Barnes, Callaghan and Wickert 2021)."
-    ignores: "Groundwater; the time water takes along a river; wetlands; lakes that swell and shrink with the seasons, and the time a lake takes to fill; plants; frozen ground; snow lost straight to the air; wind and the dryness of the air in the demand for water."
-    wrong_where: "The timing of floods in very large basins. In deserts the real demand for water is higher than the rule gives, so closed lakes come out too large. A lake smaller than a cell has no shape. Until erosion has cut valleys the relief has far too many closed hollows, so far too much land drains into lakes."
-    writes: [potential_evapotranspiration, soil_moisture, snow_water, runoff, runoff_annual, river_discharge, lake_fraction,
-             lake_level, evapotranspiration, "table:lakes"]
+    model: "A snow store with degree-day melt (Hock 2003); the air's demand for water by the Priestley-Taylor rule with the radiation formulas of Davis et al. 2017 and one share of sunshine for every cell; soil water as Manabe's bucket; runoff summed down the flow paths into rivers and through the lakes; lakes that spread in closed hollows until their loss to the air matches the water arriving, or overflow at their pass (after Fill-Spill-Merge, Barnes, Callaghan and Wickert 2021)."
+    ignores: "Groundwater; the time water takes along a river; wetlands; lakes that swell and shrink with the seasons, the time a lake takes to fill, and the currents in a lake; plants; frozen ground; snow lost straight to the air; wind and the dryness of the air in the demand for water; clouds: every cell and month gets the same share of sunshine."
+    wrong_where: "The timing of floods in very large basins, and below every lake, whose outflow keeps the seasons of its inflow. Over land the one share of sunshine makes the heat radiated away too small, so the demand for water is too high on the whole. In deserts the real demand is higher than the rule gives, so closed lakes come out too large; under the cloud of the wet tropics it is lower. A lake smaller than a cell has no shape, and a lake's level moves in steps of the cells' heights. A hollow under snow that never melts fills and shows as a lake. Until erosion has cut valleys, and on any relief sampled coarser than its valleys, far too much land drains into closed hollows and so into lakes."
+    writes: [potential_evapotranspiration, soil_moisture, snow_water, snow_cover, runoff, runoff_annual, river_discharge,
+             lake_fraction, lake_level, evapotranspiration, "table:lakes"]
     constants:
       snow:
         melt_mm_per_day_per_k: 4.0             # degree-day factor of snow melt [DOCUMENTED: Hock 2003, eq. 1 for the rule; her Table 1
@@ -307,19 +304,33 @@ slots:
         ice_after_years: 1.0                   # where more snow falls in a year than the year can melt, the store holds this many
                                                # years of the net snowfall and what is older leaves as ice [INFERRED: a stand-in
                                                #  for snow turning to glacier ice and flowing away. The ice that leaves is the year's
-                                               #  net snowfall whatever this number is; only the depth shown in snow_water depends
-                                               #  on it. The design set a limit on depth instead: with that, the store jumped by the
-                                               #  whole limit when a cell tipped from losing its snow to keeping it, and one such cell
-                                               #  kept the climate rounds from settling for three more rounds]
+                                               #  net snowfall whatever this number is. The number sets how much snow is left at the
+                                               #  end of summer where a year just fails to melt its snow, and so how white that
+                                               #  ground is: it moves the edge of the ground that stays white. MEASURED: see
+                                               #  docs/BUILD_NOTES.md. The design set a limit on depth instead: with that, the store
+                                               #  jumped by the whole limit when a cell tipped from losing its snow to keeping it,
+                                               #  and each such cell cost the climate rounds two or three more rounds, MEASURED]
+        full_cover_mm: 15.0                    # the ground counts as fully covered while the snow store holds this much water or more,
+                                               # and as covered in proportion below that: Albedo draws it white by that share, and
+                                               # the ground under snow gives the air nothing
+                                               # [DOCUMENTED: Dutra et al. 2010, eq. A2, the older ECMWF rule: cover = min(1, S / 15), S in kg/m2]
       demand:
         priestley_taylor_extra: 0.26           # [DOCUMENTED: Davis et al. 2017, eq. 22: Ep = (1 + w) Eq with w = 0.26]
         sunshine_fraction: 0.62                # share of the possible hours of sunshine, the same for every cell and month
                                                # [INFERRED: the engine has no clouds to give it. With 0.62 the two formulas below
-                                               #  return Earth's means: 0.465 of the sunlight at the top of the air absorbed at the
-                                               #  surface, against 161 of 341 W/m2 = 0.472, and a net loss of 63.9 W/m2 at 15 C,
-                                               #  against 396 up less 333 back = 63 W/m2. The budget is that of Trenberth, Fasullo and
-                                               #  Kiehl 2009, DOCUMENTED at second hand: two pages that reproduce its figure give
-                                               #  these numbers (ETH Zurich's ocean wiki; ClimaTalk); the paper itself was not opened]
+                                               #  return the means of Earth's WHOLE surface, land and sea: 0.465 of the sunlight
+                                               #  at the top of the air absorbed at the surface, against 161.2 of 341.3 W/m2 = 0.472,
+                                               #  and a net loss of heat of 64.0 W/m2 at 15 C, against 396 up less 333 back = 63.
+                                               #  DOCUMENTED: Trenberth, Fasullo and Kiehl 2009, Table 2b, the row of the globe.
+                                               #  The formulas are used on land. The same table's row of the land: 184.7 W/m2 of
+                                               #  sunlight reach the ground, 145.1 are absorbed, and 79.6 are lost as heat.
+                                               #  MEASURED under Earth's measured land temperatures: the formulas give 186.3,
+                                               #  154.6 and 68.2. The sunlight is right; the land reflects more than the paper's
+                                               #  0.17 (snow, ice and desert, of which the engine treats snow apart); and the loss
+                                               #  of heat is 14 % too small, which no single share mends: the sunlight wants about
+                                               #  0.6 and the loss of heat about 0.76. The energy left for evaporation over land
+                                               #  is therefore too large: 86 W/m2 against 65.5. The constant b below is the
+                                               #  paper's and is left as published]
         sunlight:                              # what reaches the ground = (c + d sunshine)(1 + 2.67e-5 height) of the sunlight at
           through_overcast: 0.25               # the top of the air, and the ground reflects 0.17 of it
           through_gain_with_sunshine: 0.50     # [DOCUMENTED: Davis et al. 2017, eqs. 10 to 12: c = 0.25, d = 0.50, albedo 0.17]
@@ -332,8 +343,14 @@ slots:
           a_c: 107.0                           # [DOCUMENTED: Davis et al. 2017, eq. 13: A = 107, b = 0.20, T in degrees C]
           b: 0.20
         vapour: {factor_pa_c: 2.503e+6, exponent: 17.27, offset_c: 237.3}    # slope of saturation vapour pressure [DOCUMENTED: eq. B1]
-        heat: {factor_j_kg: 1.91846e+6, offset_k: 33.912}                    # heat of vaporisation [DOCUMENTED: eq. B2; the bracket
-                                               #  is squared, which gives the 2.45 MJ/kg of water at 20 C; a test checks that]
+        heat: {factor_j_kg: 1.91846e+6, offset_k: 33.91}                     # heat of vaporisation: the factor times the square of
+                                               # T / (T - offset), T in kelvin [DOCUMENTED: the SPLASH code as two published
+                                               #  repositories carry it, geco-bern/rsofun (src/waterbal_splash.mod.f90, function
+                                               #  calc_enthalpy_vap: "1.91846e6*((tc + 273.15)/(tc + 273.15 - 33.91))**2", after
+                                               #  "Eq. 8, Henderson-Sellers (1984)") and dsval/rsplash (src/EVAP.cpp). The paper's
+                                               #  eq. B2 is the same formula; the text layer of its PDF runs the exponent into the
+                                               #  number, "33.912", which an earlier version of this file copied. A test checks
+                                               #  the 2.45 MJ/kg at 20 C that FAO paper 56 gives]
         air:                                   # air pressure with height, and the psychrometric constant [DOCUMENTED: eqs. 20 and B8]
           sea_level_pressure_pa: 101325.0
           sea_level_temperature_k: 288.15

@@ -11,12 +11,14 @@ from conftest import DATA, ROOT
 from worldengine.process import Process
 
 PROCESS_DIR = ROOT / "src" / "worldengine" / "processes"
+LIBRARY_DIR = ROOT / "src" / "worldengine" / "library"
 FILES = sorted(p for p in PROCESS_DIR.glob("*.py") if p.name != "__init__.py")
+LIBRARY_FILES = sorted(p for p in LIBRARY_DIR.glob("*.py") if p.name != "__init__.py")
 ALLOWED_NUMBERS = {0, 1, 2, 3, 4, 0.5, -1}
 
 
 def slots():
-    return yaml.safe_load((DATA / "models.yaml").read_text())["slots"]
+    return yaml.safe_load((DATA / "models.yaml").read_text(encoding="utf-8"))["slots"]
 
 
 def implementation(path) -> Process:
@@ -24,11 +26,13 @@ def implementation(path) -> Process:
     return getattr(importlib.import_module(module), cls)()
 
 
-@pytest.mark.parametrize("path", FILES, ids=[p.stem for p in FILES])
+@pytest.mark.parametrize("path", FILES + LIBRARY_FILES, ids=[p.stem for p in FILES] + [f"library.{p.stem}" for p in LIBRARY_FILES])
 def test_process_code_holds_no_number_outside_the_allowed_list(path):
     """Every model constant lives in models.yaml. Code may hold only small whole numbers and one half; a named
-    constant at the top of the file (a class code, or a number of mathematics) is allowed."""
-    tree = ast.parse(path.read_text())
+    constant at the top of the file (a class code, a number of mathematics, a limit of the numerical method) is
+    allowed. The library that the processes share keeps the same rule: a model constant reaches it as an argument,
+    from the process that read it from models.yaml, and never sits in its code."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     top_level = set()
     for node in tree.body:
         if isinstance(node, ast.Assign) and all(isinstance(t, (ast.Name, ast.Tuple)) for t in node.targets):
@@ -43,7 +47,7 @@ def test_process_code_holds_no_number_outside_the_allowed_list(path):
 
 @pytest.mark.parametrize("path", FILES, ids=[p.stem for p in FILES])
 def test_processes_do_not_import_each_other_and_draw_only_through_the_engine(path):
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     tree = ast.parse(text)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -77,7 +81,7 @@ def test_every_additive_field_lists_its_drivers_and_every_driver_field_is_writte
 
 
 def test_every_listed_draw_is_declared_by_its_process():
-    seeds = yaml.safe_load((DATA / "seeds.yaml").read_text())["draws"]
+    seeds = yaml.safe_load((DATA / "seeds.yaml").read_text(encoding="utf-8"))["draws"]
     for slot, purposes in seeds.items():
         proc = implementation(slots()[slot]["implementation"])
         assert sorted(purposes) == sorted(proc.draws)

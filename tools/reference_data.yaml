@@ -5,7 +5,8 @@ source:
   repository: "https://github.com/NCAR/GeoCAT-datafiles"
   raw: "https://raw.githubusercontent.com/NCAR/GeoCAT-datafiles"
   commit: ad7bedcc2a14a37f08da1a5ce3f0859ad9e51023
-  licence: "The repository carries an Apache-2.0 LICENSE file. The data sets were made by others (NOAA, NASA, the Climatic Research Unit) and are passed on by NCAR's GeoCAT project as example data."
+  licence: "The repository carries an Apache-2.0 LICENSE file; its README says the files serve to test or demonstrate GeoCAT's functions. The data sets were made by others and are passed on by NCAR's GeoCAT project as example data: ETOPO5 by NOAA; the precipitation by the Global Precipitation Climatology Project (the file names Huffman, Adler, Bolvin and Gu 2009, Geophys. Res. Lett. 36, L17808, doi:10.1029/2009GL040000); the temperature by the Climatic Research Unit; the land-sea mask by Adam Phillips of NCAR, 'based on Rand's Global Elevation and Depth Data, modified extensively' (the file's own words)."
+  asked_of_users: "The precipitation file carries this request of its makers: 'The dataset producers request that a citation be provided for each publication that uses the GPCP products.' Anything published from the Earth tests or the Earth twin should cite the paper named above."
 files:
   ETOPO5.DAT:
     path: binary_files/ETOPO5.DAT

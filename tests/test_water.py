@@ -57,14 +57,16 @@ def region_of(table, row):
     return leaves
 
 
-def check_hollows(mesh, surface, sea, area):
+def check_hollows(mesh, surface, sea, area, count=None):
     """The table of hollows against its definition, worked out the slow way: for each hollow, the lowest pass that
-    leads out of it, and the lake that fills it to that pass."""
+    leads out of it, and the lake that fills it to that pass. `count`, a dict, collects how often a hollow had
+    several passes of exactly its level, and how often those led to ground of different heights."""
     recv = dr.receivers(surface, sea, mesh.nbr)
     stack = dr.flow_stack(recv)
     label, table = dr.hollows(surface, sea, recv, stack, mesh.edge_cells, area)
     a, b = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
     pass_height = np.maximum(surface[a], surface[b])
+    far_side = np.minimum(surface[a], surface[b])
     rows = len(table["parent"])
     end = dr.terminal(stack, recv)
     assert np.array_equal(label > 0, ~sea[end])                              # a cell has a hollow exactly if its water stops on land
@@ -80,6 +82,12 @@ def check_hollows(mesh, surface, sea, area):
         assert inside[in_cell] and not inside[out_cell] and out_cell in mesh.nbr[in_cell]
         assert max(surface[in_cell], surface[out_cell]) == spill
         assert label[out_cell] == table["spill_into_hollow"][k]
+        # among passes of exactly that level, the water leaves toward the lowest ground: the rule for a single cell
+        level = leaving & (pass_height == spill)
+        assert min(surface[in_cell], surface[out_cell]) == far_side[level].min()
+        if count is not None and level.sum() > 1:
+            count["several"] = count.get("several", 0) + 1
+            count["unequal"] = count.get("unequal", 0) + (np.unique(far_side[level]).size > 1)
         if table["parent"][k] >= 0:                                          # two hollows that meet: each names the other's ground
             sibling = table["sibling"][k]
             assert table["spill_m"][sibling] == spill and table["parent"][sibling] == table["parent"][k]
@@ -109,12 +117,16 @@ def test_every_hollow_overflows_at_the_lowest_pass_that_leads_out_of_it(seed):
     shore = np.quantile(ground, 0.1)
     sea = ground < shore
     surface = np.where(sea, shore, ground)
-    recv, stack, label, table = check_hollows(m, surface, sea, area)
+    count = {}
+    recv, stack, label, table = check_hollows(m, surface, sea, area, count)
     merged = table["first_child"] >= 0
     assert (~merged[1:]).sum() >= 100 and merged.sum() >= 20                 # many hollows, many of them inside larger ones
     assert (table["parent"][merged] >= 0).any()                              # and some of those inside larger ones again
+    # Passes of exactly one height are common, with no two cells of the ground equal: an outlet cell with several
+    # lower neighbours beyond its hollow. Each of these grounds has some that lead to ground of different heights.
+    assert count["several"] >= 5 and count["unequal"] >= 3
     # with every hollow full, each cell has one way to the sea
-    full = dr.overflow_receivers(recv, sea, table)
+    full = dr.overflow_receivers(recv, surface, m.nbr, label, table)
     end = dr.terminal(dr.flow_stack(full), full)
     assert sea[end].all()
 
@@ -129,7 +141,7 @@ def test_on_a_planet_without_sea_the_hollows_nest_into_one_that_has_no_way_out(s
     tops = np.flatnonzero(table["parent"][1:] < 0) + 1
     assert tops.size == 1 and np.isnan(table["spill_m"][tops[0]])
     assert table["bottom_cell"][tops[0]] == np.argmin(ground)
-    full = dr.overflow_receivers(recv, sea, table)
+    full = dr.overflow_receivers(recv, ground, m.nbr, label, table)
     full_stack = dr.flow_stack(full)
     assert set(dr.terminal(full_stack, full)) == {int(np.argmin(ground))}      # every drop ends at the deepest bottom
     assert np.isclose(dr.accumulate(full_stack, full, area)[np.argmin(ground)], area.sum(), rtol=1e-12)
@@ -298,14 +310,26 @@ def test_every_land_cell_reaches_the_sea_or_a_closed_hollow_and_the_drained_area
     by_lake = 0
     for mouth in mouths:
         assert f["basin_id"][mouth] == mouth and np.isclose(f["drainage_area"][mouth], area[f["basin_id"] == mouth].sum(), rtol=1e-12)
-        if recv[mouth] >= 0:
-            assert wet[recv[mouth]]                                          # a mouth hands its water to the sea
-        else:                                                                # or it is the deepest cell of a hollow that overflows into the sea
-            hollow = tops[f["depression_id"][mouth]]
-            assert t["bottom_cell"][hollow] == mouth and wet[t["spill_into_cell"][hollow]]
-            assert np.all(f["basin_id"][np.isin(f["depression_id"], region_of(t, hollow))] == mouth)     # one basin for the whole hollow
-            by_lake += 1
-    assert by_lake == (0 if seed == 21 else 1)                               # two of the three grounds hold a hollow on the coast
+        if recv[mouth] >= 0 and wet[recv[mouth]]:
+            continue                                                         # a mouth hands its water to the sea
+        hollow = tops[f["depression_id"][mouth]]                             # or it is the outlet cell of a hollow on the coast,
+        assert t["spill_from_cell"][hollow] == mouth and wet[t["spill_into_cell"][hollow]]       # which overflows into the sea
+        assert np.all(f["basin_id"][np.isin(f["depression_id"], region_of(t, hollow))] == mouth)     # one basin for the whole hollow
+        by_lake += 1
+    alone = (t["parent"] < 0) & (np.arange(len(t["parent"])) > 0)
+    assert by_lake == (alone & wet[np.maximum(t["spill_into_cell"], 0)]).sum()      # as many as there are hollows on the coast
+    assert by_lake >= (0 if seed == 21 else 1)                               # two of the three grounds hold one
+    # A full hollow sends all its water through its outlet cell: that cell counts the whole hollow and all that runs
+    # into it, and the cell beyond the pass counts that and its own.
+    surface = np.where(wet, ground.astype(np.float32) + sea.fields["sea_depth"], ground.astype(np.float32)).astype(np.float64)
+    for hollow in np.flatnonzero((t["parent"] < 0) & (np.arange(len(t["parent"])) > 0)):
+        inside = np.isin(f["depression_id"], region_of(t, hollow))
+        outlet, beyond = t["spill_from_cell"][hollow], t["spill_into_cell"][hollow]
+        assert f["drainage_area"][outlet] >= area[inside].sum() * (1 - 1e-12)
+        if not wet[beyond]:
+            assert f["drainage_area"][beyond] >= f["drainage_area"][outlet] + area[beyond] * (1 - 1e-9)
+        under = np.flatnonzero(inside & (surface <= t["spill_m"][hollow]))   # the ground its lake covers
+        assert outlet in under
 
 
 def test_a_planet_without_sea_is_one_basin_that_ends_at_its_deepest_bottom():
@@ -345,18 +369,23 @@ def test_land_that_stands_at_sea_level_drains_into_the_sea():
     assert np.all(f["flow_receiver"][shelf] >= 0)
 
 
-def test_turning_the_planet_turns_the_drainage_with_it():
+@pytest.mark.parametrize("seed", list(range(41, 61)))
+def test_turning_the_planet_turns_the_drainage_with_it(seed):
+    """A fifth of a turn about the axis maps the mesh onto itself, with other cell numbers. Nothing in the drainage
+    may depend on those numbers. One ground is no test of that: on a coast most cells have several sea cells for
+    neighbours, all at one water level, and with ties going to the lowest cell number the drainage of 27 of 58
+    grounds changed under the turn. Ties now go to the lower sea bed."""
     m = get_mesh(4)
     turn = np.deg2rad(72.0)
     rz = np.array([[np.cos(turn), -np.sin(turn), 0.0], [np.sin(turn), np.cos(turn), 0.0], [0.0, 0.0, 1.0]])
     goes_to = np.argmax(m.xyz @ rz.T @ m.xyz.T, axis=1)
     assert len(set(goes_to)) == m.n
-    ground = rough_ground(m, 41)
+    ground = rough_ground(m, seed)
     turned_ground = np.empty_like(ground)
     turned_ground[goes_to] = ground
     area = m.area * R * R
     volume = area[ground < 0].sum() * 1000.0
-    _, _, _, plain = drained(ground, volume)
+    _, _, sea, plain = drained(ground, volume)
     _, _, _, turned = drained(turned_ground, volume)
     p, t = plain.fields, turned.fields
     lands = lambda cells: np.where(cells >= 0, goes_to[np.maximum(cells, 0)], -1)
@@ -367,8 +396,156 @@ def test_turning_the_planet_turns_the_drainage_with_it():
     assert np.allclose(t["spill_elevation"][goes_to], p["spill_elevation"], equal_nan=True)
     assert np.allclose(t["slope"][goes_to], p["slope"], rtol=1e-5, atol=1e-9)
     bottom_p, bottom_t = plain.tables["hollows"]["bottom_cell"], turned.tables["hollows"]["bottom_cell"]
-    assert (p["depression_id"] > 0).any()
     assert np.array_equal(bottom_t[t["depression_id"][goes_to]], lands(bottom_p[p["depression_id"]]))
+    # the hollows overflow at the same places: every hollow, small or made of others, by its bottom and its two pass cells
+    passes = lambda table, to: {(int(to(b)), int(to(a)), int(to(c))) for b, a, c in zip(
+        table["bottom_cell"][1:], table["spill_from_cell"][1:], table["spill_into_cell"][1:])}
+    same = lambda cell: cell
+    assert passes(turned.tables["hollows"], same) == passes(plain.tables["hollows"], lambda cell: lands(np.array([cell]))[0])
+    wet = sea.fields["ocean_mask"]
+    several = (wet[np.maximum(m.nbr, 0)] & (m.nbr >= 0)).sum(axis=1) > 1
+    assert (several & ~wet).sum() > 20                                           # the case: coast cells with several sea neighbours
+
+
+def test_among_equally_low_neighbours_water_runs_to_the_one_whose_bed_lies_lowest():
+    m = get_mesh(4)
+    away = angle_from(m, 0, 0)
+    sea = away < 40
+    rng = np.random.default_rng(4)
+    bed = np.where(sea, -3000.0 * rng.random(m.n), 10.0 + 50.0 * (away - 40))
+    surface = np.where(sea, 0.0, bed)
+    by_bed = dr.receivers(surface, sea, m.nbr, bed)
+    by_number = dr.receivers(surface, sea, m.nbr)
+    checked = 0
+    for c in np.flatnonzero(~sea):
+        around = m.nbr[c][m.nbr[c] >= 0]
+        wet = around[sea[around]]
+        if wet.size > 1:
+            assert by_bed[c] == wet[np.argmin(bed[wet])] and by_number[c] == wet.min()
+            checked += by_bed[c] != by_number[c]
+    assert checked > 10                                                          # and the two rules differ on this coast
+
+
+def test_each_sea_cell_takes_the_level_of_its_own_body_of_water():
+    """Three bodies of water at -400, 0 and 250 m. Ground plus depth is stored rounded, so each sea cell takes the
+    nearest of the levels the table of seas holds, not the nearest below or above."""
+    levels = np.array([-400.0, 0.0, 250.0])
+    rng = np.random.default_rng(6)
+    body = rng.integers(0, 3, 600)
+    sea = rng.random(600) < 0.8
+    depth = np.where(sea, 5.0 + 3000.0 * rng.random(600), 0.0).astype(np.float32)
+    elevation = np.where(sea, levels[body] - depth.astype(np.float64), 500.0 + 100.0 * rng.random(600)).astype(np.float32)
+    surface = dr.drainage_surface(elevation, depth, sea, levels[[2, 0, 1]])       # the table lists them in any order
+    rebuilt = elevation.astype(np.float64) + depth
+    assert np.abs(rebuilt[sea] - levels[body[sea]]).max() > 1e-5                  # the case: the rounding shows
+    assert np.array_equal(surface[sea], levels[body[sea]])
+    assert np.array_equal(surface[~sea], elevation[~sea].astype(np.float64))
+    assert all((sea & (body == k)).sum() > 50 for k in range(3))
+    one = dr.drainage_surface(elevation, depth, sea, levels[:1])                  # one level listed: every sea cell takes it
+    assert np.all(one[sea] == -400.0)
+    none = dr.drainage_surface(elevation, depth, sea)                             # none listed: ground plus depth
+    assert np.array_equal(none[sea], rebuilt[sea])
+
+
+def test_drainage_records_why_each_cell_drains_as_it_does():
+    """The codes behind the "why" answers: a slope, the sea, the bottom of a hollow and level ground each get their
+    own; a sea cell is no part of a river basin; and a cell's hollow is named by its own row of the table."""
+    m = get_mesh(4)
+    away = angle_from(m, 0, 0)
+    floor = angle_from(m, 0, 180) < 15
+    ground = np.where(away < 30, -500.0, np.where(floor, 50.0, np.where(angle_from(m, 0, 180) < 40, 100.0, 100.0 + 5.0 * (150.0 - away))))
+    area = m.area * R * R
+    hh, area, sea, out = drained(ground, area[away < 30].sum() * 500.0)
+    wet = sea.fields["ocean_mask"]
+    assert np.array_equal(wet, away < 30)
+    f, t, d = out.fields, out.tables["hollows"], out.drivers
+    rule = d["flow_receiver"]["rule"]
+    plain = ~wet & ~floor & (angle_from(m, 0, 180) < 38)                          # the level plain around the pit
+    at_the_rim = plain & (floor[np.maximum(m.nbr, 0)] & (m.nbr >= 0)).any(axis=1) # its cells beside the pit run down into it
+    assert set(rule[wet]) == {1} and set(rule[plain & ~at_the_rim]) == {3} and set(rule[at_the_rim]) == {0}
+    assert (plain & ~at_the_rim).sum() > 50 and at_the_rim.sum() > 10
+    bottoms = t["bottom_cell"][1:][t["first_child"][1:] < 0]
+    assert set(rule[bottoms]) == {2} and (rule == 0).sum() > 100
+    assert set(rule[floor]) == {2, 3} and (rule[floor] == 2).sum() == 1           # a level floor: one bottom, the rest level ground
+    ends = d["basin_id"]["ends"]
+    assert set(ends[wet]) == {0} and set(ends[~wet]) == {1}
+    hollow = d["depression_id"]["hollow"]
+    label = f["depression_id"]
+    assert np.array_equal(hollow[label > 0], label[label > 0]) and set(hollow[label == 0]) == {-1} and (label > 0).any()
+    kind = d["drainage_area"]["cell_is"]
+    top = dr.top_hollows(t)
+    full_level = np.where(label > 0, t["spill_m"][top[label]], -np.inf)
+    under = (label > 0) & (ground.astype(np.float32) <= full_level)
+    assert set(kind[wet]) == {2} and np.array_equal(kind == 1, under) and under.sum() > 50 and (kind == 0).sum() > 20
+
+
+def test_with_every_hollow_full_the_water_crosses_each_lake_to_its_outlet_by_the_shortest_way():
+    m = get_mesh(4)
+    area = m.area * R * R
+    for seed in (1, 2, 3):
+        ground = rough_ground(m, seed, relief=500.0, bumps=600.0, wave_number=(3.0, 14.0))
+        shore = np.quantile(ground, 0.1)
+        sea = ground < shore
+        surface = np.where(sea, shore, ground)
+        recv = dr.receivers(surface, sea, m.nbr)
+        label, table = dr.hollows(surface, sea, recv, dr.flow_stack(recv), m.edge_cells, area)
+        rows = np.arange(len(table["parent"]))
+        tops = rows[(table["parent"] < 0) & (rows > 0)]
+        full, lake = dr.through_full_hollows(recv, surface, m.nbr, label, table, tops)
+        top = dr.top_hollows(table)
+        under = (label > 0) & (surface <= table["spill_m"][top[label]])
+        assert np.array_equal(lake >= 0, under) and np.array_equal(lake[under], top[label][under])
+        assert np.array_equal(full[~under], recv[~under])                         # ground above the water keeps its receiver
+        # steps to the outlet, counted outward from it over the flooded cells of the same lake
+        steps = np.full(m.n, -1)
+        steps[table["spill_from_cell"][tops]] = 0
+        ring = 0
+        while True:
+            ring += 1
+            near = np.where(m.nbr >= 0, (steps[np.maximum(m.nbr, 0)] == ring - 1) & (lake[np.maximum(m.nbr, 0)] == lake[:, None]), False).any(axis=1)
+            new = under & (steps < 0) & near
+            if not new.any():
+                break
+            steps[new] = ring
+        assert np.all(steps[under] >= 0)
+        inner = under & (steps > 0)
+        assert np.all(steps[full[inner]] == steps[inner] - 1) and np.all(lake[full[inner]] == lake[inner])
+        for c in np.flatnonzero(inner):                                           # among equally short ways: over the lowest ground
+            around = m.nbr[c][m.nbr[c] >= 0]
+            ways = around[(lake[around] == lake[c]) & (steps[around] == steps[c] - 1)]
+            assert surface[full[c]] == surface[ways].min()
+        assert np.array_equal(full[table["spill_from_cell"][tops]], table["spill_into_cell"][tops])
+        stack = dr.flow_stack(full)                                               # no loop, and everything reaches the sea
+        assert sea[dr.terminal(stack, full)].all()
+        drained_area = dr.accumulate(stack, full, np.where(sea, 0.0, area))
+        for k in tops:
+            inside = np.isin(label, region_of(table, k))
+            assert drained_area[table["spill_from_cell"][k]] >= area[inside].sum() * (1 - 1e-12)
+    with pytest.raises(ValueError, match="together|outlet|pass"):                 # a hollow and one of its parts cannot both be named
+        part = int(np.flatnonzero(table["parent"] >= 0)[0])
+        dr.through_full_hollows(recv, surface, m.nbr, label, table, [part, int(top[part])])
+
+
+def test_the_largest_source_of_a_river_is_never_the_cell_itself():
+    """For each cell the one cell, among those whose water passes through it, with the largest value: found here by
+    walking down from every cell. It used to count the cell itself, so that the answer to "where does most of this
+    river come from" was "from here" for half of all river cells."""
+    m = get_mesh(4)
+    ground = rough_ground(m, 9)
+    sea = ground < 0
+    recv = dr.receivers(np.where(sea, 0.0, ground), sea, m.nbr)
+    stack = dr.flow_stack(recv)
+    rng = np.random.default_rng(1)
+    values = rng.random(m.n) * (rng.random(m.n) < 0.7)                            # many zeros: ties among sources that give nothing
+    values[::5] = 0.3                                                             # and ties among sources that give the same
+    best, where = np.full(m.n, -np.inf), np.full(m.n, -1)
+    for c in range(m.n):
+        for below in follow(recv, c)[1:]:
+            if values[c] > best[below] or (values[c] == best[below] and c < where[below]):
+                best[below], where[below] = values[c], c
+    got = dr.largest_upstream(stack, recv, values)
+    assert np.array_equal(got, where)
+    assert (got == -1).sum() > 200 and np.all(got != np.arange(m.n))
 
 
 # ------------------------------------------------------------------------------------------ snow (library)
@@ -377,7 +554,8 @@ from worldengine.library import lakes as lk                             # noqa: 
 from worldengine.library.snow import degree_day_melt, snow_year         # noqa: E402
 from worldengine.library.soil_water import bucket_month, bucket_repeating, bucket_year    # noqa: E402
 
-YEAR_S = 31558150.0
+from conftest import YEAR_S                                             # noqa: E402
+
 MONTH_S = YEAR_S / 12
 MONTH_DAYS = MONTH_S / 86400.0
 
@@ -389,45 +567,80 @@ def column(values):
 
 def test_the_snow_of_a_year_that_melts_it_all_followed_by_hand():
     """Six months at -5 C with 10 mm of snowfall each, then six months at +5 C without. At the end of the cold months
-    the store holds 10, 20 ... 60 mm. A month at +5 C can melt 4 mm a day per degree times 30.44 days times 5 degrees
-    = 609 mm, so the first warm month empties the store. The mean store of a month is the average of its start and its
-    end: 5, 15, 25, 35, 45, 55, then 30, then nothing."""
+    the store holds 10, 20 ... 60 mm, and its mean in each is 5, 15 ... 55. A month at +5 C can melt 4 mm a day per
+    degree times 30.44 days times 5 degrees = 609 mm, so the 60 mm are gone after 60 / 609 of the first warm month:
+    its mean store is that share of the month times the 30 mm the snow averaged while it lay, 2.96 mm."""
     temperature = column(273.15 + np.array([-5.0] * 6 + [5.0] * 6))
     could_melt = degree_day_melt(temperature, 273.15, 4.0, MONTH_DAYS)
     assert np.allclose(could_melt[6:], 608.8, atol=0.1) and np.all(could_melt[:6] == 0)
-    store, melted, left = snow_year(column([10.0] * 6 + [0.0] * 6), could_melt, 1.0)
-    assert np.allclose(store[:, 0], [5, 15, 25, 35, 45, 55, 30, 0, 0, 0, 0, 0])
+    store, melted, left, cover = snow_year(column([10.0] * 6 + [0.0] * 6), could_melt, 1.0, 15.0)
+    thaw = 4.0 * MONTH_DAYS * 5.0
+    assert np.allclose(store[:, 0], [5, 15, 25, 35, 45, 55, 30.0 * 60.0 / thaw, 0, 0, 0, 0, 0])
+    assert abs(store[6, 0] - 2.96) < 0.01
     assert np.allclose(melted[:, 0], [0] * 6 + [60] + [0] * 5) and not left.any()
-    # Deep snow outlasts the thaw: 600 mm against 243.5 mm of melt a month at +2 C is gone in the third warm month.
+    # The share of the ground under snow, full from 15 mm. In the first month the store rises from 0 to 10 mm: two
+    # thirds covered at its end, one third on average. In the second it passes 15 mm half-way: (0.5 * (10 + 15) / 15
+    # + 1) / 2 = 0.917. Then full cover, until the thaw: the 60 mm take 60 / 609 of the month to go, and for the
+    # last quarter of that time less than 15 mm lie, so the month is covered for 45 / 609 + 0.5 * 15 / 609 of it.
+    assert np.allclose(cover[:, 0], [1 / 3, 0.5 * (25 / 30 + 1), 1, 1, 1, 1, (45 + 7.5) / thaw, 0, 0, 0, 0, 0])
+    assert abs(cover[6, 0] - 0.086) < 0.001                                       # white for 2.6 days of the month
+    # Deep snow outlasts the thaw: 600 mm against 243.5 mm of melt a month at +2 C is gone in the third warm month,
+    # 113 mm into it, after 113 / 243.5 of the month.
     late = degree_day_melt(column(273.15 + np.array([-5.0] * 6 + [2.0] * 6)), 273.15, 4.0, MONTH_DAYS)
-    store, melted, left = snow_year(column([100.0] * 6 + [0.0] * 6), late, 1.0)
+    store, melted, left, cover = snow_year(column([100.0] * 6 + [0.0] * 6), late, 1.0, 15.0)
     thaw = 4.0 * MONTH_DAYS * 2.0
-    assert np.allclose(store[6:, 0], [600 - thaw / 2, 600 - 1.5 * thaw, (600 - 2 * thaw) / 2, 0, 0, 0])
+    rest = 600 - 2 * thaw
+    assert np.allclose(store[6:, 0], [600 - thaw / 2, 600 - 1.5 * thaw, 0.5 * rest * rest / thaw, 0, 0, 0])
     assert np.isclose(melted.sum(), 600.0) and not left.any()
+    # The month in which the snow goes counts as white only for the days it lies: five months of 20 mm, then a month
+    # at +8 C that could melt 974 mm. The 100 mm last 3.1 days; the month's mean store is 5.1 mm, not the 50 mm that
+    # the average of its first and last day would give.
+    warm = degree_day_melt(column(273.15 + np.array([-5.0] * 5 + [8.0] * 7)), 273.15, 4.0, MONTH_DAYS)
+    store, melted, left, cover = snow_year(column([20.0] * 5 + [0.0] * 7), warm, 1.0, 15.0)
+    assert abs(store[5, 0] - 5.13) < 0.01 and abs(100.0 / warm[5, 0] * MONTH_DAYS - 3.1) < 0.05
+    assert abs(cover[5, 0] - (85.0 + 7.5) / warm[5, 0]) < 1e-9 and cover[5, 0] < 0.1
     # No snowfall, no snow, however cold.
-    store, melted, left = snow_year(column([0.0] * 12), column([0.0] * 12), 1.0)
-    assert not store.any() and not melted.any() and not left.any()
+    store, melted, left, cover = snow_year(column([0.0] * 12), column([0.0] * 12), 1.0, 15.0)
+    assert not store.any() and not melted.any() and not left.any() and not cover.any()
+    # Snow that falls in a month that could melt more than falls never lies: the store stays empty.
+    store, melted, left, cover = snow_year(column([30.0] * 12), column([50.0] * 12), 1.0, 15.0)
+    assert not store.any() and np.allclose(melted, 30.0) and not left.any() and not cover.any()
+    # A thin store: 6 mm lying all month cover 6 / 15 of the ground.
+    store, melted, left, cover = snow_year(column([0.5] * 12), column([0.0] * 12), 1.0, 15.0)
+    assert np.allclose(store, 6.0) and np.allclose(cover, 0.4) and np.allclose(left, 0.5)
 
 
 def test_the_snow_year_is_the_one_that_years_followed_from_bare_ground_come_to():
-    """A year that begins in its warm season starts with the snow of the last cold season on the ground."""
+    """A year that begins in its warm season starts with the snow of the last cold season on the ground. The plain
+    rule is followed here in two thousand small steps a month, with snow falling and melting at steady rates."""
     rng = np.random.default_rng(3)
     snowfall = rng.random((12, 200)) * 40.0
     melt = rng.random((12, 200)) * 150.0 * (rng.random((12, 200)) < 0.4)          # some months melt, most do not
     melt[:, snowfall.sum(axis=0) >= melt.sum(axis=0)] *= 3.0                      # keep to years that melt all their snow
     seasonal = snowfall.sum(axis=0) < melt.sum(axis=0)
     assert seasonal.sum() > 100
-    store, melted, left = snow_year(snowfall, melt, 1.0)
-    on_ground = np.zeros(200)
+    store, melted, left, cover = snow_year(snowfall, melt, 1.0, 15.0)
+    on_ground, steps = np.zeros(200), 2000
     for _ in range(5):                                                            # the plain rule, year after year
         means = np.zeros((12, 200))
+        gone = np.zeros((12, 200))
+        white = np.zeros((12, 200))
         for m in range(12):
-            after = np.maximum(on_ground + snowfall[m] - melt[m], 0.0)
-            means[m] = 0.5 * (on_ground + after)
-            on_ground = after
-    assert np.allclose(store[:, seasonal], means[:, seasonal], atol=1e-9)
+            for _ in range(steps):
+                there = on_ground + snowfall[m] / steps
+                took = np.minimum(melt[m] / steps, there)
+                means[m] += 0.5 * (on_ground + there - took) / steps
+                white[m] += np.minimum(0.5 * (on_ground + there - took) / 15.0, 1.0) / steps
+                gone[m] += took
+                on_ground = there - took
+    assert np.abs(store - means)[:, seasonal].max() < 0.02                        # mm, of stores of up to some hundred
+    assert np.abs(cover - white)[:, seasonal].max() < 2e-3                        # the share of the ground under snow
+    assert ((cover > 0.05) & (cover < 0.95))[:, seasonal].sum() > 100             # with many months neither bare nor white
+    assert np.abs(melted - gone)[:, seasonal].max() < 1e-6
     assert np.allclose(melted.sum(axis=0)[seasonal], snowfall.sum(axis=0)[seasonal])       # all that fell has melted
     assert not left[:, seasonal].any()
+    runs_out = (store[:, seasonal] > 0) & (np.roll(store, -1, axis=0)[:, seasonal] == 0)
+    assert runs_out.sum() > 50                                                    # months in which the snow goes are in the sample
 
 
 def test_where_more_snow_falls_than_melts_the_excess_leaves_as_ice_and_the_store_holds_a_set_number_of_years():
@@ -436,17 +649,29 @@ def test_where_more_snow_falls_than_melts_the_excess_leaves_as_ice_and_the_store
     at the end of each month is 185, 210, 235, 260, 285, 210, 135, 60, 85, 110, 135, 160."""
     snowfall = column([30.0] * 12)
     melt = column([0.0] * 5 + [100.0] * 3 + [0.0] * 4)
-    store, melted, left = snow_year(snowfall, melt, 1.0)
+    store, melted, left, cover = snow_year(snowfall, melt, 1.0, 15.0)
     ends = np.array([185, 210, 235, 260, 285, 210, 135, 60, 85, 110, 135, 160.0])
     starts = np.roll(ends, 1)
     assert np.allclose(store[:, 0], 0.5 * (starts + ends))
     assert np.allclose(melted, melt) and np.allclose(left, 5.0)
     assert np.isclose(snowfall.sum(), melted.sum() + left.sum())                  # what falls melts or leaves as ice
-    deeper, melted5, left5 = snow_year(snowfall, melt, 5.0)                       # five years' gain kept: only the store changes
+    assert np.allclose(cover, 1.0)                                                # never less than 60 mm on the ground
+    deeper, melted5, left5, cover5 = snow_year(snowfall, melt, 5.0, 15.0)         # five years' gain kept: only the store changes
     assert np.allclose(deeper - store, 4 * 60.0) and np.array_equal(melted5, melted) and np.array_equal(left5, left)
     # Land that never thaws keeps a year of what falls: 2 mm a month makes 24 mm, white ground all year.
-    store, melted, left = snow_year(column([2.0] * 12), column([0.0] * 12), 1.0)
-    assert np.allclose(store, 24.0) and np.allclose(left, 2.0) and not melted.any()
+    store, melted, left, cover = snow_year(column([2.0] * 12), column([0.0] * 12), 1.0, 15.0)
+    assert np.allclose(store, 24.0) and np.allclose(left, 2.0) and not melted.any() and np.allclose(cover, 1.0)
+    # Where a year only just keeps its snow, the ground is nearly bare at the end of summer, and how bare depends on
+    # the number of years of net snowfall the store holds: 30 mm a month, three months that could melt 119 mm each.
+    # The year gains 3 mm, which leave as 0.25 mm of ice a month. With one year kept, the store falls from 92.25 mm
+    # to 3 mm in the last month of summer, 89.25 mm in all: for the last 12 of those it is below 15 mm, 0.6 covered
+    # on average. In the month after it rises from 3 mm to 32.75 mm and passes 15 mm after 12 / 29.75 of the month.
+    thin = column([0.0] * 5 + [119.0] * 3 + [0.0] * 4)
+    store, melted, left, cover = snow_year(snowfall, thin, 1.0, 15.0)
+    assert np.allclose(left, 0.25) and np.isclose(store[7, 0], 0.5 * (92.25 + 3.0)) and np.isclose(store[8, 0], 0.5 * (3.0 + 32.75))
+    assert np.isclose(cover[7, 0], 1 - 12 / 89.25 * 0.4) and np.isclose(cover[8, 0], 1 - 12 / 29.75 * 0.4)
+    store5, _, left5, cover5 = snow_year(snowfall, thin, 5.0, 15.0)               # five years kept: 15 mm at the least
+    assert np.allclose(store5 - store, 12.0) and np.allclose(cover5, 1.0) and np.array_equal(left5, left)
 
 
 def test_the_snow_store_does_not_jump_where_a_year_tips_from_losing_its_snow_to_keeping_it():
@@ -456,7 +681,7 @@ def test_the_snow_store_does_not_jump_where_a_year_tips_from_losing_its_snow_to_
     stores, ice = [], []
     for gain in (-1e-6, 0.0, 1e-6):
         melt = column([0.0] * 5 + [(360.0 - gain) / 3] * 3 + [0.0] * 4)
-        store, melted, left = snow_year(snowfall, melt, 1.0)
+        store, melted, left, cover = snow_year(snowfall, melt, 1.0, 15.0)
         stores.append(store)
         ice.append(left.sum())
         assert np.isclose(snowfall.sum(), melted.sum() + left.sum())
@@ -513,6 +738,8 @@ def test_one_month_of_the_bucket_is_the_exact_solution_whichever_rules_it_passes
     store = capacity * rng.random(n)
     supply = 250.0 * rng.random(n) * (rng.random(n) < 0.7)
     demand = 200.0 * rng.random(n) * (rng.random(n) < 0.9)
+    tiny = np.arange(n) % 10 == 0                                                 # every tenth cell: a demand of next to nothing
+    demand[tiny] = 10.0 ** rng.uniform(-18, -3, tiny.sum())
     end, mean, taken, shed = bucket_month(store, supply, demand, capacity, critical)
     w, steps = store.copy(), 20000
     e = o = total = 0.0
@@ -527,8 +754,26 @@ def test_one_month_of_the_bucket_is_the_exact_solution_whichever_rules_it_passes
     assert np.abs(end - w).max() < 2e-3 and np.abs(taken - e).max() / scale.max() < 1e-4
     assert np.abs(shed - o).max() < 2e-2 and np.abs(mean - total).max() < 2e-2
     assert np.allclose(store + supply, end + taken + shed, atol=1e-9)             # the water is all accounted for
-    kinds = [(store >= critical) & (end < critical), (store < critical) & (end >= critical) & (critical > 0), shed > 0, demand == 0]
+    kinds = [(store >= critical) & (end < critical), (store < critical) & (end >= critical) & (critical > 0), shed > 0, demand == 0,
+             tiny & (store < critical) & (supply > 0)]
     assert all(k.sum() >= 5 for k in kinds)                                       # every passage occurs in the sample
+    assert np.all(taken <= demand * (1 + 1e-9) + 1e-12)                           # the air never takes more than it asks
+
+
+def test_a_demand_of_next_to_nothing_takes_next_to_nothing():
+    """A soil at 50 mm, 100 mm of rain in the month, capacity 150 mm: the soil is just full at the end, nothing runs
+    off, and the air has taken its demand times how full the soil was. The formulas used to subtract two large
+    numbers that nearly agree: at a demand of 1e-15 mm they returned 62.5 mm of runoff from nowhere."""
+    for demand in (1e-3, 1e-6, 1e-9, 1e-11, 1e-13, 1e-15, 1e-18, 1e-300, 0.0):
+        end, mean, taken, shed = bucket_month(np.array([50.0]), np.array([100.0]), np.array([demand]), np.array([150.0]), np.array([112.5]))
+        assert abs(end[0] - 150.0) <= demand + 1e-12 and abs(shed[0]) < 1e-9
+        assert 0.0 <= taken[0] <= demand + 1e-12
+        # By hand: the soil is below its critical level, 112.5 mm, for 0.625 of the month and gives the air 0.722 of
+        # its demand on average there, and all of it for the rest: 0.625 * 0.722 + 0.375 = 0.826 of the demand.
+        if demand >= 1e-11:
+            assert abs(taken[0] / demand - 0.826) < 0.002
+        assert abs(50.0 + 100.0 - end[0] - taken[0] - shed[0]) < 1e-12
+        assert abs(mean[0] - 100.0) <= demand + 1e-9                              # it rises in a straight line from 50 to 150
 
 
 def test_the_bucket_keeps_the_water_balance_and_finds_the_year_that_repeats():
@@ -550,8 +795,44 @@ def test_the_bucket_keeps_the_water_balance_and_finds_the_year_that_repeats():
     for _ in range(400):
         store, mean_plain, taken_plain, shed_plain = bucket_year(supply, demand, capacity, 0.75, store)
     settled = np.abs(taken_plain - taken).max(axis=0) < 0.05
-    assert settled.mean() > 0.97                                                  # (cells that settle over centuries are within the tolerance of the balance, not of the store)
+    assert settled.mean() > 0.97                                                  # (the rest settle over more than 400 plain years)
     assert np.abs(shed_plain.sum(axis=0) - shed.sum(axis=0)).max() < 0.02
+
+
+@pytest.mark.parametrize("depth", [150.0, 500.0, 2000.0, 5000.0])
+def test_the_repeating_year_of_the_bucket_is_the_root_that_bisection_finds_in_shallow_and_in_deep_soil(depth):
+    """The store at the end of a year never falls when the store at its start rises, and rises by no more. So the
+    store that repeats is found by halving the range from empty to full sixty times. The bucket must return that
+    year, and the store itself, not only the year's totals: in soil of which the air asks little the store closes in
+    on its repeating year by a ratio near 1 a year, and the bucket used to stop there while the store was still
+    hundreds of millimetres from where it was heading."""
+    rng = np.random.default_rng(7)
+    n = 3000
+    t = (np.arange(12)[:, None] + 0.5) / 12 * 2 * np.pi
+    phase = rng.uniform(0, 2 * np.pi, n)
+    supply = 10 ** rng.uniform(-3, 2.5, n) * np.clip(1 + rng.uniform(0, 1.5, n) * np.cos(t + phase), 0, None)
+    demand = 10 ** rng.uniform(-4, 2.5, n) * np.clip(1 + rng.uniform(0, 1.5, n) * np.cos(t + phase + rng.uniform(0, 2 * np.pi, n)), 0, None)
+    demand[:, rng.random(n) < 0.05] = 0.0
+    supply[:, rng.random(n) < 0.05] = 0.0
+    capacity = np.full(n, depth)
+    soil, taken, shed, years, left = bucket_repeating(supply, demand, capacity, 0.75, 60, 0.01)
+    assert left <= 0.01 and years < 30
+    lo, hi = np.zeros(n), capacity.copy()
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        end, *_ = bucket_year(supply, demand, capacity, 0.75, mid)
+        rises = end > mid
+        lo, hi = np.where(rises, mid, lo), np.where(rises, hi, mid)
+    start = 0.5 * (lo + hi)
+    end, soil_b, taken_b, shed_b = bucket_year(supply, demand, capacity, 0.75, start)
+    one_answer = np.abs(end - start) < 1e-6                                       # (no supply and no demand: any store repeats)
+    assert one_answer.mean() > 0.9
+    slow = one_answer & (demand.sum(axis=0) < 0.05 * 0.75 * depth)                # the air takes under a twentieth of the store a year
+    assert slow.sum() > 100
+    assert np.abs(soil - soil_b)[:, one_answer].max() < 0.05                      # mm of store
+    assert np.abs(taken.sum(axis=0) - taken_b.sum(axis=0))[one_answer].max() < 0.02
+    assert np.abs(shed.sum(axis=0) - shed_b.sum(axis=0))[one_answer].max() < 0.02
+    assert np.abs(supply.sum(axis=0) - taken.sum(axis=0) - shed.sum(axis=0)).max() <= 0.01      # the books of the returned year
 
 
 # ------------------------------------------------------------------------------------------ the demand for water (library)
@@ -562,19 +843,27 @@ def demand_constants():
 def test_the_numbers_of_the_priestley_taylor_rule_at_twenty_degrees_are_the_textbook_ones():
     d = demand_constants()
     t = np.array([20.0])
-    assert abs(ev.saturation_slope(t, d["vapour"])[0] - 144.7) < 0.3              # Pa/K: 0.1447 kPa/K in the usual tables
-    assert abs(ev.latent_heat(t, d["heat"])[0] / 2.45e6 - 1) < 0.005              # J/kg: 2.45 MJ/kg
+    # Pa/K. By hand from the same formula: 2.503e6 * exp(17.27 * 20 / 257.3) / 257.3**2 = 144.7
+    assert abs(ev.saturation_slope(t, d["vapour"])[0] - 144.7) < 0.3
+    # J/kg. [DOCUMENTED: FAO Irrigation and Drainage Paper 56, Annex 3: "A single value may be taken (for T = 20 C):
+    # 2.45 MJ/kg".] Without the square of the bracket the formula gives 2.17 MJ/kg, and this fails.
+    assert abs(ev.latent_heat(t, d["heat"])[0] / 2.45e6 - 1) < 0.005
     sea_level = ev.air_pressure(np.array([0.0]), 9.80665, d["air"])
     assert sea_level[0] == 101325.0
-    assert abs(ev.air_pressure(np.array([5000.0]), 9.80665, d["air"])[0] / 54020.0 - 1) < 0.002     # the standard atmosphere at 5 km
+    # [UNVERIFIED: the International Standard Atmosphere at 5 km as I recall it, 54.0 kPa]
+    assert abs(ev.air_pressure(np.array([5000.0]), 9.80665, d["air"])[0] / 54020.0 - 1) < 0.002
     g = ev.psychrometric(sea_level, ev.latent_heat(t, d["heat"]), d["air"])[0]
-    assert abs(g - 66.7) < 0.6                                                    # Pa/K
+    assert abs(g - 66.7) < 0.6                                                    # Pa/K. By hand: 1004.6 * 0.028963 / 0.01802 * 101325 / 2.4535e6
     share = lambda c: (lambda s, gg: s / (s + gg))(ev.saturation_slope(np.array([c]), d["vapour"])[0],
                                                    ev.psychrometric(sea_level, ev.latent_heat(np.array([c]), d["heat"]), d["air"])[0])
     assert abs(share(0.0) - 0.40) < 0.01 and abs(share(30.0) - 0.78) < 0.01       # the share of the energy that evaporates water
-    # the one share of sunshine returns the two means of Earth's surface (Trenberth, Fasullo and Kiehl 2009, at second hand):
+    # The one share of sunshine returns the two means of Earth's whole surface, land and sea [DOCUMENTED: Trenberth,
+    # Fasullo and Kiehl 2009, Table 2b, the row of the globe: 161.2 W/m2 of sunlight absorbed, 396 up less 333 back
+    # = 63 lost]. The row of the land alone gives 145.1 absorbed and 79.6 lost; data/models.yaml says what the one
+    # share misses there.
     sun = d["sunshine_fraction"]
-    assert abs(ev.net_longwave(np.array([15.0]), sun, d["longwave"])[0] - 63.0) < 1.5         # W/m2 lost: 396 up less 333 back
+    assert abs(ev.net_longwave(np.array([15.0]), sun, d["longwave"])[0] - 63.0) < 1.5         # W/m2 lost at 15 C
+    assert np.isclose(ev.net_longwave(np.array([15.0]), sun, d["longwave"])[0], (0.2 + 0.8 * 0.62) * (107.0 - 15.0))    # 64.0
     assert ev.net_longwave(np.array([150.0]), sun, d["longwave"])[0] == 0.0
     ground = d["sunlight"]["ground_reflects"]
     absorbed = ev.absorbed_sunlight(np.array([341.3]), np.array([0.0]), sun, ground, d["sunlight"])[0]
@@ -599,6 +888,32 @@ def test_the_demand_for_water_by_hand_and_none_where_the_surface_loses_more_ener
     assert 1.05 < high / got < 1.15                                               # thinner air takes more of the energy as vapour
 
 
+def test_where_the_formulas_of_the_demand_are_held_at_a_limit():
+    """The published formulas are fitted to ground between the sea and the mountains. Outside that each is held at a
+    limit [INFERRED: every limit here is mine; the paper does not treat these cases]:
+      * ground below sea level gets the sunlight of sea level: the gain with height is not carried below zero;
+      * the air never lets through more sunlight than arrives at its top;
+      * a surface hotter than the formula's 107 C loses nothing, and never gains;
+      * the air pressure is not carried above the height at which the formula ends: it is held at the set share of
+        its base, which is reached about 44 km up. Below sea level the formula is carried on: there is more air
+        above ground that lies below the sea."""
+    d = demand_constants()
+    sun, ground = d["sunshine_fraction"], d["sunlight"]["ground_reflects"]
+    at = lambda z: ev.absorbed_sunlight(np.array([400.0]), np.array([z]), sun, ground, d["sunlight"])[0]
+    assert at(-400.0) == at(0.0) and at(-4000.0) == at(0.0)
+    assert at(1000.0) > at(0.0)
+    assert np.isclose(at(60_000.0), (1 - ground) * 400.0)           # (0.25 + 0.5 * 0.62)(1 + 2.67e-5 z) passes 1 at 29 km
+    assert at(100_000.0) == at(60_000.0)
+    assert ev.net_longwave(np.array([107.0, 300.0]), sun, d["longwave"]).tolist() == [0.0, 0.0]
+    g = 9.80665
+    power = g * 0.028963 / (8.31447 * 0.0065)
+    pressure = lambda z: ev.air_pressure(np.array([z]), g, d["air"])[0]
+    held_at = 101325.0 * 0.01 ** power                                # by hand: the base of the power held at 0.01
+    assert np.isclose(pressure(50_000.0), held_at, rtol=1e-12) and pressure(200_000.0) == pressure(50_000.0)
+    assert pressure(288.15 / 0.0065 * (1 - 0.0101)) > held_at         # just below that height the formula still runs
+    assert np.isclose(pressure(-400.0), 101325.0 * (1 + 0.0065 * 400.0 / 288.15) ** power) and pressure(-400.0) > 101325.0
+
+
 # ------------------------------------------------------------------------------------------ lakes (library)
 def lake_case(mesh, ground, sea, area, loss, runoff):
     """Hollows, then lakes: `loss` is what each cell loses a year once flooded (m3), `runoff` what each cell sheds
@@ -615,10 +930,13 @@ def lake_case(mesh, ground, sea, area, loss, runoff):
     room = np.bincount(own[own >= 0], weights=loss[own >= 0], minlength=rows)
     moved = lk.settle(table, inflow, room)
     share, level, lake = lk.flooded(table, own, ground, loss, moved["extra"], moved["overflows"])
-    discharge, found = lk.lake_flows(table, label, recv, stack, runoff, moved["extra"], moved["overflows"])
+    lk.check_table(table, label, recv, sea, ground)
+    flows = lk.lake_flows(table, label, recv, ground, mesh.nbr, share, lake, runoff, moved["extra"], moved["overflows"])
+    found = flows["lakes"]
     by_row = {int(r): {k: v[i] for k, v in found.items()} for i, r in enumerate(found["row"])}
     return dict(recv=recv, stack=stack, label=label, table=table, own=own, inflow=inflow, room=room, moved=moved, share=share,
-                level=level, lake=lake, discharge=discharge, found=found, by_row=by_row, leaves=leaves)
+                level=level, lake=lake, discharge=flows["discharge"], passing=flows["passing"], real=flows["receivers"],
+                crossing=flows["crossing"], found=found, by_row=by_row, leaves=leaves)
 
 
 def poured(mesh, where_and_how_much, split=(0.7, 0.3)):
@@ -670,7 +988,9 @@ def test_a_lake_spreads_until_its_surface_loses_what_arrives(bowls):
         assert not row["overflows"] and row["into_cell"] == -1
     assert np.isnan(r["level"][both]) and not r["share"][r["label"] == 0].any()
     assert not r["discharge"][:, bw["sea"]].any()                                    # nothing reaches the sea
-    assert np.allclose(r["discharge"][:, bw["bottom_a"]], [0.35 * ra, 0.15 * ra])
+    assert np.allclose(r["passing"][:, bw["bottom_a"]], [0.35 * ra, 0.15 * ra])      # the water reaches the bottom of the bowl
+    assert not r["discharge"][:, bw["bottom_a"]].any()                               # which lies under a closed lake: no river there
+    assert np.array_equal(r["real"], r["recv"]) and np.all(r["crossing"] == -1)      # and no lake to carry water across
 
 
 def test_a_full_lake_overflows_into_its_neighbour_and_two_full_ones_become_one(bowls):
@@ -687,9 +1007,22 @@ def test_a_full_lake_overflows_into_its_neighbour_and_two_full_ones_become_one(b
     assert np.isclose(first["inflow"], ra + 0.5 * rb) and np.isclose(first["loss"], ra) and np.isclose(first["outflow"], 0.5 * rb)
     assert first["overflows"] and first["into_cell"] == t["spill_into_cell"][a]
     assert np.isclose(second["inflow"], 0.5 * rb) and np.isclose(second["loss"], 0.5 * rb) and second["outflow"] == 0
-    beyond = t["spill_into_cell"][a]
+    beyond, outlet = t["spill_into_cell"][a], t["spill_from_cell"][a]
     assert np.allclose(r["discharge"][:, beyond], [0.35 * rb, 0.15 * rb])            # each month the lake passes on the same share
-    assert np.allclose(r["discharge"][:, bw["bottom_b"]], [0.35 * rb, 0.15 * rb])    # ... and it runs down to the other bottom
+    assert np.allclose(r["passing"][:, bw["bottom_b"]], [0.35 * rb, 0.15 * rb])      # ... and it runs down to the other bottom
+    assert not r["discharge"][:, bw["bottom_b"]].any()                               # where a closed lake keeps it
+    # The water crosses the full lake to its outlet cell: all of it passes there, and what the lake does not lose
+    # goes on. The flow at the outlet cell is the lake's outflow.
+    assert np.allclose(r["passing"][:, outlet], np.array([0.7, 0.3]) * (ra + 0.5 * rb))
+    assert np.allclose(r["discharge"][:, outlet], [0.35 * rb, 0.15 * rb]) and r["real"][outlet] == beyond
+    under = (r["label"] == a) & (bw["ground"] <= t["spill_m"][a])
+    assert np.array_equal(r["crossing"] == a, under) and under[bw["bottom_a"]] and under[outlet]
+    for c in np.flatnonzero(under)[::7]:                                             # every flooded cell hands its water on, cell
+        path = follow(r["real"], c)                                                  # by cell inside the lake, to the outlet
+        k = path.index(outlet)
+        assert np.all(under[path[:k + 1]]) and path[k + 1] == beyond
+    share_on = 0.5 * rb / (ra + 0.5 * rb)
+    assert np.allclose(r["discharge"][:, under], share_on * r["passing"][:, under])  # inside: the share that will leave
     # the other way round
     r = run_bowls(bw, 0.0, rb + 0.3 * ra)
     assert np.isclose(r["moved"]["extra"][a], 0.3 * ra) and r["moved"]["overflows"][b] and not r["moved"]["overflows"][a]
@@ -780,8 +1113,10 @@ def test_a_chain_of_lakes_passes_its_water_down_from_the_highest_to_the_sea():
     assert r["level"][1] == t["spill_m"][1] and r["level"][2] == t["spill_m"][2] and r["level"][3] < t["spill_m"][3]
     # month by month: the first lake passes on 0.6 r2 of r1 + 0.6 r2, the second 0.3 of the 1.3 r2 that reach it
     assert np.allclose(r["discharge"][:, t["spill_into_cell"][1]], np.array([0.7, 0.3]) * 0.6 * r2)
-    assert np.allclose(r["discharge"][:, bottoms[2]], np.array([0.7, 0.3]) * 1.3 * r2)
+    assert np.allclose(r["passing"][:, t["spill_from_cell"][2]], np.array([0.7, 0.3]) * 1.3 * r2)       # all of it crosses the second lake
+    assert np.allclose(r["discharge"][:, t["spill_from_cell"][2]], np.array([0.7, 0.3]) * 0.3 * r2)     # and this much leaves it
     assert np.allclose(r["discharge"][:, t["spill_into_cell"][2]], np.array([0.7, 0.3]) * 0.3 * r2)
+    assert not r["discharge"][:, bottoms[3]].any() and np.allclose(r["passing"][:, bottoms[3]].sum(), 0.3 * r2)
     assert not r["discharge"][:, sea].any()
     # enough for all three: what is left reaches the sea
     r = lake_case(m, ground, sea, area, area.copy(), poured(m, [(bottoms[1], r1 + r2 + r3 + 7.0e9)]))
@@ -840,7 +1175,31 @@ def test_on_rough_ground_every_lake_keeps_the_rules(seed):
     f = r["found"]
     assert np.allclose(f["inflow"], f["loss"] + f["outflow"], rtol=1e-9, atol=1e-3)
     assert not f["outflow"][~f["overflows"]].any() and np.all(f["into_cell"][~f["overflows"]] == -1)
+    assert not f["left_over"].any()                                               # with a sea, every hollow has a way out
     assert over.any() and (~f["overflows"]).any() if wetness == 0.3 else True
+    assert r["moved"]["dropped"] <= 1e-9 * runoff.sum() + 1e-6 * rows             # what rounding is allowed to drop
+    # the water through the lakes. A lake that overflows: all that reaches it crosses to its outlet cell, the flow
+    # there is its outflow, in every month the same share of what arrives, and the cell beyond the pass takes it on.
+    year, passing = r["discharge"].sum(axis=0), r["passing"].sum(axis=0)
+    crossing = r["crossing"]
+    for i in np.flatnonzero(f["overflows"]):
+        u, out_cell, beyond = f["row"][i], t["spill_from_cell"][f["row"][i]], f["into_cell"][i]
+        assert crossing[out_cell] == u and r["real"][out_cell] == beyond and crossing[beyond] != u
+        assert np.isclose(passing[out_cell], f["inflow"][i], rtol=1e-9) and np.isclose(year[out_cell], f["outflow"][i], rtol=1e-9, atol=1e-3)
+        if f["inflow"][i] > 0:
+            assert np.allclose(r["discharge"][:, out_cell], r["passing"][:, out_cell] * f["outflow"][i] / f["inflow"][i], rtol=1e-9, atol=1e-6)
+        mine = np.flatnonzero(crossing == u)
+        assert np.all(surface[mine] <= t["spill_m"][u]) and np.all(np.isin(r["label"][mine], region_of(t, u)))
+        assert np.all(r["share"][mine][surface[mine] < t["spill_m"][u]] == 1.0)
+        inner = mine[mine != out_cell]
+        assert np.all(crossing[r["real"][inner]] == u)                           # inside, water is handed on inside
+        assert passing[beyond] >= f["outflow"][i] * (1 - 1e-9)                    # (what passes there, before any lake it lies in takes its share)
+    # a closed lake keeps what reaches it: the flow counts for the part of a cell that is not under water
+    closed = (crossing < 0) & (r["share"] > 0)
+    assert np.allclose(r["discharge"][:, closed], r["passing"][:, closed] * (1 - r["share"][closed]), rtol=1e-12)
+    dry = (crossing < 0) & (r["share"] == 0)
+    assert np.array_equal(r["discharge"][:, dry], r["passing"][:, dry]) and np.array_equal(r["real"][dry], r["recv"][dry])
+    assert np.all(r["discharge"] >= 0)
 
 
 def bowl_and_two_pits(mesh):
@@ -930,6 +1289,19 @@ def test_rounding_cannot_make_a_lake_overflow(nest):
     assert r["moved"]["overflows"][n["north"]] and np.isclose(r["moved"]["extra"][n["south"]], full * 1e-6, rtol=1e-3)
 
 
+def test_less_than_a_millionth_of_a_cubic_metre_a_year_is_no_water():
+    """The other allowance of settle(): what is left of a pour once it is below a millionth of a cubic metre a year
+    counts as none, however large a share of the pour it is. One hollow that overflows to the sea, handed amounts
+    of that size and then real ones."""
+    table = {"parent": np.array([-1, -1]), "sibling": np.array([-1, -1]), "first_child": np.array([-1, -1]),
+             "second_child": np.array([-1, -1]), "spill_into_hollow": np.array([-1, 0])}
+    moved = lk.settle(table, np.array([0.0, 2.0e-7]), np.array([0.0, 1.0e-7]))
+    assert not moved["overflows"][1] and moved["to_sea"] == 0.0
+    assert moved["extra"][1] == 1.0e-7 and np.isclose(moved["dropped"], 1.0e-7, rtol=1e-9)
+    moved = lk.settle(table, np.array([0.0, 2.0]), np.array([0.0, 1.0]))
+    assert moved["overflows"][1] and moved["to_sea"] == 1.0 and moved["dropped"] == 0.0 and moved["extra"][1] == 1.0
+
+
 def test_two_full_hollows_with_nothing_more_stand_as_one_lake_at_the_pass_between_them(nest):
     n = nest
     t, north, south, pair = n["t"], n["north"], n["south"], n["pair"]
@@ -941,6 +1313,71 @@ def test_two_full_hollows_with_nothing_more_stand_as_one_lake_at_the_pass_betwee
     share, level, lake = lk.flooded(t, own, n["ground"], n["area"], extra, over)
     assert level[pair] == t["spill_m"][north] and np.isnan(level[north]) and np.isnan(level[south])
     assert set(lake[share > 0]) == {pair} and np.all(share[np.isin(own, (north, south))] == 1.0) and not share[own == pair].any()
+
+
+def reworded(table, **changes):
+    out = {name: np.array(column) for name, column in table.items()}
+    for name, change in changes.items():
+        out[name] = change(out[name])
+    return out
+
+
+def test_a_table_of_hollows_that_breaks_its_rules_is_refused(nest):
+    """Hydrology takes the table of hollows from whatever process fills the Drainage slot. A table that says the same
+    things in another form used to be taken on trust: with the larger hollows numbered the other way round, 72 % of
+    the river water was lost without a word, and with another reading of one column the lakes never finished."""
+    n = nest
+    t, ground, sea = n["t"], n["ground"], n["sea"]
+    base = lake_case(n["m"], ground, sea, n["area"], n["area"], np.zeros((2, n["m"].n)))
+    label, recv = base["label"], base["recv"]
+    lk.check_table(t, label, recv, sea, ground)                                   # the table as Drainage writes it is accepted
+    rows = len(t["parent"])
+    assert rows == 6                                                              # the sea, three hollows, the pair, the whole
+
+    def refused(table, words, labels=None):
+        with pytest.raises(ValueError, match=words):
+            lk.check_table(table, label if labels is None else labels, recv, sea, ground)
+    # the merged rows numbered from the largest down
+    swap = np.array([0, 1, 2, 3, 5, 4])
+    turned = {name: np.array(col)[swap] for name, col in t.items()}
+    for name in ("parent", "sibling", "first_child", "second_child"):
+        turned[name] = np.where(turned[name] >= 0, swap[np.maximum(turned[name], 0)], -1).astype(np.int32)
+    refused(turned, "earlier rows|later row")
+    # spill_into_hollow naming the largest hollow around the far cell, not the hollow with one bottom
+    top = dr.top_hollows(t)
+    refused(reworded(t, spill_into_hollow=lambda c: np.where(c > 0, top[np.maximum(c, 0)], c).astype(np.int32)), "spill_into_hollow")
+    # heights on another datum
+    refused(reworded(t, spill_m=lambda c: c + 500.0, bottom_m=lambda c: c + 500.0), "field elevation")
+    # a hollow that overflows lower than its parts; parts that do not meet at one level
+    whole, pair = n["whole"], n["pair"]
+    refused(reworded(t, spill_m=lambda c: np.where(np.arange(rows) == pair, c[n["north"]] - 1.0, c)), "lower than its parts|field elevation")
+    refused(reworded(t, spill_m=lambda c: np.where(np.arange(rows) == n["north"], c - 1.0, c)), "one level|field elevation")
+    # the family: a part that does not name its parent, siblings that do not name each other, the sea with a parent
+    refused(reworded(t, parent=lambda c: np.where(np.arange(rows) == n["north"], whole, c).astype(np.int32)), "parent|sibling")
+    refused(reworded(t, sibling=lambda c: np.where(np.arange(rows) == n["north"], n["deep"], c).astype(np.int32)), "sibling|other part")
+    refused(reworded(t, parent=lambda c: np.where(np.arange(rows) == 0, 1, c).astype(np.int32)), "row 0")
+    # a bottom that is no bottom, a label that names no hollow with one bottom, a hollow no ground drains into
+    refused(reworded(t, bottom_cell=lambda c: np.where(np.arange(rows) == 1, int(np.flatnonzero(recv >= 0)[0]), c).astype(np.int32)), "bottom cell")
+    refused(t, "depression_id", labels=np.where(label == 1, pair, label))
+    # a pass that leads nowhere, or into the hollow itself
+    refused(reworded(t, spill_into_cell=lambda c: np.where(np.arange(rows) == n["north"], -1, c).astype(np.int32)), "name its pass")
+    refused(reworded(t, spill_from_cell=lambda c: np.where(np.arange(rows) == n["north"], t["bottom_cell"][n["deep"]], c).astype(np.int32)), "own side|field elevation")
+    refused({name: col for name, col in t.items() if name != "sibling"}, "no column sibling")
+
+
+def test_a_ring_of_hollows_that_overflow_into_one_another_is_refused():
+    """Three pits, each a tree of its own, each overflowing into the next and the last into the sea. If the table
+    said the last overflowed into the first, the order in which to fill them would have no end."""
+    m = get_mesh(6)
+    area = m.area * R * R
+    ground, sea = three_pits(m)
+    base = lake_case(m, ground, sea, area, area.copy(), np.zeros((2, m.n)))
+    t = base["table"]
+    ring = reworded(t, spill_into_hollow=lambda c: np.where(np.arange(len(c)) == 3, 1, c).astype(np.int32))
+    with pytest.raises(ValueError, match="into itself"):
+        lk.tree_order(ring)
+    with pytest.raises(ValueError, match="spill_into_hollow|into itself"):
+        lk.check_table(ring, base["label"], base["recv"], sea, ground)
 
 
 # ------------------------------------------------------------------------------------------ Hydrology and Soils
@@ -975,7 +1412,7 @@ def cone(mesh):
 def demand_by_hand(net_radiation, celsius, height_m):
     """The Priestley-Taylor rule with every number written out, in mm a month."""
     slope = 2.503e6 * np.exp(17.27 * celsius / (celsius + 237.3)) / (celsius + 237.3) ** 2
-    heat = 1.91846e6 * ((celsius + 273.15) / (celsius + 273.15 - 33.912)) ** 2
+    heat = 1.91846e6 * ((celsius + 273.15) / (celsius + 273.15 - 33.91)) ** 2
     pressure = 101325.0 * (1 - 0.0065 * height_m / 288.15) ** (9.81 * 0.028963 / (8.31447 * 0.0065))
     psychrometric = 1004.6 * 0.028963 * pressure / (0.01802 * heat)
     return 1.26 * slope / (slope + psychrometric) * np.maximum(net_radiation, 0.0) / heat * MONTH_S
@@ -1017,7 +1454,21 @@ def test_in_a_basin_under_even_rain_the_flow_at_the_mouth_is_rain_less_evaporati
     dr_ = out.drivers
     assert np.allclose(dr_["runoff"]["from_rain"], f["runoff"], atol=1e-4) and not dr_["runoff"]["from_snowmelt"].any()
     top = int(np.argmin(away))
-    assert dr_["river_discharge"]["largest_source"][top] == top and not dr_["river_discharge"]["from_upstream"][:, top].any()
+    source = dr_["river_discharge"]["largest_source"]
+    assert source[top] == -1 and not dr_["river_discharge"]["from_upstream"][:, top].any()      # nothing lies above the top
+    # The largest single source of a river: the cell upstream of it, never the cell itself, that sheds the most water.
+    recv = d.fields["flow_receiver"]
+    sheds = f["runoff_annual"].astype(np.float64) * area
+    paths = {int(c): follow(recv, c) for c in np.flatnonzero(land)}
+    for c in np.flatnonzero(land)[::23]:
+        above = [k for k, path in paths.items() if c in path[1:]]                # the cells whose water passes c
+        if above:
+            assert source[c] in above and sheds[source[c]] == max(sheds[k] for k in above)
+        else:
+            assert source[c] == -1
+    assert (source[land] >= 0).sum() > 300 and np.all(source[land] != np.flatnonzero(land))
+    assert set(dr_["river_discharge"]["place"][land]) == {0} and set(dr_["river_discharge"]["place"][wet]) == {3}
+    assert not dr_["river_discharge"]["through_lake"].any()
 
 
 def test_on_low_ground_under_even_rain_every_river_carries_its_drained_area_times_one_number():
@@ -1071,17 +1522,22 @@ def test_water_in_equals_water_out_for_every_basin_on_rough_ground_with_lakes_an
     basin = d.fields["basin_id"]
     mouths = np.unique(basin[land])
     kept = np.bincount(basin[land], weights=net[land], minlength=m.n)[mouths]
-    # every basin: rain less evaporation leaves the land. A plain river leaves through its mouth. A hollow that
-    # overflows straight into the sea is named after its deepest cell, and what leaves is the outflow of its lake.
+    # every basin: rain less evaporation leaves the land. A plain river leaves through its mouth, the last land cell
+    # before the sea. A hollow on the coast, which would overflow straight into the sea, is named after its outlet
+    # cell: what leaves there is the outflow of its lake, and nothing if the lake stands below its pass.
     recv, t = d.fields["flow_receiver"], d.tables["hollows"]
     tops = dr.top_hollows(t)
     outflow = dict(zip(lakes["hollow"].tolist(), lakes["outflow_m3_per_year"].tolist()))
-    leaves_land = np.array([river[mo] if recv[mo] >= 0 else outflow.get(int(tops[d.fields["depression_id"][mo]]), 0.0) for mo in mouths])
+    on_coast = ~((recv[mouths] >= 0) & wet[np.maximum(recv[mouths], 0)])          # outlet cells of hollows on the coast
+    leaves_land = np.where(on_coast, [outflow.get(int(tops[d.fields["depression_id"][mo]]), 0.0) for mo in mouths], river[mouths])
     # The books close to within what the bucket allows a year to differ from the next (0.01 mm) and the rounding of
     # the stored fields (a few millionths of the rain).
     slack = np.bincount(basin[land], weights=((0.02 + 5e-6 * fell) * area / 1000.0)[land], minlength=m.n)[mouths]
     assert np.all(np.abs(leaves_land - kept) <= slack)
-    assert (recv[mouths] < 0).any()                                               # the case holds a hollow on the coast
+    assert on_coast.any()                                                         # the case holds a hollow on the coast
+    for mo in mouths[on_coast]:                                                   # where its lake overflows, the river at the
+        if outflow.get(int(tops[d.fields["depression_id"][mo]]), 0.0) > 0:        # outlet cell is that outflow
+            assert np.isclose(river[mo], outflow[int(tops[d.fields["depression_id"][mo]])], rtol=1e-5)
     assert (kept > 100 * slack).sum() > 20                                        # and the test is not empty: most basins shed water
     assert np.isclose(river[wet].sum(), net[land].sum(), rtol=1e-5)
     demand = f["potential_evapotranspiration"].astype(np.float64)
@@ -1161,6 +1617,40 @@ def test_a_hollow_in_a_dry_climate_holds_a_closed_lake_and_in_a_wet_one_a_lake_w
     assert set(state[f["lake_fraction"] > 0]) == {2} and set(state[f["lake_fraction"] == 0]) == {0}
     beyond = t["spill_into_cell"][3]
     assert out.drivers["river_discharge"]["largest_source"][beyond] not in np.flatnonzero(inside)      # nothing from inside passes the notch
+    # what the fields hold under and beside a closed lake
+    share = f["lake_fraction"].astype(np.float64)
+    whole, part, dry = share == 1, (share > 0) & (share < 1), (share == 0) & ~wet
+    assert not f["runoff"][:, whole].any() and np.allclose(f["soil_moisture"][:, whole], 1.0)        # under water: no runoff, ground full
+    parts = out.drivers["evapotranspiration"]
+    assert not parts["from_soil_and_plants"][:, whole].any() and np.all(parts["from_lake"][:, whole] > 0)
+    assert not parts["from_lake"][:, dry].any() and np.all(parts["from_soil_and_plants"][:, dry] > 0)
+    assert np.all(parts["from_lake"][:, part] > 0) and np.all(parts["from_soil_and_plants"][:, part] > 0)
+    dry_soil = f["soil_moisture"][:, dry & inside & ~high].astype(np.float64)
+    assert dry_soil.max() < 0.2                                                   # the floor of the bowls is dry ground
+    for c in np.flatnonzero(part):                                                # a cell partly under water: its dry part as dry as
+        assert np.allclose(f["soil_moisture"][:, c], share[c] + (1 - share[c]) * dry_soil.mean(axis=1), atol=0.02)      # the ground around
+    cover = out.drivers["runoff"]["cover"]
+    assert set(cover[whole]) == {2} and set(cover[part]) == {1} and set(cover[dry]) == {0} and set(cover[wet]) == {3}
+    assert np.array_equal(out.drivers["soil_moisture"]["cover"], cover) and np.array_equal(parts["cover"], cover)
+    assert np.array_equal(lakes["bottom_cell"], t["bottom_cell"][lakes["hollow"]])
+    assert np.all(share[lakes["bottom_cell"]] == 1.0)
+    river = f["river_discharge"].astype(np.float64)
+    place = out.drivers["river_discharge"]["place"]
+    assert set(place[share > 0]) == {2} and set(place[dry]) == {0} and set(place[wet]) == {3}
+    assert not river[:, whole].any() and np.all(river[:, part].sum(axis=0) > 0)   # no river under a closed lake; one reaches its shore
+    assert not out.drivers["river_discharge"]["through_lake"].any()
+    # the books of each lake in the terms of a map: what the streams and its own shores bring is what its open water
+    # gives the air less the rain that falls on it
+    fell_on = lakes["rain_on_lake_m3_per_year"]
+    gave = lakes["evaporation_m3_per_year"]
+    for row in range(2):
+        mine = (label == lakes["hollow"][row]) & (share > 0)
+        assert np.isclose(fell_on[row], (share * area * 5.0 * 12 / 1000.0)[mine].sum(), rtol=1e-6)
+        assert np.isclose(gave[row], (share * area * to_air / 1000.0)[mine & whole].sum()
+                          + (out.drivers["evapotranspiration"]["from_lake"].astype(np.float64).sum(axis=0) * area / 1000.0)[mine & part].sum(), rtol=1e-4)
+        from_land = (f["runoff_annual"].astype(np.float64) * area / 1000.0)[label == lakes["hollow"][row]].sum()
+        assert from_land > 0 and np.isclose(from_land, gave[row] - fell_on[row], rtol=1e-4)
+    assert not lakes["left_over_m3_per_year"].any()
     # the wet case
     hh, area, sea, d, out, reads = watered(ground, volume, 150.0, 25.0, 350.0, level=5)
     f, lakes = out.fields, out.tables["lakes"]
@@ -1173,6 +1663,19 @@ def test_a_hollow_in_a_dry_climate_holds_a_closed_lake_and_in_a_wet_one_a_lake_w
     river = f["river_discharge"].astype(np.float64).sum(axis=0) * MONTH_S
     assert river[beyond] >= lakes["outflow_m3_per_year"][0] * (1 - 1e-6)
     assert set(out.drivers["lake_fraction"]["state"][f["lake_fraction"] > 0]) == {1}
+    # the river runs through the lake: at its outlet cell it carries the lake's outflow, and inside the lake the flow
+    # never exceeds that; the parts recorded for the answers say "through the lake" there and nothing else
+    outlet = lakes["outlet_cell"][0]
+    assert np.isclose(river[outlet], lakes["outflow_m3_per_year"][0], rtol=1e-5)
+    in_lake = out.drivers["river_discharge"]["place"] == 1
+    assert in_lake[outlet] and np.all(f["lake_fraction"][in_lake & (ground < t["spill_m"][3])] == 1.0)
+    assert np.all(river[in_lake] <= river[outlet] * (1 + 1e-6)) and (river[in_lake] > 0).sum() > 10
+    through = out.drivers["river_discharge"]["through_lake"].astype(np.float64).sum(axis=0) * MONTH_S
+    assert np.allclose(through[in_lake], river[in_lake], rtol=1e-5) and not through[~in_lake].any()
+    assert not out.drivers["river_discharge"]["local_runoff"][:, in_lake].any()
+    assert set(out.drivers["river_discharge"]["lake"][in_lake]) == {0}            # the row of the lake in the table of lakes
+    months = f["river_discharge"].astype(np.float64)[:, outlet]
+    assert np.allclose(months, months.mean(), rtol=1e-5)                          # even rain in, even flow out
     fell = reads["precipitation"].sum(axis=0)
     to_air = f["evapotranspiration"].astype(np.float64).sum(axis=0)
     assert np.isclose(river[wet].sum(), ((fell - to_air) * area / 1000.0)[~wet].sum(), rtol=1e-5)
@@ -1192,9 +1695,20 @@ def test_snow_holds_the_winter_back_and_the_thaw_sends_it_down_the_rivers():
                                            snowfall=np.array([40.0] * 6 + [0.0] * 6))
     f = out.fields
     land = np.flatnonzero(~sea.fields["ocean_mask"])
-    assert np.allclose(f["snow_water"][:, land], np.array([20, 60, 100, 140, 180, 220, 120, 0, 0, 0, 0, 0.0])[:, None])
-    assert not f["potential_evapotranspiration"][:7, land].any()                  # ground under snow gives the air nothing
-    assert np.all(f["potential_evapotranspiration"][7:, land] > 50.0)
+    thaw = 4.0 * MONTH_DAYS * 8.0                                                 # 974 mm: the 240 mm are gone after a quarter of the month
+    assert np.allclose(f["snow_water"][:, land], np.array([20, 60, 100, 140, 180, 220, 120 * 240 / thaw, 0, 0, 0, 0, 0.0])[:, None])
+    # the share of the ground under snow: 15 mm lie after 0.375 of the first month; in the thaw the ground is white
+    # until 225 mm have gone, and half white, on average, while the last 15 mm go
+    cover = np.array([0.375 * 0.5 + 0.625, 1, 1, 1, 1, 1, (225 + 7.5) / thaw, 0, 0, 0, 0, 0.0])
+    assert np.allclose(f["snow_cover"][:, land], cover[:, None], atol=1e-6)
+    demand = f["potential_evapotranspiration"].astype(np.float64)[:, land]
+    assert not demand[:6].any()                                                   # ground under snow gives the air nothing
+    assert np.all(demand[7:] > 50.0)
+    # the month of the thaw has the sun and the warmth of the months after it, and bare ground for 0.76 of its days
+    assert np.allclose(demand[6] / demand[7], 1 - cover[6], rtol=1e-5) and abs(1 - cover[6] - 0.761) < 0.001
+    bare = out.drivers["potential_evapotranspiration"]["snow_free"][:, land]
+    assert np.allclose(bare, 1 - cover[:, None], atol=1e-6)
+    assert set(out.drivers["potential_evapotranspiration"]["state"][land]) == {1} and set(out.drivers["snow_water"]["state"][land]) == {1}
     runoff = f["runoff"].astype(np.float64)[:, land]
     assert not runoff[:6].any() and np.all(runoff[6] > 100.0) and np.all(runoff[6] > 5 * runoff[7:].max(axis=0))
     parts = out.drivers["runoff"]
@@ -1217,6 +1731,64 @@ def test_where_snow_never_melts_the_excess_leaves_as_ice_down_the_same_paths():
     assert not f["evapotranspiration"].any() and not f["potential_evapotranspiration"][:, land].any()
     assert np.allclose(f["soil_moisture"][:, land], 0.0)                          # no liquid water ever reaches the soil
     assert np.isclose(f["river_discharge"][0, wet].sum(), (20.0 * area[land] / 1000.0).sum() / MONTH_S, rtol=1e-5)
+
+
+def test_a_month_just_above_freezing_melts_four_millimetres_a_day_for_each_degree():
+    """The degree-day factor as the parameter file ships it, through the process: six months at -5 C with 100 mm of
+    snow each, then months at +1 C. Each of those can melt 4 mm a day for the one degree, 121.75 mm a month: the
+    600 mm take five months to go, and the store at the end of each is 478.25, 356.5, 234.75, 113 and 0 mm. With
+    half the factor the snow would never go at all."""
+    m = get_mesh(4)
+    ground, away = cone(m)
+    celsius = np.array([-5.0] * 6 + [1.0] * 6)
+    hh, area, sea, d, out, reads = watered(ground, (m.area * R * R)[away > 60].sum() * 400.0, np.array([100.0] * 6 + [0.0] * 6),
+                                           celsius, 200.0, snowfall=np.array([100.0] * 6 + [0.0] * 6))
+    f = out.fields
+    land = np.flatnonzero(~sea.fields["ocean_mask"])
+    melt = 4.0 * MONTH_DAYS * (float(np.float32(274.15)) - 273.15)                # (the temperature is stored in single precision)
+    assert abs(melt - 121.75) < 0.01
+    ends = np.array([100, 200, 300, 400, 500, 600, 600 - melt, 600 - 2 * melt, 600 - 3 * melt, 600 - 4 * melt, 0.0, 0.0])
+    starts = np.roll(ends, 1)
+    means = 0.5 * (starts + ends)
+    rest = 600 - 4 * melt                                                         # 113 mm, gone after 113 / 121.75 of the eleventh month
+    means[10] = 0.5 * rest * rest / melt
+    assert np.allclose(f["snow_water"][:, land], means[:, None], rtol=1e-5)
+    melted = out.drivers["snow_water"]["melted"].astype(np.float64)[:, land]
+    assert np.allclose(melted, np.array([0] * 6 + [melt] * 4 + [rest, 0])[:, None], rtol=1e-5)
+    assert set(out.drivers["snow_water"]["state"][land]) == {1} and not out.drivers["snow_water"]["left_as_ice"].any()
+    assert np.allclose(out.drivers["snow_water"]["fell"][:, land], reads["snowfall"][:, land])
+
+
+def test_snowfall_is_never_more_than_the_precipitation_it_is_part_of():
+    """The two fields come from another process and are stored rounded. Snow that outweighs the precipitation of its
+    month would make rain negative."""
+    m = get_mesh(4)
+    ground, away = cone(m)
+    hh, area, sea, d, out, reads = watered(ground, (m.area * R * R)[away > 60].sum() * 400.0, 20.0, -10.0, 100.0, snowfall=25.0)
+    land = ~sea.fields["ocean_mask"]
+    assert np.allclose(out.drivers["snow_water"]["fell"][:, land], 20.0)
+    assert np.allclose(out.fields["runoff"][:, land], 20.0)                       # what falls leaves as ice, and no more than falls
+
+
+def test_a_hollow_with_no_way_out_that_gets_more_than_it_can_lose_is_flooded_whole_and_said_to_be():
+    """A planet without sea under heavy rain: the one hollow fills to its rim. It has no pass to overflow at, so it is
+    no lake with an outlet. The table says what cannot be lost, and the process says that it drops it."""
+    m = get_mesh(3)
+    ground = rough_ground(m, 71, relief=800.0, bumps=5.0)
+    hh, area, sea, d, out, reads = watered(ground, 0.0, 200.0, 20.0, level=3)
+    f, lakes = out.fields, out.tables["lakes"]
+    assert len(lakes["hollow"]) == 1 and not lakes["overflows"][0] and lakes["outflow_m3_per_year"][0] == 0
+    assert lakes["outlet_cell"][0] == -1 and lakes["spills_into_cell"][0] == -1
+    spare = ((200.0 * 12 - f["evapotranspiration"].astype(np.float64).sum(axis=0)) * area / 1000.0).sum()
+    assert np.isclose(lakes["left_over_m3_per_year"][0], spare, rtol=1e-4) and spare > 0
+    assert np.isclose(lakes["inflow_m3_per_year"][0], lakes["loss_to_air_m3_per_year"][0] + lakes["left_over_m3_per_year"][0], rtol=1e-9)
+    assert np.all(f["lake_fraction"] == 1.0)
+    top = float(ground.astype(np.float32).max())
+    assert np.isclose(lakes["level_m"][0], top) and np.allclose(f["lake_level"], top)       # it stands at its highest ground
+    assert np.isclose(lakes["area_m2"][0], area.sum(), rtol=1e-6)
+    assert np.isclose(lakes["volume_m3"][0], ((top - ground.astype(np.float32).astype(np.float64)) * area).sum(), rtol=1e-4)
+    assert set(out.drivers["lake_fraction"]["state"]) == {3} and not f["river_discharge"].any()
+    assert set(out.drivers["river_discharge"]["place"]) == {2}
 
 
 def test_a_soil_that_holds_more_carries_more_water_into_the_dry_season():

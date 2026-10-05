@@ -2,13 +2,14 @@
 
 A generator for a planet's geography, natural systems and climate, in which every feature follows
 from a stated physical cause. The design is in the design document "World engine design: physical
-causes, replaceable processes"; this folder is its build. What was measured, what three rounds of
-checking changed, where the build departs from the design and where the first world is wrong are
-in [docs/BUILD_NOTES.md](docs/BUILD_NOTES.md). Read its sections 3.2, 5 and 7 before trusting a map.
+causes, replaceable processes"; this folder is its build. What was measured, what the rounds of
+checking changed, where the build departs from the design and where its worlds are wrong are in
+[docs/BUILD_NOTES.md](docs/BUILD_NOTES.md). Read its sections 4, 6 and 8 before trusting a map.
 
-Built so far: the skeleton (build step 0) and the smallest end-to-end slice (build step 1):
-terrain, temperature, wind, rainfall and biomes, with a viewer. Rivers, lakes, erosion, ocean
-currents, soils, storms and daily weather are designed and not built.
+Built so far: the skeleton (build step 0), the smallest end-to-end slice (step 1: terrain,
+temperature, wind, rainfall and biomes, with a viewer) and the water on land (step 2: drainage,
+snow, soil water, rivers, lakes, and the water that land gives back to the air). Erosion, moving
+plates, ocean currents, soils, storms and daily weather are designed and not built.
 
 ## Install
 
@@ -27,8 +28,8 @@ with the pinned ones.
 ## Use
 
     python -m worldengine order                                  # the running order computed from the declarations
-    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; 23 s where it was built
-    python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 8 to 9 minutes where it was built
+    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; 48 s where it was built
+    python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 20 minutes where it was built
     python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/
     python -m worldengine explain worlds/first.zarr --lat 18 --lon -102 --field biome
     python -m worldengine info worlds/first.zarr
@@ -41,7 +42,9 @@ The folder comes with `worlds/first.zarr`, the default world on the preview mesh
 at once. The times are from a slow two-core machine; a laptop should be several times faster.
 
 The same seed and parameters always give the same world, bit for bit, on one machine with the pinned
-versions. A world store is written once and never changed.
+versions. On a machine with another kind of processor the last digits can differ (docs/BUILD_NOTES.md,
+section 5.1); a world store carries its fingerprints, so a difference shows. A world store is written
+once and never changed.
 
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, switch to the flat map, play
 the months, and click a cell for its values and its "why" answer.
@@ -49,26 +52,51 @@ the months, and click a cell for its values and its "why" answer.
 ### A "why" answer
 
 Every process records the terms that made its result, and `explain` walks back through them to a
-planet parameter, a seeded start or a push. For a desert cell of the default world (shortened):
+planet parameter, a seeded start or a push. For the mouth of the largest river of the default world
+(shortened):
 
-    Why is biome like this at 18.1° N, 101.8° W (cell 8869)?
-    1. The biome here is subtropical desert: Whittaker's chart places this climate here; the yearly mean
-       temperature is 14.5 °C; the yearly precipitation is 7.16 mm; what limits plant life here is drought.
-    2. Precipitation here averages 0.60 mm/month: moist air rains 0.77 mm/month; sinking air changes it
-       by -0.17 mm/month.
+    python -m worldengine explain worlds/first.zarr --lat 27.1 --lon -166.1 --field river_discharge
+
+    Why is river_discharge like this at 27.1° N, 166.1° W (cell 7516)?
+    1. This cell is sea. The rivers that end here deliver 100694 m³/s on the year's average: 100694 m³/s
+       arrive from upstream, where the largest single source is cell 456, at 23.3° N, 166.1° E.
+    2. At 23.3° N, 166.1° E (cell 456), where the cause lies: Runoff here averages 125.9 mm/month: ice
+       leaving ground where snow never melts away gives 88.9 mm/month; rain that the soil could not hold
+       gives 33.4 mm/month; melted snow that the soil could not hold gives 3.71 mm/month.
+    3. [...] The snow on the ground here holds 1085 mm of water on the year's average, and lies all
+       year: more snow falls in a year than the year can melt. [...]
+    5. [...] Precipitation here averages 125.9 mm/month: moist air rains 92.1 mm/month; air forced up
+       rising ground adds 70.4 mm/month; sinking air changes it by -36.5 mm/month.
     ...
-    9. Air here sinks at 1.16 mm/s on average (a negative value means it rises). It lies under the
-       sinking branch of the northern loop.
-    10. The temperature here averages 14.5 °C over the year: sunlight absorbed against heat lost to space
-        would give 36.7 °C; heat spread from neighbouring cells changes it by -17.6 °C; its height
-        changes it by -4.6 °C.
-    11. Sunlight at the top of the air averages 396.8 W/m² over the year here.
-    12. The chain ends here, at planet parameters: the latitude of 18.1° north, the axial tilt of
+    11. [...] The temperature here averages -2.5 °C over the year: sunlight absorbed against heat lost
+        to space would give -27.3 °C; heat spread from neighbouring cells changes it by +48.5 °C; its
+        height changes it by -23.7 °C.
+    12. [...] Sunlight at the top of the air averages 384.9 W/m² over the year here.
+    13. [...] The chain ends here, at planet parameters: the latitude of 23.3° north, the axial tilt of
         23.44 degrees and the star output of 1361.0 W/m².
+
+The answer is true of the world and shows one of its known errors at work: snow that never melts on a
+mountain at 23° north (docs/BUILD_NOTES.md, section 8).
+
+## Earth, as a yardstick
+
+Four public data files let single processes be judged against Earth, and let the whole engine be run
+on Earth's own relief (docs/BUILD_NOTES.md, sections 4.3 to 4.6). They are not kept in this folder.
+
+    python tools/fetch_reference_data.py           # fetches 35 MB from one pinned commit and checks every file
+    python tools/earth_rivers.py                   # Earth's great rivers and lakes as the engine makes them, beside the measured ones
+    python tools/earth_twin.py --profile preview   # the whole engine on Earth's relief, printed beside Earth
+
+Without the data the tests that need it are skipped. The precipitation file asks that GPCP be cited
+in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 362 tests, about five minutes where it was built
+    python -m pytest                    # 574 tests, about 13 minutes where it was built
+
+34 of them are expected failures: patterns of Earth, and one condition of the design, that the
+engine is known to miss, each with the number measured. They are the list of known errors in
+runnable form; `python -m pytest -rx` prints them.
 
 Extra checks that are not part of the test run:
 
@@ -76,7 +104,8 @@ Extra checks that are not part of the test run:
     python trials/crust_points_trial.py seeds      # the same on ten other seeds
     python trials/climate_round_cost.py standard   # what a climate round costs on this machine
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
-    python tools/viewer_check.py worlds/first.zarr shots biome precipitation   # screenshots; needs playwright
+    python tools/why_scan.py worlds/first.zarr     # reads every "why" answer for water on land against the numbers of its cell
+    python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks; needs playwright
 
 ## Layout
 
@@ -97,9 +126,12 @@ Extra checks that are not part of the test run:
       store.py            the world store (Zarr)
       server.py, cli.py   the local server and the command line
       testing.py          the harness that runs one process alone
-      library/            shared mathematics: mesh operators, flooding, transport, snow, orbit, noise
+      library/            shared mathematics: mesh operators, flooding, transport, orbit, noise, drainage, snow,
+                          soil water, the demand for water, lakes
       processes/          one file per implementation of a slot; each file's first lines name the model,
                           what it ignores and where it is wrong
+    src/earth_reference/  readers of the Earth data, Earth on the mesh, the Earth twin. Not part of the engine:
+                          the engine never imports it
     viewer/               the viewer page
     tests/                the test suite; toy processes and the design's declarations as test data
     trials/               the two trials of build step 1 and their results
@@ -110,6 +142,7 @@ Extra checks that are not part of the test run:
 
 * A better model for a slot: one new file in `processes/`, its constants in `data/models.yaml`, and one
   changed line naming it. It may read different fields, but it must write the slot's list.
+  docs/BUILD_NOTES.md, section 9, says what a replacement of Drainage or Hydrology must also honour.
 * A new field: one entry in `data/fields.yaml` plus a process that writes it.
 * A push (an external change to a field or a group): one entry in `data/interventions.yaml`.
   No code changes. `data/examples/` shows two.

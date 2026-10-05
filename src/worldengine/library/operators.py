@@ -18,6 +18,7 @@ from scipy.spatial import cKDTree
 from ..mesh import Mesh
 
 _POTENTIAL_SHIFT = 1.0e-6
+HALF_TURN_DEG, QUARTER_TURN_DEG = 180.0, 90.0       # degrees from pole to pole, and from the equator to a pole
 
 
 def laplacian_matrix(mesh: Mesh) -> sp.csr_matrix:
@@ -196,17 +197,17 @@ def zonal_mean(mesh: Mesh, f: np.ndarray, band_deg: float, mask: np.ndarray | No
         return rows[0][0], np.stack([means for _, means in rows])
     if f.shape != (mesh.n,):
         raise ValueError(f"zonal_mean takes one value per cell, or one per month and cell; got shape {f.shape}")
-    nb = int(round(180.0 / band_deg))
+    nb = int(round(HALF_TURN_DEG / band_deg))
     nb += 1 - nb % 2
-    band_deg = 180.0 / nb
-    b = np.clip(((mesh.lat + 90.0) / band_deg).astype(np.int64), 0, nb - 1)
+    band_deg = HALF_TURN_DEG / nb
+    b = np.clip(((mesh.lat + QUARTER_TURN_DEG) / band_deg).astype(np.int64), 0, nb - 1)
     w = mesh.area if mask is None else mesh.area * mask
     f = np.where(w > 0, f, 0.0)                              # a missing value outside the mask must not reach the sum
     num = np.bincount(b, weights=w * f, minlength=nb)
     den = np.bincount(b, weights=w, minlength=nb)
     with np.errstate(invalid="ignore", divide="ignore"):
         out = num / den
-    centres = -90.0 + band_deg * (np.arange(nb) + 0.5)
+    centres = -QUARTER_TURN_DEG + band_deg * (np.arange(nb) + 0.5)
     if fill and np.isnan(out).any():
         have = ~np.isnan(out)
         out = np.interp(centres, centres[have], out[have])

@@ -6,7 +6,8 @@
 # shape: cell | month_cell.   kind: number | direction (3 components) | category | boolean | index.
 # default: what a read from the previous round returns in the first round (the first guess: no ice, no wind, bare ground).
 # settle: the tolerances of the test that decides whether the climate has settled, for fields read from the previous round
-#         (and for a group whose sum is read from the previous round).
+#         (and for a group whose sum is read from the previous round). They are used only in a build in which some
+#         process does read the field that way, and they count in the lineage fingerprint of every field of the stage.
 fields:
   # ---------------------------------------------------------------- Geometry
   latitude:
@@ -75,10 +76,10 @@ fields:
      description: "The neighbouring cell that water on the ground flows into; -1 for a sea cell and for the bottom of a closed hollow."}
   drainage_area:
     {family: Sea and drainage, unit: "m²", shape: cell, kind: number, dtype: float64, range: [0, 1.0e+18],
-     description: "Total land area whose water passes through this cell when every hollow upstream is full and overflows. On a sea cell: the land area that drains straight into it."}
+     description: "Total land area whose water passes through this cell when every hollow is full and overflows: the cell's own area and that of everything upstream. Ground that a full hollow covers hands its water across the lake to the hollow's outlet cell, so the outlet cell counts the whole hollow. On a sea cell: the land area that drains straight into it, without the cell's own."}
   basin_id:
     {family: Sea and drainage, unit: index, shape: cell, kind: index,
-     description: "River basin: all cells that drain to the same outlet when every hollow on the way is full and overflows. The number is that of the mouth: the last land cell before the sea, or, where a hollow overflows straight into the sea, the deepest cell of that hollow. -1 on sea."}
+     description: "River basin: all cells that drain to the same mouth when every hollow on the way is full and overflows. The number is that of the mouth, the last land cell before the sea; in land with no way out to any sea, the deepest bottom of the hollow that holds it. -1 on sea. Whether a hollow does fill depends on the climate: where Hydrology finds a closed lake, the land above it has no mouth on the sea."}
   depression_id:
     {family: Sea and drainage, unit: index, shape: cell, kind: index, default: 0,
      description: "The closed hollow this cell drains into, as a row of the table of hollows; zero if it drains to the sea."}
@@ -130,34 +131,37 @@ fields:
      description: "The part of precipitation that falls as snow."}
   evapotranspiration:
     {family: Water, unit: mm/month, shape: month_cell, kind: number, default: 0.0, range: [0, 5000],
-     description: "Water returned to the air by soil, plants and lakes; zero on sea. Member of the group moisture_source."}
+     description: "Water returned to the air by soil, plants and lakes; zero on sea. In a cell partly under a lake: the soil's share from the dry part and open water's from the flooded part. Member of the group moisture_source."}
   potential_evapotranspiration:
     {family: Water, unit: mm/month, shape: month_cell, kind: number, default: missing, allow_missing: true, range: [0, 5000],
-     description: "Water the air could take up if the ground were wet. No value on sea."}
+     description: "Water the air could take from the ground of the cell if that ground were wet. Ground under snow gives the air nothing in this model, so the value is that of bare wet ground times the share of the cell that is free of snow: zero where snow covers the ground all month. No value on sea."}
   soil_moisture:
     {family: Water, unit: 0 to 1, shape: month_cell, kind: number, default: missing, allow_missing: true, range: [0, 1],
-     description: "Water held in the soil, as a fraction of what it can hold. No value on sea."}
+     description: "Water held in the soil, as a fraction of what it can hold. The part of a cell that lies under a lake counts as full. No value on sea."}
   snow_water:
-    # settle: the ground counts as fully white from 15 mm (Albedo), so 2 mm is an eighth of the range in which the
-    # store changes anything that reads it
     {family: Water, unit: mm, shape: month_cell, kind: number, default: 0.0, range: [0, 1.0e+6],
-     settle: {mean: 0.05, cell: 2.0},
-     description: "Water stored as snow on the ground, on the month's average; zero on sea."}
+     description: "Water stored as snow on the ground, on the month's average; zero on sea. Where more snow falls in a year than the year can melt, the store is held to a set number of years of the net snowfall, and what is older leaves as ice."}
+  snow_cover:
+    # settle: Albedo reads this from the previous round. An eighth of the range in a cell, and a three-hundredth on
+    # the planet's average, are the tolerances the snow store had when Albedo read that (2 mm and 0.05 mm of 15 mm).
+    {family: Water, unit: 0 to 1, shape: month_cell, kind: number, default: 0.0, range: [0, 1],
+     settle: {mean: 0.003, cell: 0.13},
+     description: "Share of the ground under snow, on the month's average: the ground counts as fully covered while the snow store holds a set depth of water or more, and in proportion below that; a month in which the snow goes part-way through counts the days it lay. Zero on sea."}
   runoff:
     {family: Water, unit: mm/month, shape: month_cell, kind: number, default: 0.0, range: [0, 40000],
-     description: "Water leaving the cell over or through the ground, with the ice that leaves ground under snow that never melts."}
+     description: "Water leaving the ground of the cell, over or through it, with the ice that leaves ground under snow that never melts. Counted for the part of the cell that no lake covers: zero in a cell wholly under a lake, and zero on sea."}
   runoff_annual:
     {family: Water, unit: mm/yr, shape: cell, kind: number, default: 0.0, range: [0, 400000],
      description: "Yearly total of runoff."}
   river_discharge:
     {family: Water, unit: "m³/s", shape: month_cell, kind: number, default: 0.0, range: [0, 1.0e+9],
-     description: "Flow of the river passing through the cell: the runoff of the cell and of everything upstream of it. On a sea cell: what the land beside it delivers."}
+     description: "Flow of the river passing through the cell: the runoff of the cell and of everything upstream of it, less what lakes on the way have kept. Inside a lake that overflows: the share of the water crossing the cell that goes on to leave the lake, so that the flow at the lake's outlet cell is the lake's outflow. Each month such a lake passes on the share of its inflow that it passes on over the whole year. In a cell of a closed lake: the flow over the part of the cell that is not flooded. On a sea cell: what the land beside it delivers."}
   lake_fraction:
     {family: Water, unit: 0 to 1, shape: cell, kind: number, default: 0.0, range: [0, 1],
      description: "Fraction of the cell covered by lake."}
   lake_level:
     {family: Water, unit: m, shape: cell, kind: number, default: missing, allow_missing: true, range: [-20000, 20000],
-     description: "Height of the lake surface relative to the reference level. No value where there is no lake."}
+     description: "Height of the lake surface relative to the reference level. A lake that overflows stands at its pass; a lake below its pass stands at the height of the highest ground it wets, so its level moves in steps of the cells' heights. No value where there is no lake."}
   # ---------------------------------------------------------------- Soil and life
   climate_class:
     {family: Soil and life, unit: category, shape: cell, kind: category, categories_from: {file: biomes, key: climate_classes},

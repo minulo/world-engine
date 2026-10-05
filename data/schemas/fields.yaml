@@ -28,7 +28,7 @@ keys:
         settle:
           type: map
           required: [mean, cell]
-          keys: {mean: {type: number, min: 0}, cell: {type: number, min: 0}}
+          keys: {mean: {type: number, min: 0, finite: true}, cell: {type: number, min: 0, finite: true}}
         description: {type: string}
   groups:
     type: map
@@ -42,5 +42,5 @@ keys:
         settle:
           type: map
           required: [mean, cell]
-          keys: {mean: {type: number, min: 0}, cell: {type: number, min: 0}}
+          keys: {mean: {type: number, min: 0, finite: true}, cell: {type: number, min: 0, finite: true}}
         description: {type: string}

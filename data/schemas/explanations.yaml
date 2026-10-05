@@ -1,2 +1,56 @@
+# The sentence patterns of the "why" answers: slot -> field -> pattern (the format is described in src/worldengine/causes.py).
 type: map
-values: {type: any}
+values:
+  type: map
+  values:
+    type: map
+    keys:
+      says: {type: string}
+      says_missing: {type: string}
+      says_zero: {type: string}
+      follows: {type: list, items: {type: string}}
+      follows_missing: {type: list, items: {type: string}}
+      follows_zero: {type: list, items: {type: string}}
+      form: {type: string, choices: [sum, rule, plain]}
+      unit: {type: string}
+      ends: {type: string}
+      quiet: {type: boolean}
+      drivers:
+        type: map
+        values:
+          type: map
+          keys:
+            says: {type: string}
+            unit: {type: string}
+            follows: {type: list, items: {type: string}}
+            ends: {type: string}
+            at: {type: string}
+            names: {type: list, items: {type: string}}
+            says_by: {type: map, values: {type: string}}
+            follows_by: {type: map, values: {type: list, items: {type: string}}}
+            cell: {type: boolean}
+            row_of: {type: string}
+            values: {type: map, values: {type: any}}        # column -> its codes (numbers or text) -> words
+            units: {type: map, values: {type: string}}
+            base: {type: boolean}
+            always: {type: boolean}
+            group: {type: string}
+      cases:
+        type: list
+        items:
+          type: map
+          required: [when]
+          keys:
+            when:
+              type: map
+              values: {type: one_of, options: [{type: string}, {type: list, items: {type: string}}]}
+            says: {type: string}
+            says_missing: {type: string}
+            says_zero: {type: string}
+            follows: {type: list, items: {type: string}}
+            follows_missing: {type: list, items: {type: string}}
+            follows_zero: {type: list, items: {type: string}}
+            form: {type: string, choices: [sum, rule, plain]}
+            unit: {type: string}
+            ends: {type: string}
+            quiet: {type: boolean}

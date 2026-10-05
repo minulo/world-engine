@@ -12,6 +12,8 @@ import importlib.metadata
 import json
 import math
 import shutil
+import threading
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -21,16 +23,18 @@ from . import __version__
 
 FORMAT = 1
 CHUNK_BYTES = 8_000_000         # the store is cut into pieces of about this size
+KEEP_BYTES = 512_000_000        # a view of a store keeps up to this much of what it has read
 _PACKAGES = ("numpy", "scipy", "numba", "llvmlite", "zarr", "numcodecs", "PyYAML", "threadpoolctl")
 
 
 def code_fingerprint() -> str:
-    """SHA-256 over the engine's own source files, in name order."""
+    """SHA-256 over the engine's own source files, in name order. Names are taken with forward slashes and line
+    ends as single line feeds, so that one checkout gives one fingerprint on every system."""
     root = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for path in sorted(root.rglob("*.py")):
-        h.update(str(path.relative_to(root)).encode())
-        h.update(path.read_bytes())
+    for name, path in sorted((p.relative_to(root).as_posix(), p) for p in root.rglob("*.py")):
+        h.update(name.encode("utf-8"))
+        h.update(path.read_bytes().replace(b"\r\n", b"\n"))
     return h.hexdigest()[:16]
 
 
@@ -254,6 +258,9 @@ class MemoryView(WorldView):
 
 
 class StoreView(WorldView):
+    """A world store on disk, read only. What has been read is kept, up to KEEP_BYTES, so that one "why" answer after
+    another does not read the same arrays again: a store is written once and never changes."""
+
     def __init__(self, path):
         self.path = Path(path)
         if not self.path.exists():
@@ -264,36 +271,66 @@ class StoreView(WorldView):
         self._bool_columns = {(t, c) for t, s in (self.attrs.get("tables") or {}).items()
                               for c, kind in s["columns"].items() if kind == "bool"}
         self._push_group = {self._root["causes/pushes"][k].attrs["id"]: k for k in self._root["causes/pushes"].group_keys()}
+        self._kept, self._kept_bytes, self._lock = OrderedDict(), 0, threading.Lock()
+
+    def _keep(self, key, read):
+        """What `read` returns (an array, or a dict of arrays), read once and kept while there is room."""
+        with self._lock:
+            if key in self._kept:
+                self._kept.move_to_end(key)
+                return self._kept[key]
+        value = read()
+        arrays = list(value.values()) if isinstance(value, dict) else [value]
+        for a in arrays:
+            a.flags.writeable = False                        # one copy is handed to every caller
+        size = sum(a.nbytes for a in arrays)
+        with self._lock:
+            if key not in self._kept and size <= KEEP_BYTES:
+                self._kept[key] = value
+                self._kept_bytes += size
+                while self._kept_bytes > KEEP_BYTES:
+                    _, old = self._kept.popitem(last=False)
+                    self._kept_bytes -= sum(a.nbytes for a in (old.values() if isinstance(old, dict) else [old]))
+        return value
 
     def field(self, name):
-        a = self._root["fields"][name][...]
-        return a.astype(bool) if name in self._bool else a
+        def read():
+            a = self._root["fields"][name][...]
+            return a.astype(bool) if name in self._bool else a
+        return self._keep(("field", name), read)
 
     def field_names(self):
         return sorted(self._root["fields"].array_keys())
 
     def driver(self, field, term):
-        return self._root["causes/drivers"][field][term][...]
+        return self._keep(("driver", field, term), lambda: self._root["causes/drivers"][field][term][...])
 
     def table(self, name):
-        g = self._root["tables"][name]
-        return {c: g[c][...].astype(bool) if (name, c) in self._bool_columns else g[c][...] for c in sorted(g.array_keys())}
+        def read():
+            g = self._root["tables"][name]
+            return {c: g[c][...].astype(bool) if (name, c) in self._bool_columns else g[c][...] for c in sorted(g.array_keys())}
+        return dict(self._keep(("table", name), read))
 
     def push_arrays(self, push_id):
-        g = self._root["causes/pushes"][self._push_group[push_id]]
-        out = {c: g[c][...] for c in g.array_keys()}
-        if "before" in out and self.attrs["pushes"][push_id].get("field") in self._bool:
-            out["before"] = out["before"].astype(bool)
-        return out
+        def read():
+            g = self._root["causes/pushes"][self._push_group[push_id]]
+            out = {c: g[c][...] for c in g.array_keys()}
+            if "before" in out and self.attrs["pushes"][push_id].get("field") in self._bool:
+                out["before"] = out["before"].astype(bool)
+            return out
+        return dict(self._keep(("push", push_id), read))
 
     def mesh_array(self, name):
-        return self._root["mesh"][name][...]
+        return self._keep(("mesh", name), lambda: self._root["mesh"][name][...])
 
     def group_members(self, group):
         if group not in self._root["causes/groups"]:
             return {}
-        g = self._root["causes/groups"][group]
-        return {g[k].attrs["member"]: g[k]["value"][...] for k in sorted(g.group_keys())}
+
+        def read():
+            g = self._root["causes/groups"][group]
+            return {g[k].attrs["member"]: g[k]["value"][...] for k in sorted(g.group_keys())}
+        return dict(self._keep(("group", group), read))
 
     def fingerprints(self) -> dict:
         """Recomputed from the stored bytes, for comparison with the fingerprints kept at build time."""

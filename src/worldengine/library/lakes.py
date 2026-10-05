@@ -16,21 +16,139 @@ arrives, and then it is a closed lake below its pass. If the hollow is flooded t
 more arrives than it loses, the rest overflows: into the neighbouring hollow, and when that
 one is full as well the two are one lake, which rises to the next pass.
 
+check_table() refuses a table of hollows that does not keep the rules this module relies on.
 settle() moves the water, in the order of the published method: the hollows of a tree from the
 smallest up, and the trees in the order in which one overflows into the next.
 flooded() turns the result into the flooded share of every cell and the level of every lake.
-lake_flows() follows the water through the lakes month by month: every month a lake passes
-on the same share of what reaches it, the share that it passes on over the whole year.
+lake_flows() follows the water through the lakes month by month.
+
+The water inside a lake [INFERRED: all of it mine; the engine has no model of a lake's
+currents or of its level through the year]:
+  * A lake that overflows passes on, in every month, the same share of the water that reaches
+    it: the share it passes on over the whole year. A real lake with an outlet evens out the
+    seasons of the river below it; this one does not.
+  * Inside such a lake the water is handed from cell to cell to the outlet cell (the cell on
+    the lake's side of its pass; drainage.through_full_hollows), and of the water passing a
+    cell the flow counts the share that will leave the lake. The flow at the outlet cell is
+    therefore the lake's outflow, and the river runs on from there without a break.
+  * A closed lake passes nothing on. The flow shown in one of its cells is that over the part
+    of the cell the lake does not cover: the river on its way to the water.
+
+Water is conserved to within one part in a billion of what reaches a hollow (HAIR), not to
+rounding: less than that is not allowed to make a lake overflow, and is counted as dropped.
 
 Ignores: the time a lake takes to fill; lakes that swell and shrink with the seasons; water
-that seeps through the ground from one hollow to the next; ice on the lake.
+that seeps through the ground from one hollow to the next; ice on the lake; currents.
 """
 import numpy as np
+from numba import njit
 
 from . import drainage as dr
 
 DUST = 1.0e-6          # m3 a year: less water than this counts as none
 HAIR = 1.0e-9          # ... and so does less than this share of what reaches a hollow: rounding cannot make a lake overflow
+HEIGHTS_AGREE = 1.0e-6     # in check_table: a pass may differ from the ground handed over by this share of its height (and by this many metres)
+
+
+def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, ground: np.ndarray) -> None:
+    """Refuse a table of hollows that does not keep the rules this module relies on (data/tables.yaml states them).
+
+    label   per cell, the hollow it drains into (the field depression_id)
+    recv    per cell, its receiver; sea: per cell, whether it is sea; ground: per cell, the height of the ground
+    Raises ValueError naming the first rule broken.
+    """
+    def refuse(what):
+        raise ValueError(f"the table of hollows does not keep its rules: {what}")
+    names = ("parent", "sibling", "first_child", "second_child", "bottom_cell", "bottom_m", "spill_m",
+             "spill_from_cell", "spill_into_cell", "spill_into_hollow")
+    missing = [name for name in names if name not in table]
+    if missing:
+        refuse(f"it has no column {missing[0]}")
+    parent, sibling = np.asarray(table["parent"], dtype=np.int64), np.asarray(table["sibling"], dtype=np.int64)
+    first, second = np.asarray(table["first_child"], dtype=np.int64), np.asarray(table["second_child"], dtype=np.int64)
+    bottom = np.asarray(table["bottom_cell"], dtype=np.int64)
+    spill = np.asarray(table["spill_m"], dtype=np.float64)
+    here, beyond = np.asarray(table["spill_from_cell"], dtype=np.int64), np.asarray(table["spill_into_cell"], dtype=np.int64)
+    into = np.asarray(table["spill_into_hollow"], dtype=np.int64)
+    rows, n = parent.size, label.size
+    row = np.arange(rows)
+    if rows < 1 or parent[dr.SEA] >= 0 or first[dr.SEA] >= 0 or second[dr.SEA] >= 0:
+        refuse("row 0 must stand for the sea, with no parent and no parts")
+    single = (first < 0) & (row > dr.SEA)
+    count = int(single.sum())
+    if not single[1:count + 1].all():
+        refuse("the hollows with one bottom must come first, in rows 1 to H, before every hollow made of two")
+    merged = row > count
+    if ((first[merged] < 1) | (second[merged] < 1) | (first[merged] >= row[merged]) | (second[merged] >= row[merged])
+            | (first[merged] == second[merged])).any():
+        k = int(row[merged][np.flatnonzero((first[merged] < 1) | (second[merged] < 1) | (first[merged] >= row[merged])
+                                           | (second[merged] >= row[merged]) | (first[merged] == second[merged]))[0]])
+        refuse(f"row {k}: a hollow made of two must name two different parts, both in earlier rows")
+    for child in (first, second):
+        if (parent[child[merged]] != row[merged]).any():
+            refuse("a part of a hollow must name that hollow as its parent")
+    has_parent = parent >= 0
+    has_parent[dr.SEA] = False
+    if (parent[has_parent] <= row[has_parent]).any() or (parent[has_parent] >= rows).any():
+        refuse("a parent must stand in a later row than its parts")
+    sib = sibling[has_parent]
+    if ((sib < 1) | (sib >= rows)).any() or (parent[np.clip(sib, 0, rows - 1)] != parent[has_parent]).any() \
+            or (sib == row[has_parent]).any():
+        refuse("the two parts of a hollow must name each other as sibling")
+    if (sibling[~has_parent] >= 0).any():
+        refuse("a hollow inside no other has no sibling")
+    if ((label < 0) | (label > count)).any():
+        refuse("depression_id must be 0 or the row of a hollow with one bottom")
+    cells = bottom[1:count + 1]
+    if ((cells < 0) | (cells >= n)).any() or (recv[cells] >= 0).any() or sea[cells].any() or (label[cells] != row[1:count + 1]).any():
+        refuse("the bottom cell of a hollow with one bottom must be a land cell without a receiver that drains into that hollow")
+    has_pass = beyond >= 0
+    has_pass[dr.SEA] = False
+    if (has_pass & has_parent != has_parent).any():
+        refuse("a hollow inside another must name its pass")
+    if np.isnan(spill[has_pass]).any() or ((here[has_pass] < 0) | (here[has_pass] >= n) | (beyond[has_pass] >= n)).any():
+        refuse("a hollow with a pass must give its level and its two cells")
+    if (into[has_pass] != label[beyond[has_pass]]).any():
+        k = int(row[has_pass][np.flatnonzero(into[has_pass] != label[beyond[has_pass]])[0]])
+        refuse(f"row {k}: spill_into_hollow must be the hollow with one bottom that the cell beyond the pass drains into "
+               f"(0 if it drains to the sea)")
+    inside = np.zeros(rows, dtype=np.int64)                  # for each row, the hollow inside no other that holds it
+    inside[:] = row
+    for k in range(rows - 1, dr.SEA, -1):
+        if parent[k] >= 0:
+            inside[k] = inside[parent[k]]
+    k = row[has_pass]
+    if (inside[label[here[k]]] != inside[k]).any():
+        refuse("the cell on a hollow's own side of its pass must drain into that hollow")
+    in_sibling = has_parent.copy()
+    if in_sibling.any():                                     # the water of a part runs into its sibling
+        k = row[in_sibling]
+        up = into[k]
+        for _ in range(rows):
+            done = (up == sibling[k]) | (up < 0)
+            if done.all():
+                break
+            up = np.where(done, up, parent[np.maximum(up, 0)])
+        if (up != sibling[k]).any():
+            refuse("the pass of a part of a hollow must lead into the other part")
+    tops = row[has_pass & ~has_parent]
+    if (inside[into[tops]] == tops).any():
+        refuse("a hollow inside no other cannot overflow into itself")
+    if (spill[has_parent] > np.where(np.isnan(spill[parent[has_parent]]), np.inf, spill[parent[has_parent]])).any():
+        refuse("a hollow cannot overflow lower than its parts do")
+    if (spill[has_parent] != spill[sibling[has_parent]]).any():
+        refuse("the two parts of a hollow meet at one pass, at one level")
+    k = row[has_pass]
+    land_pass = ~sea[beyond[k]]
+    high = np.where(land_pass, np.maximum(ground[here[k]], ground[beyond[k]]), ground[here[k]])
+    slack = HEIGHTS_AGREE * np.maximum(np.abs(spill[k]), 1.0)
+    wrong = np.where(land_pass, np.abs(spill[k] - high) > slack, spill[k] < high - slack)
+    if wrong.any():
+        j = int(k[np.flatnonzero(wrong)[0]])
+        refuse(f"row {j}: spill_m is {spill[j]:.3f} m, but the higher of the two cells of its pass stands at "
+               f"{float(np.maximum(ground[here[j]], ground[beyond[j]])):.3f} m in the field elevation: the heights of the table "
+               f"must be those of that field")
+    tree_order(table)                                        # refuses a ring of hollows that overflow into one another
 
 
 def tree_order(table) -> list:
@@ -43,6 +161,9 @@ def tree_order(table) -> list:
     for start in tops:
         chain, k = [], start
         while k not in steps:
+            if k in chain:
+                raise ValueError(f"the table of hollows does not keep its rules: hollow {k} overflows, by way of others, "
+                                 f"into itself")
             chain.append(k)
             g = int(into[k])
             if g <= dr.SEA:
@@ -64,10 +185,12 @@ def settle(table, inflow, room):
 
     Returns a dict:
       extra      per row, how much of its room the hollow uses
-      overflows  per row, whether more reached the hollow than all its room takes: it stands at its pass and sends
-                 the rest on
+      overflows  per row, whether more reached the hollow than all its room takes: it is flooded to its pass, and the
+                 rest runs on (or, in a hollow with no way out, has nowhere to go)
       to_sea     water that left the hollows for ground that drains to the sea
       nowhere    water left over in a hollow that has no way out and cannot lose all that reaches it
+      dropped    water too little to count: what is left of a pour once it is below DUST and below the share HAIR of
+                 what reached the hollow
     """
     parent = np.asarray(table["parent"]).tolist()
     sibling = np.asarray(table["sibling"]).tolist()
@@ -78,6 +201,7 @@ def settle(table, inflow, room):
     water = [float(v) for v in inflow]
     room = [float(v) for v in room]
     extra, over, surplus = [0.0] * rows, [False] * rows, [0.0] * rows
+    dropped = [0.0]
 
     def fill(k, w):
         reached = w
@@ -88,6 +212,7 @@ def settle(table, inflow, room):
         if w > DUST + HAIR * reached:
             over[k] = True
             return w
+        dropped[0] += max(w, 0.0)
         return 0.0
 
     def add(leaf, w, within):
@@ -135,7 +260,8 @@ def settle(table, inflow, room):
                 to_sea += surplus[t]
             else:
                 nowhere += surplus[t]
-    return {"extra": np.array(extra), "overflows": np.array(over, dtype=bool), "to_sea": to_sea, "nowhere": nowhere}
+    return {"extra": np.array(extra), "overflows": np.array(over, dtype=bool), "to_sea": to_sea, "nowhere": nowhere,
+            "dropped": dropped[0]}
 
 
 def lake_units(table, overflows):
@@ -167,11 +293,15 @@ def flooded(table, own, surface, loss, extra, overflows):
     loss     per cell, the yearly loss it takes once it is wholly flooded (m3 a year)
     Returns (share, level, lake): per cell the flooded share and the row of its lake (-1 for none), and per row of
     the table the level of the lake's surface (no value where the row is not a lake of its own or holds no water).
+
+    The level of a lake that overflows is that of its pass. The level of a lake below its pass is the height of
+    the highest ground it wets: a cell has one height, so the level moves in steps of the cells' heights. A hollow
+    with no way out that is flooded whole stands at its highest ground.
     """
     n = own.size
     rows = np.asarray(table["parent"]).size
     spill = np.asarray(table["spill_m"], dtype=np.float64)
-    first = np.asarray(table["first_child"])
+    first, second = np.asarray(table["first_child"]), np.asarray(table["second_child"])
     one, unit = lake_units(table, overflows)
     share = np.zeros(n)
     held = own >= 0
@@ -198,10 +328,14 @@ def flooded(table, own, surface, loss, extra, overflows):
         share[cells] = covered[level_of]
         wet = covered > 0.0
         np.maximum.at(top_ground, level_hollow[wet], level_height[wet])
+    highest = np.full(rows, -np.inf)                         # the highest ground of each hollow
+    np.maximum.at(highest, own[held], surface[held])
+    for k in np.flatnonzero(first >= 0):                     # parts before wholes
+        highest[k] = max(highest[k], highest[first[k]], highest[second[k]])
     level = np.full(rows, np.nan)
     for u in np.flatnonzero(one & (unit == np.arange(rows))):
         if overflows[u]:
-            level[u] = spill[u]                              # (a hollow with no way out has no level of overflow)
+            level[u] = spill[u] if np.isfinite(spill[u]) else (highest[u] if np.isfinite(highest[u]) else np.nan)
         elif np.isfinite(top_ground[u]):
             level[u] = top_ground[u]
         elif first[u] >= 0:
@@ -210,64 +344,93 @@ def flooded(table, own, surface, loss, extra, overflows):
     return share, level, lake
 
 
-def lake_flows(table, label, recv, stack, runoff, extra, overflows):
+@njit(cache=True)
+def _through_lakes(stack, recv, values, crossing, closed, dry_share, held):
+    """values (months, n) summed down the receivers, with what each lake keeps taken off where the water leaves it.
+    Returns (passing, passed, reached): per month and cell the water passing before the lake's share is applied,
+    and per row of the table the share a lake that overflows passes on and the water that reaches it in the year."""
+    months, n = values.shape
+    passing = values.copy()
+    passed = np.zeros(held.size)
+    reached = np.zeros(held.size)
+    for k in range(n - 1, -1, -1):
+        i = stack[k]
+        r = recv[i]
+        if r < 0:
+            continue
+        u = crossing[i]
+        f = 1.0
+        if u >= 0:
+            if crossing[r] != u:                             # the outlet cell: the lake passes on what it does not lose
+                year = 0.0
+                for m in range(months):
+                    year += passing[m, i]
+                reached[u] = year
+                f = (year - held[u]) / year if year > held[u] else 0.0
+                passed[u] = f
+        elif closed[i] >= 0 and closed[r] != closed[i]:
+            f = dry_share[i]                                 # a closed lake keeps what runs into it
+        for m in range(months):
+            passing[m, r] += f * passing[m, i]
+    return passing, passed, reached
+
+
+def lake_flows(table, label, recv, surface, nbr, share, lake, runoff, extra, overflows):
     """The water through the lakes, month by month.
 
     label    per cell, the hollow with one bottom that it drains into (0: it drains to the sea)
+    recv     per cell, its receiver on dry ground; surface, nbr: the ground and the neighbours of every cell
+    share, lake  per cell, the flooded share and the row of its lake (from flooded())
     runoff   (months, n): the water each cell sheds in each month, as if none of it were flooded (m3 a month)
-    Returns (discharge, lakes):
-      discharge  (months, n) m3 a month: the water passing through each cell, with the overflow of every lake added
-                 where it leaves, on the cell beyond the lake's pass
+
+    Returns a dict:
+      discharge  (months, n) m3 a month: the water passing through each cell. Inside a lake that overflows: the
+                 share of the passing water that will leave the lake. In a cell of a closed lake: the flow over
+                 the part of the cell that is not flooded.
+      passing    (months, n) m3 a month: the water passing through each cell before that share is taken
+      receivers  per cell, the way the water takes: as `recv`, but across each lake that overflows to its outlet
+                 cell and from there to the cell beyond the pass
+      stack      the flow stack of those receivers
+      crossing   per cell, the row of the lake that overflows whose water covers it (-1 for none)
       lakes      a dict of arrays, one entry per lake that receives water: row (in the table of hollows), inflow,
-                 loss and outflow (m3 a year), overflows, and the cell its overflow runs into (-1 for none)
+                 loss and outflow (m3 a year), left_over (m3 a year: in a lake with no way out, what reaches it
+                 beyond what its whole surface can lose), overflows, and the cell its overflow runs into (-1 for none)
     """
     parent = np.asarray(table["parent"])
     first = np.asarray(table["first_child"])
-    into = np.asarray(table["spill_into_hollow"])
     beyond = np.asarray(table["spill_into_cell"])
     bottom = np.asarray(table["bottom_cell"])
     rows = parent.size
-    months = runoff.shape[0]
     one, unit = lake_units(table, overflows)
-    plain = dr.accumulate(stack, recv, runoff)
     held = np.array(extra, dtype=np.float64)                 # the loss of a lake: its own and that of its full parts
     for k in range(1, rows):
         if one[k] and parent[k] >= 0 and one[parent[k]]:
             held[parent[k]] += held[k]
-    leaves = np.flatnonzero((first < 0) & (np.arange(rows) > dr.SEA))
-    arriving = np.zeros((months, rows))                      # what runs to the bottoms of each lake from its own ground
-    np.add.at(arriving, (slice(None), unit[leaves]), plain[:, bottom[leaves]])
     lakes = np.flatnonzero(one & (unit == np.arange(rows)))
-    target = np.where(overflows[lakes] & (into[lakes] > dr.SEA), unit[np.maximum(into[lakes], 0)], -1)
-    target = dict(zip(lakes.tolist(), target.tolist()))
-    steps = {}
-
-    def distance(u):                                         # overflows between this lake and the end of its chain
-        chain = []
-        while u not in steps and target[u] >= 0:
-            chain.append(u)
-            u = target[u]
-        steps.setdefault(u, 0)
-        for back, node in enumerate(reversed(chain), 1):
-            steps[node] = steps[u] + back
+    runs_over = lakes[overflows[lakes] & (beyond[lakes] >= 0)]
+    real, crossing = dr.through_full_hollows(recv, surface, nbr, label, table, runs_over)
+    stack = dr.flow_stack(real)
+    closed = np.where((crossing < 0) & (share > 0.0), lake, -1).astype(np.int64)
+    passing, passed, reached = _through_lakes(stack, real, np.ascontiguousarray(runoff, dtype=np.float64), crossing,
+                                              closed, 1.0 - share, held)
+    counts = np.where(crossing >= 0, passed[np.maximum(crossing, 0)], np.where(closed >= 0, 1.0 - share, 1.0))
+    discharge = passing * counts
+    year = passing.sum(axis=0)
+    leaves = np.flatnonzero((first < 0) & (np.arange(rows) > dr.SEA))
+    arriving = np.zeros(rows)                                # what runs to the bottoms of each lake that keeps its water
+    np.add.at(arriving, unit[leaves], year[bottom[leaves]])
+    arriving[runs_over] = reached[runs_over]
+    out = {"row": [], "inflow": [], "loss": [], "outflow": [], "left_over": [], "overflows": [], "into_cell": []}
     for u in lakes.tolist():
-        distance(u)
-    passed_on = np.zeros((months, rows))
-    out = {"row": [], "inflow": [], "loss": [], "outflow": [], "overflows": [], "into_cell": []}
-    source = np.zeros(runoff.shape)
-    for u in sorted(lakes.tolist(), key=lambda v: (-steps[v], v)):
-        year = float(arriving[:, u].sum())
-        leaving = max(year - held[u], 0.0) if overflows[u] else 0.0
-        if leaving > 0.0:
-            passed_on[:, u] = arriving[:, u] * (leaving / year)
-            if target[u] >= 0:
-                arriving[:, target[u]] += passed_on[:, u]
-            if beyond[u] >= 0:
-                source[:, beyond[u]] += passed_on[:, u]
-        if year > DUST or held[u] > 0.0:
-            out["row"].append(u); out["inflow"].append(year); out["loss"].append(float(held[u]))
-            out["outflow"].append(leaving); out["overflows"].append(bool(overflows[u]))
-            out["into_cell"].append(int(beyond[u]) if overflows[u] else -1)
-    discharge = plain + dr.accumulate(stack, recv, source) if source.any() else plain
+        if not (arriving[u] > DUST or held[u] > 0.0):
+            continue
+        runs = bool(overflows[u]) and beyond[u] >= 0
+        beyond_loss = max(arriving[u] - held[u], 0.0)
+        out["row"].append(u); out["inflow"].append(float(arriving[u])); out["loss"].append(float(held[u]))
+        out["outflow"].append(beyond_loss if runs else 0.0)
+        out["left_over"].append(beyond_loss if (overflows[u] and not runs) else 0.0)
+        out["overflows"].append(runs)
+        out["into_cell"].append(int(beyond[u]) if runs else -1)
     kinds = {"row": np.int64, "into_cell": np.int64, "overflows": bool}
-    return discharge, {name: np.array(col, dtype=kinds.get(name, np.float64)) for name, col in out.items()}
+    return {"discharge": discharge, "passing": passing, "receivers": real, "stack": stack, "crossing": crossing,
+            "lakes": {name: np.array(col, dtype=kinds.get(name, np.float64)) for name, col in out.items()}}

@@ -47,6 +47,9 @@ def _check(value, schema, where, problems):
         if value != value:
             problems.append(f"{where}: is not a number (NaN)")
             return
+        if schema.get("finite") and value in (float("inf"), float("-inf")):
+            problems.append(f"{where}: is infinite; it must be a finite number")
+            return
         for key, test, word in (("min", lambda v, b: v >= b, "at least"), ("max", lambda v, b: v <= b, "at most"),
                                 ("above", lambda v, b: v > b, "above"), ("below", lambda v, b: v < b, "below")):
             if key in schema and not test(value, schema[key]):

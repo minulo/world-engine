@@ -28,7 +28,9 @@ Tectonics:
     form: sum
     drivers:
       normal_thickness: {base: true, says: "crust of its type is normally {v} thick", follows: [crust_type]}
-      seeded_variation: {says: "the seeded starting condition varies it by {v}"}
+      seeded_variation:
+        says: "the seeded starting condition varies it by {v}"
+        ends: "The chain ends here, at a seeded starting condition: how the thickness of the crust varies from place to place is drawn from the world seed."
       thickened_by_plates: {says: "plates closing nearby have thickened it by {v}", follows: [convergence_rate]}
       event:
         row_of: tectonic_events
@@ -76,17 +78,32 @@ Drainage:
     unit: ""
     follows: [flow_receiver]
   drainage_area:
-    says: "{value} of land send their water through this cell when every hollow upstream is full and overflows: its own area, plus that of every cell whose water runs through it."
+    says: "{value} of land send their water through this cell when every hollow is full and overflows: its own area, plus that of every cell whose water runs through it."
     unit: km2_from_m2
     follows: [flow_receiver]
+    drivers:
+      cell_is: {names: [open_ground, under_a_full_hollow, sea]}
+    cases:
+      - when: {cell_is: sea}
+        says: "This cell is sea. {value} of land drain straight into it when every hollow is full and overflows; its own area is not counted."
+        follows: [ocean_mask]
+      - when: {cell_is: under_a_full_hollow}
+        says: "{value} of land send their water through this cell when every hollow is full and overflows. The cell lies in a closed hollow, at or below the level of its pass: when the hollow is full, its water is handed from cell to cell, by the shortest way, to the hollow's outlet cell. This cell counts its own area and that of every cell whose water passes it on that way."
+        follows: [depression_id]
   basin_id:
-    says: "With every hollow on the way full, the water from here leaves the land at cell {value}, the mouth of its river basin (-1: the cell is sea)."
+    says: "With every hollow on the way full, the water from here leaves the land at cell {value}, the mouth of its river basin. Whether those hollows do fill depends on the climate: lake_fraction says what Hydrology found."
     follows: [flow_receiver]
     drivers:
       ends:
-        names: ["", "From there the water runs into the sea (where a hollow overflows straight into the sea, the cell named is the deepest of that hollow)",
-                "This land has no way out to any sea: the cell named is the deepest bottom of the hollow that holds it"]
-        says: "{v}"
+        names: [sea, reaches_the_sea, no_way_out]
+        says_by:
+          reaches_the_sea: "From that cell the water runs into the sea"
+          no_way_out: "This land has no way out to any sea: the cell named is the deepest bottom of the hollow that holds it"
+    cases:
+      - when: {ends: sea}
+        says: "This cell is sea: it belongs to no river basin, which the number -1 stands for."
+        follows: [ocean_mask]
+        quiet: true
   depression_id:
     says: "Water from here collects in hollow {value} of the table of hollows before it can go further (0: it runs to the sea without meeting a closed hollow)."
     follows: [flow_receiver]
@@ -113,7 +130,7 @@ Albedo:
     drivers:
       from_cloud_and_sun_angle: {says: "cloud and the low sun reflect {v}"}
       from_surface_type: {says: "the surface type reflects {v}", follows: [ocean_mask]}
-      from_snow_and_ice: {says: "snow and ice add {v}", follows: [snow_water, surface_temperature]}
+      from_snow_and_ice: {says: "snow and ice add {v}", follows: [snow_cover, surface_temperature]}
 
 EnergyBalance:
   surface_temperature:
@@ -168,38 +185,106 @@ Moisture:
 
 Hydrology:
   snow_water:
-    says: "The snow on the ground here holds {value} of water on the year's average: what has fallen as snow and not yet melted."
+    says: "The snow on the ground here holds {value} of water on the year's average. It builds up in the cold months and is gone by the end of the warm ones: of the {fell} that fall as snow on the year's average, all melt."
+    quiet: true
     follows: [snowfall, surface_temperature]
+    drivers:
+      state: {names: [no_snow, part_of_the_year, all_year, sea]}
+      fell: {unit: mm/month}
+      melted: {unit: mm/month}
+      left_as_ice: {unit: mm/month}
+    cases:
+      - when: {state: sea}
+        says: "This cell is sea: snow that falls here falls into water, and no store of snow is kept."
+        follows: [ocean_mask]
+      - when: {state: no_snow}
+        says: "No snow lies on the ground here in any month: none falls, or what falls melts within its month."
+      - when: {state: all_year}
+        says: "The snow on the ground here holds {value} of water on the year's average, and lies all year: more snow falls in a year than the year can melt. Of the {fell} that fall on the year's average, {melted} melt and {left_as_ice} leave as ice. The store is held to a set number of years of the net snowfall, a model constant; what is older is the ice that leaves."
+  snow_cover:
+    says: "Snow covers {value} of the ground here on the year's average: the ground counts as fully covered while the store holds a set depth of water, and each month is counted by the days the snow lay."
+    unit: percent_from_share
+    follows: [snow_water]
+    drivers:
+      state: {names: [no_snow, part_of_the_year, all_year, sea]}
+    cases:
+      - when: {state: sea}
+        says: "This cell is sea: no snow lies on it. Ice on the sea is not part of this field."
+        follows: [ocean_mask]
+      - when: {state: no_snow}
+        says: "No snow lies on the ground here in any month."
+        follows: [snow_water]
   potential_evapotranspiration:
-    says: "The air here could take up {value} of water if the ground were wet (the Priestley-Taylor rule)."
+    says: "The air here could take {value} of water from the ground if the ground were wet (the Priestley-Taylor rule). The ground gains {net_radiation} from radiation on the year's average, sunlight absorbed less heat radiated away, and no snow covers it in any month."
     says_missing: "This cell is sea: the demand of the air for water is worked out for land only."
+    quiet: true
     follows: [insolation, surface_temperature]
     follows_missing: [ocean_mask]
     drivers:
-      net_radiation: {unit: "W/m²", says: "The surface gains {v} from radiation on the year's average, sunlight absorbed less heat radiated away"}
+      state: {names: [no_snow, part_of_the_year, all_year, sea]}
+      net_radiation: {unit: "W/m²"}
+      snow_free: {unit: percent_from_share}
+    cases:
+      - when: {state: part_of_the_year}
+        says: "The air here could take {value} of water from the ground if the ground were wet (the Priestley-Taylor rule). Bare ground here would gain {net_radiation} from radiation on the year's average, sunlight absorbed less heat radiated away. But snow covers the ground for part of the year, and from under snow the air takes nothing in this model: on the year's average {snow_free} of the ground is bare."
+        follows: [snow_water, insolation, surface_temperature]
+      - when: {state: all_year}
+        says: "The air takes no water from the ground here: snow covers it through every month, and from under snow the air takes nothing in this model."
+        follows: [snow_water]
   soil_moisture:
     says: "The soil here holds {value} of what it can hold, on the year's average: rain and melted snow fill it, and the air takes water from it."
     unit: ""
-    says_missing: "This cell is sea: it has no soil."
+    says_missing: "The soil of this cell can hold no water, so there is no share to give."
     follows: [precipitation, potential_evapotranspiration]
-    follows_missing: [ocean_mask]
+    follows_missing: [soil_water_capacity]
+    drivers:
+      cover: {names: [dry_land, partly_under_a_lake, under_a_lake, sea]}
+    cases:
+      - when: {cover: sea}
+        says_missing: "This cell is sea: it has no soil."
+        follows_missing: [ocean_mask]
+      - when: {cover: under_a_lake}
+        says: "This cell lies under a lake, so its ground counts as full of water: {value} of what it can hold."
+        follows: [lake_fraction]
+      - when: {cover: partly_under_a_lake}
+        says: "The ground of this cell holds {value} of the water it can hold, on the year's average. Part of the cell lies under a lake, and that part counts as full; in the rest, rain and melted snow fill the soil and the air takes water from it."
+        follows: [lake_fraction, precipitation, potential_evapotranspiration]
   evapotranspiration:
     says: "The land here returns {value} of water to the air:"
-    says_zero: "No water goes back to the air from land here: the cell is sea, or its ground lies under snow or has no water to give."
-    follows_zero: [ocean_mask, snow_water]
+    says_zero: "No water goes back to the air from the ground here: snow covers the ground whenever the air could take water, or no water reaches the soil."
+    follows_zero: [snow_water, soil_moisture]
     form: sum
     drivers:
       from_soil_and_plants: {says: "the soil gives {v}", follows: [soil_moisture, potential_evapotranspiration]}
       from_lake: {says: "open water of a lake gives {v}", follows: [lake_fraction]}
+      cover: {names: [dry_land, partly_under_a_lake, under_a_lake, sea]}
+    cases:
+      - when: {cover: sea}
+        says: "This cell is sea. What the sea gives the air is the field ocean_evaporation; this field holds what land gives, which is nothing here."
+        quiet: true
+        follows: [ocean_mask]
   runoff:
     says: "Runoff here averages {value}:"
-    says_zero: "No water runs off here: the soil holds all that falls until the air has taken it, or a lake covers the cell, or the cell is sea."
-    follows_zero: [soil_moisture, lake_fraction]
+    says_zero: "No water runs off here: the soil holds all that falls until the air has taken it."
+    follows_zero: [soil_moisture]
     form: sum
     drivers:
       from_rain: {says: "rain that the soil could not hold gives {v}", follows: [precipitation, soil_moisture]}
       from_snowmelt: {says: "melted snow that the soil could not hold gives {v}", follows: [snow_water]}
       from_ice: {says: "ice leaving ground where snow never melts away gives {v}", follows: [snow_water]}
+      cover: {names: [dry_land, partly_under_a_lake, under_a_lake, sea]}
+    cases:
+      - when: {cover: sea}
+        says: "This cell is sea: runoff is water leaving the ground, and there is no ground here."
+        quiet: true
+        follows: [ocean_mask]
+      - when: {cover: under_a_lake}
+        says: "No runoff is counted here: the cell lies wholly under a lake, and what falls on it falls into the lake."
+        quiet: true
+        follows: [lake_fraction]
+      - when: {cover: partly_under_a_lake}
+        says: "Runoff here averages {value}, counted over the whole cell for the part of it that no lake covers:"
+        says_zero: "No water runs off the part of this cell that no lake covers: its soil holds all that falls until the air has taken it."
   runoff_annual:
     says: "The runoff of the whole year here is {value}."
     follows: [runoff]
@@ -210,23 +295,43 @@ Hydrology:
     form: sum
     drivers:
       local_runoff: {says: "the cell's own runoff gives {v}", follows: [runoff]}
-      from_upstream: {says: "{v} arrive from upstream, and the cell named next is the largest single source of it", follows: [runoff], at: largest_source}
+      from_upstream: {says: "{v} arrive from upstream, where the largest single source is {at}", follows: [runoff], at: largest_source}
+      through_lake: {says: "{v} cross the lake here"}
       largest_source: {cell: true}
+      place: {names: [dry_ground, lake_that_overflows, closed_lake, sea]}
+      lake: {row_of: lakes}
+    cases:
+      - when: {place: sea}
+        says: "This cell is sea. The rivers that end here deliver {value} on the year's average:"
+        says_zero: "This cell is sea, and no river ends in it."
+        follows_zero: [ocean_mask]
+      - when: {place: lake_that_overflows}
+        says: "This cell lies in a lake that overflows. Of the water that crosses the lake here on its way to the outlet, {value} go on to leave the lake over its pass, on the year's average: every month the lake passes on the share of what reaches it that it does not lose to the air over the year."
+        quiet: true
+        follows: [lake_fraction]
+      - when: {place: closed_lake}
+        says: "This cell lies partly under a closed lake, which keeps all the water that reaches it. Over the part of the cell that is not flooded the river carries {value} on the year's average:"
+        says_zero: "This cell lies under a closed lake, which keeps all the water that reaches it: no river is counted here."
+        follows_zero: [lake_fraction]
   lake_fraction:
     says: "A lake covers {value} of this cell."
-    unit: ""
+    unit: percent_from_share
     follows: [depression_id]
     drivers:
       state:
-        names: ["No lake reaches it", "It is a lake with an outlet: more water arrives than its surface can lose to the air, so it has filled to its pass and overflows",
-                "It is a closed lake: it has spread until its surface loses to the air all the water that arrives, and stands below its pass"]
-        says: "{v}"
+        names: [none, with_outlet, closed, no_way_out]
+        says_by:
+          none: "No lake reaches it"
+          with_outlet: "It is a lake with an outlet: more water arrives than its surface can lose to the air, so it has filled to its pass and overflows"
+          closed: "It is a closed lake: it has spread until its surface loses to the air all the water that arrives, and stands below its pass"
+          no_way_out: "It is a lake in a hollow with no way out, flooded to its rim: more water arrives than its whole surface can lose to the air, and the model drops the rest"
         follows_by:
-          "It is a lake with an outlet: more water arrives than its surface can lose to the air, so it has filled to its pass and overflows": [river_discharge]
-          "It is a closed lake: it has spread until its surface loses to the air all the water that arrives, and stands below its pass": [potential_evapotranspiration]
+          closed: [potential_evapotranspiration]
       lake:
         row_of: lakes
-        says: "Each year {inflow_m3_per_year} m³ of water run toward this lake; flooding its {area_m2} m² lets the air take {loss_to_air_m3_per_year} m³ more than the same ground would give dry, and {outflow_m3_per_year} m³ leave over the pass (row {row} of the table of lakes)"
+        units: {inflow_m3_per_year: km3_from_m3, area_m2: km2_from_m2, loss_to_air_m3_per_year: km3_from_m3,
+                outflow_m3_per_year: km3_from_m3, evaporation_m3_per_year: km3_from_m3, rain_on_lake_m3_per_year: km3_from_m3}
+        says: "each year {inflow_m3_per_year} of water run toward this lake, counted as if its ground were dry; flooding its {area_m2} lets the air take {loss_to_air_m3_per_year} more than the same ground would give dry, and {outflow_m3_per_year} leave over the pass; its open water gives the air {evaporation_m3_per_year} a year, and {rain_on_lake_m3_per_year} fall on it (row {row} of the table of lakes)"
   lake_level:
     says: "The surface of the lake here stands at {value} relative to the reference level."
     says_missing: "No lake reaches this cell, so there is no lake level to give."
@@ -237,6 +342,12 @@ Soils:
   soil_water_capacity:
     says: "The soil here can hold {value} of water."
     ends: "The chain ends here, at a model constant: until the Soils process of build step 7, every soil is given the capacity of Manabe's bucket."
+    drivers:
+      cell_is: {names: [land, sea]}
+    cases:
+      - when: {cell_is: sea}
+        says: "This cell is sea: it has no soil, and so nothing that could hold water."
+        ends: "The chain ends here: the cell is sea."
 
 Biomes:
   biome:

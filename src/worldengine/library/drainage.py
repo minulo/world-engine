@@ -10,13 +10,21 @@ The parts:
   hollows()                  the closed hollows, how they nest, and where each one overflows: the depression
                              hierarchy of Barnes, Callaghan and Wickert 2020
   owners()                   for each cell, the hollow whose lake reaches it first as the water rises
+  through_full_hollows()     the flow paths once given hollows are full: across each lake to its outlet cell,
+                             and from there to the cell beyond the pass
 
 Heights here are those of the "drainage surface": the ground on land, the water surface on the sea.
 
-Ties. Among equally low neighbours the one with the lowest cell number is taken, and level ground is
-drained toward its nearest way out. Real relief has next to no exact ties; relief given in whole metres has
-many. A result therefore does not depend on anything that varies from run to run, but on ground that is
-exactly symmetric it does depend on how the cells are numbered.
+Ties. Exact ties are not rare, and they are decided in this order.
+  * A cell with several equally low neighbours: on a coast this is the usual case, because every cell of one
+    sea stands at the same water level. The neighbour whose bed lies lowest is taken, and among those the
+    lowest cell number.
+  * A hollow whose outlet cell has several lower neighbours beyond the hollow: every one of those passes has
+    exactly the height of the outlet cell. The water leaves to the lowest of those neighbours, as the rule for
+    a single cell says, then to the one with the lowest bed, then to the lowest cell numbers.
+  * Level ground is drained toward its nearest way out, and a level floor toward its lowest-numbered cell.
+Nothing here varies from run to run. A result depends on how the cells are numbered only where ground, bed
+and all, is exactly equal: on relief given in whole metres, or on exactly symmetric ground.
 """
 from __future__ import annotations
 
@@ -49,26 +57,34 @@ def drainage_surface(elevation: np.ndarray, sea_depth: np.ndarray, sea: np.ndarr
     return surface
 
 
-def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray) -> np.ndarray:
+def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.ndarray | None = None) -> np.ndarray:
     """For each cell, the neighbour its water runs to; NO_CELL for a sea cell and for the bottom of a hollow.
 
-    A cell drains to its lowest neighbour if that neighbour is lower. Level ground (cells with a neighbour at
-    their own height and none lower) drains toward its nearest way out, a cell at the same height that does
-    drain. Level ground with no way out is the floor of a hollow: it drains to one of its cells, the one with the
-    lowest number, which is the hollow's bottom.
+    A cell drains to its lowest neighbour if that neighbour is lower. Among equally low neighbours the one whose
+    bed lies lowest is taken (`bed`: the solid ground of every cell, which differs from `surface` under the sea),
+    and then the lowest cell number. Level ground (cells with a neighbour at their own height and none lower)
+    drains toward its nearest way out, a cell at the same height that does drain. Level ground with no way out is
+    the floor of a hollow: it drains to one of its cells, the one with the lowest number, which is the hollow's
+    bottom.
     """
     n = surface.size
+    bed = surface if bed is None else np.asarray(bed, dtype=np.float64)
     valid = nbr >= 0
-    around = np.where(valid, surface[np.where(valid, nbr, 0)], np.inf)
+    safe = np.where(valid, nbr, 0)
+    around = np.where(valid, surface[safe], np.inf)
     lowest = around.min(axis=1)
+    low = around == lowest[:, None]
+    under = np.where(low, bed[safe], np.inf)
+    low &= under == under.min(axis=1)[:, None]
     none = np.iinfo(np.int64).max
-    pick = np.where(around == lowest[:, None], nbr.astype(np.int64), none).min(axis=1)
+    pick = np.where(low, nbr.astype(np.int64), none).min(axis=1)
     recv = np.where((lowest < surface) & ~sea, pick, NO_CELL)
     stuck = np.flatnonzero((recv < 0) & ~sea & (lowest == surface))
     if stuck.size == 0:
         return recv
     neighbours = [[j for j in row if j >= 0] for row in nbr.tolist()]
     height = surface.tolist()
+    bed_of = bed.tolist()
     is_stuck = np.zeros(n, dtype=bool)
     is_stuck[stuck] = True
     seen = np.zeros(n, dtype=bool)
@@ -90,7 +106,7 @@ def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray) -> np.ndarr
         for i in sorted(ground):                             # the ways out: cells at the same height that drain
             ways = [j for j in neighbours[i] if height[j] == level and j not in inside and (sea[j] or recv[j] >= 0)]
             if ways:
-                recv[i] = min(ways)
+                recv[i] = min(ways, key=lambda j: (bed_of[j], j))
                 done.add(i)
                 queue.append(i)
         if not queue:                                        # no way out: the floor of a hollow
@@ -141,7 +157,8 @@ def _stack(recv):
 
 
 def flow_stack(recv: np.ndarray) -> np.ndarray:
-    """The cells in an order in which every cell comes after the cell it drains to (Braun and Willett's stack)."""
+    """The cells in an order in which every cell comes after the cell it drains to. [UNVERIFIED: this is the
+    "stack" of Braun and Willett 2013 as I recall it; the paper did not open.]"""
     stack, reached = _stack(np.ascontiguousarray(recv, dtype=np.int64))
     if reached != recv.size:
         raise ValueError("the receivers hold a loop: some cells never reach the sea or the bottom of a hollow")
@@ -189,7 +206,7 @@ HOLLOW_COLUMNS = ("parent", "sibling", "first_child", "second_child", "bottom_ce
 
 
 def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.ndarray, edge_cells: np.ndarray,
-            area: np.ndarray):
+            area: np.ndarray, bed: np.ndarray | None = None):
     """The closed hollows of the land and how they nest (Barnes, Callaghan and Wickert 2020).
 
     A hollow is the ground that drains to one bottom. Two neighbouring hollows meet at their lowest pass: the
@@ -197,6 +214,11 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
     are one larger hollow, which fills on to its own lowest pass. Passes are taken from the lowest up, so the
     hollows form a tree of pairs; a hollow whose lowest pass leads to ground that already drains to the sea ends
     its tree, and its overflow runs on from the cell beyond the pass.
+
+    Passes of exactly equal height are common: when the higher cell of a pass is the hollow's own, every lower
+    neighbour of that cell beyond the hollow makes a pass of that same height. Among them the pass whose lower
+    cell is lowest is taken, which is where a cell's water goes by the rule for a single cell; then the lowest
+    bed (`bed`: the solid ground, which differs from `surface` under the sea), then the lowest cell numbers.
 
     Returns (label, table):
       label   per cell, the number of the hollow it drains into, or SEA (0) if its water reaches the sea
@@ -230,13 +252,16 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
     swap = label[a] > label[b]
     a, b = np.where(swap, b, a), np.where(swap, a, b)        # the cell with the lower label first
     one, other = label[a], label[b]
+    under = surface if bed is None else np.asarray(bed, dtype=np.float64)
     height = np.maximum(surface[a], surface[b])
-    order = np.lexsort((b, a, height, other, one))
-    one, other, a, b, height = one[order], other[order], a[order], b[order], height[order]
+    lower = np.minimum(surface[a], surface[b])               # among passes of one height: the lowest far side first
+    lower_bed = np.minimum(under[a], under[b])
+    order = np.lexsort((b, a, lower_bed, lower, height, other, one))
+    one, other, a, b, height, lower, lower_bed = (v[order] for v in (one, other, a, b, height, lower, lower_bed))
     lowest = np.ones(one.size, dtype=bool)
     lowest[1:] = (one[1:] != one[:-1]) | (other[1:] != other[:-1])
-    one, other, a, b, height = one[lowest], other[lowest], a[lowest], b[lowest], height[lowest]
-    order = np.lexsort((b, a, height))                       # the passes from the lowest up
+    one, other, a, b, height, lower, lower_bed = (v[lowest] for v in (one, other, a, b, height, lower, lower_bed))
+    order = np.lexsort((b, a, lower_bed, lower, height))     # the passes from the lowest up
 
     group = list(range(count + 1))                           # which labels have merged; the sea's group keeps top 0
     top = list(range(count + 1))
@@ -323,28 +348,93 @@ def top_hollows(table) -> np.ndarray:
     return top
 
 
-def overflow_receivers(recv: np.ndarray, sea: np.ndarray, table) -> np.ndarray:
-    """The receivers as they are when every hollow is full and overflows. Within the largest hollow that holds it,
-    every bottom hands its water to that hollow's deepest bottom, and the deepest bottom hands it to the cell beyond
-    the hollow's pass. Every path then ends in the sea, or, for a hollow with no way out at all, at that hollow's
-    deepest bottom. A hollow overflows into ground whose own hollow overflows at a pass no higher, so the paths hold
-    no loop."""
+def through_full_hollows(recv: np.ndarray, surface: np.ndarray, nbr: np.ndarray, label: np.ndarray, table, rows):
+    """The receivers as they are when the hollows `rows` (rows of the table of hollows) are full and overflow.
+
+    Inside each of them the ground at or below the level of its pass lies under one sheet of water. That water
+    is handed on from cell to cell by the shortest way, counted in cells, to the hollow's outlet cell: the cell
+    on its own side of the pass. Among equally short ways the one over the lowest ground is taken, then the
+    lowest cell number. The outlet cell hands the water to the cell beyond the pass. Ground of the hollow above
+    that level keeps its receiver, which leads down into the water. [INFERRED: the engine has no model of the
+    currents in a lake; the shortest way is the plainest rule that brings all the water to the outlet.]
+
+    `rows` must hold no hollow together with one of its parts, and no hollow without a pass.
+    Returns (receivers, lake): for each cell its receiver, and the row of `rows` whose sheet of water covers it
+    (-1 for none).
+    """
     out = np.array(recv, dtype=np.int64)
+    n = out.size
+    rows = np.asarray(rows, dtype=np.int64)
+    lake = np.full(n, -1, dtype=np.int64)
+    if rows.size == 0:
+        return out, lake
+    parent = np.asarray(table["parent"], dtype=np.int64)
+    spill = np.asarray(table["spill_m"], dtype=np.float64)
+    here = np.asarray(table["spill_from_cell"], dtype=np.int64)[rows]
+    beyond = np.asarray(table["spill_into_cell"], dtype=np.int64)[rows]
+    if (beyond < 0).any() or np.isnan(spill[rows]).any():
+        raise ValueError("a hollow without a pass cannot overflow: it has no outlet cell to route its water to")
+    inside = np.full(parent.size, -1, dtype=np.int64)        # for each row of the table, the row of `rows` that holds it
+    inside[rows] = rows
+    for k in range(parent.size - 1, SEA, -1):                # wholes before parts
+        if inside[k] < 0 and parent[k] >= 0:
+            inside[k] = inside[parent[k]]
+    unit = np.where(label > SEA, inside[np.maximum(label, 0)], -1)
+    under = (unit >= 0) & (surface <= spill[np.maximum(unit, 0)])
+    lake[under] = unit[under]
+    if (lake[here] != rows).any():
+        bad = int(rows[np.flatnonzero(lake[here] != rows)[0]])
+        raise ValueError(f"the table of hollows names an outlet cell for hollow {bad} that does not lie in that hollow "
+                         f"at or below the level of its pass")
+    steps = np.full(n, -1, dtype=np.int64)                   # cells between this one and its outlet cell
+    steps[here] = 0
+    edge, d = here, 0
+    while edge.size:
+        d += 1
+        near = nbr[edge]
+        safe = np.maximum(near, 0)
+        new = (near >= 0) & (lake[safe] == lake[edge][:, None]) & (steps[safe] < 0)
+        edge = np.unique(near[new])
+        steps[edge] = d
+    if (under & (steps < 0)).any():
+        lost = int(np.flatnonzero(under & (steps < 0))[0])
+        raise ValueError(f"cell {lost} lies under the water of hollow {int(lake[lost])} when it is full, but no way "
+                         f"leads from it across that water to the hollow's outlet cell")
+    cells = np.flatnonzero(under & (steps > 0))
+    near = nbr[cells]
+    safe = np.maximum(near, 0)
+    nearer = (near >= 0) & (lake[safe] == lake[cells][:, None]) & (steps[safe] == steps[cells][:, None] - 1)
+    ground = np.where(nearer, surface[safe], np.inf)
+    nearer &= ground == ground.min(axis=1)[:, None]
+    out[cells] = np.where(nearer, near.astype(np.int64), np.iinfo(np.int64).max).min(axis=1)
+    out[here] = beyond
+    return out, lake
+
+
+def overflow_receivers(recv: np.ndarray, surface: np.ndarray, nbr: np.ndarray, label: np.ndarray, table) -> np.ndarray:
+    """The receivers as they are when every hollow is full and overflows.
+
+    Each of the largest hollows (those inside no other) then holds one lake up to its pass, and its water runs
+    across that lake to the outlet cell and on to the cell beyond the pass (through_full_hollows). Every path then
+    ends in the sea. A hollow with no way out at all has no outlet: every bottom inside it hands its water to its
+    deepest bottom, and the paths of its ground end there. A hollow overflows into ground whose own hollow
+    overflows at a pass no higher, so the paths hold no loop."""
     parent = np.asarray(table["parent"])
     bottom = np.asarray(table["bottom_cell"])
     beyond = np.asarray(table["spill_into_cell"])
     top = top_hollows(table)
+    tops = np.flatnonzero((parent < 0) & (np.arange(parent.size) > SEA))
+    out, _ = through_full_hollows(recv, surface, nbr, label, table, tops[beyond[tops] >= 0])
     leaves = np.flatnonzero((np.asarray(table["first_child"]) < 0) & (np.arange(parent.size) > SEA))
-    deepest = bottom[top[leaves]]
-    way_out = np.where(beyond[top[leaves]] >= 0, beyond[top[leaves]], NO_CELL)
-    out[bottom[leaves]] = np.where(bottom[leaves] == deepest, way_out, deepest)
+    shut = leaves[beyond[top[leaves]] < 0]                   # bottoms inside a hollow with no way out
+    deepest = bottom[top[shut]]
+    out[bottom[shut]] = np.where(bottom[shut] == deepest, NO_CELL, deepest)
     return out
 
 
 def mouths(stack: np.ndarray, recv: np.ndarray, sea: np.ndarray) -> np.ndarray:
     """For each land cell, the last land cell its water passes before it ends (in the sea, or at a bottom): the
-    mouth of its river. With the receivers of overflow_receivers, a hollow that overflows straight into the sea has
-    its deepest bottom as its mouth. NO_CELL for sea cells."""
+    mouth of its river. NO_CELL for sea cells."""
     recv = np.asarray(recv, dtype=np.int64)
     on_land = np.where((recv >= 0) & sea[np.maximum(recv, 0)], NO_CELL, recv)      # stop one cell before the sea
     end = _terminal(stack, np.ascontiguousarray(on_land))
@@ -353,17 +443,23 @@ def mouths(stack: np.ndarray, recv: np.ndarray, sea: np.ndarray) -> np.ndarray:
 
 @njit(cache=True)
 def _largest_upstream(stack, recv, values):
-    best = values.copy()
-    where = np.arange(recv.size)
+    best = np.full(recv.size, -np.inf)                       # the largest value among the cells upstream of each cell
+    where = np.full(recv.size, -1, dtype=np.int64)
     for k in range(stack.size - 1, -1, -1):
         i = stack[k]
         r = recv[i]
-        if r >= 0 and (best[i] > best[r] or (best[i] == best[r] and where[i] < where[r])):
-            best[r] = best[i]
-            where[r] = where[i]
+        if r < 0:
+            continue
+        b, w = best[i], where[i]                             # the largest among cell i and everything upstream of it
+        if w < 0 or values[i] > b or (values[i] == b and i < w):
+            b, w = values[i], i
+        if where[r] < 0 or b > best[r] or (b == best[r] and w < where[r]):
+            best[r] = b
+            where[r] = w
     return where
 
 
 def largest_upstream(stack: np.ndarray, recv: np.ndarray, values: np.ndarray) -> np.ndarray:
-    """For each cell, the cell with the largest of `values` among itself and every cell that drains through it."""
+    """For each cell, the cell with the largest of `values` among the cells that drain through it, the cell itself
+    left out; NO_CELL where nothing drains through the cell. Among equals the lowest cell number."""
     return _largest_upstream(stack, np.ascontiguousarray(recv, dtype=np.int64), np.ascontiguousarray(values, dtype=np.float64))
