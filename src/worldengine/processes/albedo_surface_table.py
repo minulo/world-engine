@@ -35,14 +35,15 @@ Ignores: where clouds actually form, plant cover (until Biomes feeds it back), d
 that comes and goes with the seasons, the difference between snow and ice, and the darkening
 of old snow and of snow under trees.
 Wrong where: the cloud decks of cool subtropical seas and the cloud bands of the tropics.
-Clouds are the largest known gap in the climate stage. While land is too dry (see Moisture),
-snow on land is too thin and melts too early. The constants of EnergyBalance were fitted by
-their authors together with their own snow rule, so with less snow this planet runs warmer
-than theirs would [INFERRED]. A planet can still freeze over: with ice on most of its surface
+Clouds are the largest known gap in the climate stage. Too much land is white all year: a
+fifth of the default world's land, and a third of the land of the Earth twin, where a tenth
+of Earth's land lies under ice [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8]. The fault
+is not in this table: EnergyBalance gives the land summers too weak to melt the snow. A
+planet can still freeze over: with ice on most of its surface
 it reflects more sunlight than it needs to stay frozen, and models of this kind tip that way
 more easily than fuller ones [UNVERIFIED: my recollection of the literature on energy balance
 models; the design cites Roe and Baker 2010 for the two steady states]. Measured on the
-default planet: with 2 % less sunlight it is 4.2 K colder and stays open, as do ten other
+default planet: with 2 % less sunlight it is 4.8 K colder and stays open, as do ten other
 seeded worlds; with 5 % less it is below freezing on average and the note below is raised.
 When more than a third of the surface lies under snow and ice on the year's average, the
 process says so in a note.

@@ -21,6 +21,13 @@ and the moment is found.
 The formulas are written so that a demand of next to nothing gives next to nothing: none of
 them subtracts two large numbers that nearly agree.
 
+A knife edge. Where the year's supply equals its demand exactly and the store stays above Wc,
+the store neither rises nor falls: every level is a year that repeats, and the one returned is
+the one the search began from, which rounding can make another in an array of cells than for
+the cell alone. What the air takes and what runs off are the same whichever level it is
+[MEASURED by the third check of build step 2: seven such soils among 2,433 built to tie; the
+store differed by up to 1,250 mm, the fluxes by 0.00002 mm].
+
 Ignores: layers in the soil, roots, plants closing their pores, water that runs off a wet
 surface before the soil is full, frozen ground, and groundwater.
 """
@@ -94,6 +101,10 @@ def bucket_month(store: np.ndarray, supply: np.ndarray, demand: np.ndarray, capa
     end = np.where(steady_first, np.where(switched, a_end2, a_end), np.where(switched, b_end2, b_end))
     over = np.where(steady_first, a_over, np.where(switched, b_over2, 0.0))
     mean = np.where(steady_first, a_sum + np.where(switched, a_sum2, 0.0), b_sum + np.where(switched, b_sum2, 0.0))
+    # rounding can leave the store a hair above full or below empty: the hair goes to the overflow, or comes off what
+    # the air took, so that the store keeps its bounds and the month its balance
+    above = np.maximum(end - capacity, 0.0)
+    end, over = np.maximum(end - above, 0.0), over + above
     # a cell whose soil holds nothing: what falls goes to the air as far as it asks, and the rest runs off
     end = np.where(holds, end, 0.0)
     mean = np.where(holds, mean, 0.0)

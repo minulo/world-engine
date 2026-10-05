@@ -46,12 +46,16 @@ extension]. Three things follow.
     where the rain grew without limit as the cells shrank (second review).
   * Ground below sea level counts as standing at sea level.
 
-Ignores: the layers of the air, how thunderstorms organise, evaporation from land (until
-Hydrology adds it to the group), passing storms, and how stable the air is, which in truth
-decides how much of a flow goes over high ground and how much around it.
-Wrong where: land everywhere is too dry, because land gets only what the sea supplies: on
-Earth about 40 % of the rain over land is water that evaporated from land (van der Ent et al.
-2010, read at second hand). Rain totals in the tropics; ranges narrower than a cell; hot land
+Ignores: the layers of the air, how thunderstorms organise, passing storms, and how stable
+the air is, which in truth decides how much of a flow goes over high ground and how much
+around it. The water that land gives back to the air is not worked out here: Hydrology adds
+it to the group this process reads, one round late.
+Wrong where: land gets less rain than Earth's land: on Earth's own relief 672 mm a year where
+790 are measured, and between 40 and 60 degrees north 420 mm for 657 [MEASURED: the Earth
+twin, docs/BUILD_NOTES.md, section 4.6]. Before build step 2 land got only what the sea
+supplied; on Earth about 40 % of the rain over land is water that evaporated from land (van
+der Ent et al. 2010, read at second hand). Rain totals in the tropics; ranges narrower than a
+cell; hot land
 near 30 degrees in summer, where one layer of air tends to rain where Earth has desert. Before
 a long wall kilometres high the wet zone is probably too wet: about a third of the vapour held
 back by a wall 2.5 km high rains within 500 km of it. The rain of rising ground falls on the

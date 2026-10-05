@@ -21,7 +21,8 @@ bare for the other three.
 Two cases. Where the year can melt more than falls, the snow is gone by the end of the warm
 season, and the repeating year is the one that years followed from bare ground come to after
 their first. Where more falls in a year than the year can melt, the store would grow without
-end: that is where an ice sheet builds. There the store is held to a set number of years' net
+end [INFERRED: on Earth that is where glaciers and ice sheets build]. There the store is held
+to a set number of years' net
 snowfall, and what is older leaves the cell as ice, at a steady rate through the year
 [INFERRED: a stand-in for snow turning to glacier ice and flowing away. The ice that leaves is
 the year's net snowfall whatever that number is. The number sets how much snow is left at the

@@ -58,6 +58,38 @@ def test_store_holds_what_was_built_and_how(geometry_store):
     assert a["lineage"]["cell_area"]["writer"] == "PlanetGeometry"
 
 
+def test_the_fingerprint_of_the_code_is_the_same_on_every_system_and_another_for_other_code(tmp_path):
+    """The store records which code built it. The owner's machine is a Windows laptop: the same files checked out
+    there may end their lines with carriage return and line feed, and name their folders with backslashes. One
+    checkout must give one fingerprint. Any change to a file's text, to a file's name or to which files there are
+    gives another."""
+    files = {"engine.py": b"a = 1\nb = 2\n", "library/snow.py": b"def melt():\n    return 0\n", "library/notes.txt": b"not code\n"}
+
+    def tree(name, files, line_end=b"\n"):
+        root = tmp_path / name
+        for rel, text in files.items():
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_bytes(text.replace(b"\n", line_end))
+        return store.code_fingerprint(root)
+    unix = tree("unix", files)
+    assert len(unix) == 16 and unix == tree("again", files)
+    assert tree("windows", files, b"\r\n") == unix
+    assert tree("no_notes", {k: v for k, v in files.items() if k.endswith(".py")}) == unix             # only the Python files count
+    assert tree("changed", {**files, "engine.py": b"a = 1\nb = 3\n"}) != unix
+    assert tree("renamed", {"engine.py": files["engine.py"], "library/thaw.py": files["library/snow.py"]}) != unix
+    assert tree("moved", {"engine.py": files["engine.py"], "snow.py": files["library/snow.py"]}) != unix
+    assert tree("more", {**files, "extra.py": b""}) != unix
+    assert store.code_fingerprint() == store.code_fingerprint() and len(store.code_fingerprint()) == 16
+    lock = tmp_path / "requirements.lock"
+    lock.write_bytes(b"numpy==2.5.3\nscipy==1.0\n")
+    pinned = store.lock_fingerprint(lock)
+    lock.write_bytes(b"numpy==2.5.3\r\nscipy==1.0\r\n")
+    assert store.lock_fingerprint(lock) == pinned and len(pinned) == 16
+    lock.write_bytes(b"numpy==2.5.4\nscipy==1.0\n")
+    assert store.lock_fingerprint(lock) != pinned
+    assert store.lock_fingerprint(tmp_path / "none.lock") is None
+
+
 def test_store_is_written_once(geometry_store):
     e, w, path = geometry_store
     with pytest.raises(FileExistsError):

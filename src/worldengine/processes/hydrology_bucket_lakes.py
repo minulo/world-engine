@@ -6,16 +6,18 @@ Model (Assembled), in the order the water takes:
    melt (Hock 2003; library/snow.py), through the year that repeats. Where more snow falls in
    a year than the year can melt, snow older than a set number of years leaves the cell as ice
    and is counted as runoff: that excess stands in for the flow of a glacier [INFERRED].
-2. The air's demand for water. The Priestley-Taylor rule, in the form of Davis et al. 2017
-   (library/evaporation.py): the energy the surface gains from radiation, times the share of
-   it that goes into evaporating water at the cell's temperature and air pressure. The energy
-   is the sunlight the ground absorbs less the heat it radiates away, both by the formulas of
-   the same paper. They ask for the share of the possible hours of sunshine. The engine has no
-   clouds to give it, so one share stands for every cell and month [INFERRED: the value that
-   returns the mean sunlight absorbed at Earth's whole surface, land and sea, and the mean
-   loss of heat from it; data/models.yaml gives the numbers, and what the same value misses
-   over land alone]. The paper works with a day's mean, in which the night's loss of heat is
-   set against the day's gain [DOCUMENTED: its equation 18].
+2. The air's demand for water. The Priestley-Taylor rule with the formulas and constants of
+   Davis et al. 2017 (library/evaporation.py): the energy the surface gains from radiation,
+   times the share of it that goes into evaporating water at the cell's temperature and air
+   pressure. The energy is the sunlight the ground absorbs less the heat it radiates away,
+   both by the formulas of the same paper. They ask for the share of the possible hours of
+   sunshine. The engine has no clouds to give it, so one share stands for every cell and month
+   [INFERRED: the value that returns the mean sunlight absorbed at Earth's whole surface, land
+   and sea, and the mean loss of heat from it; data/models.yaml gives the numbers, and what
+   the same value misses over land alone]. The energy is that of the whole day: the night's
+   loss of heat is taken off the day's gain. That is not the paper's way: the paper counts the
+   hours of gain alone and gives the night's loss back to the soil as dew [DOCUMENTED: its
+   equations 14, 16, 18, 24 and 25; library/evaporation.py says what the difference comes to].
    Ground under snow gives the air nothing: the demand is counted for the share of the ground
    that is free of snow on the month's average, and the field potential_evapotranspiration
    holds it that way [INFERRED: snow lost straight to the air is ignored]. That share, the
@@ -59,12 +61,13 @@ tropics it is lower [UNVERIFIED: both from memory of how the rule is used]. A la
 a cell is drawn as a share of its cell, without a shape, and a lake's level moves in steps of
 the cells' heights. A hollow under snow that never melts loses nothing to the air, so it
 fills and shows as a lake where a real one would hold ice. Far too much of the land drains
-into closed hollows, and so into lakes: about half of the default world's land, and six
-tenths of Earth's own relief once it is sampled on this mesh [MEASURED: docs/BUILD_NOTES.md],
-where about a fifth of the real Earth's land drains to no sea [UNVERIFIED: recalled]. The
-seeded relief has had no rivers to cut it, and a cell's mean height closes every valley
-narrower than a cell. FluvialErosion (build step 4) cuts valleys on the mesh itself [INFERRED:
-that this removes most of the excess; it is tested there].
+into closed hollows, and so into lakes: about half of the default world's land [MEASURED:
+docs/BUILD_NOTES.md], where about a fifth of the real Earth's land drains to no sea
+[UNVERIFIED: recalled]. The seeded relief has had no rivers to cut it. FluvialErosion (build
+step 3) cuts valleys on the mesh itself [INFERRED: that this removes most of the excess; it is
+tested there]. Like for like, the land of Earth's great river basins sheds two thirds of the
+water measured [MEASURED: python tools/earth_rivers.py, part 2]: the demand for water is too
+high over land, most of all where the rain falls in the warm season.
 """
 import numpy as np
 
@@ -168,7 +171,8 @@ class BucketHydrology(Process):
             ctx.note("more water reaches a hollow with no way out than its whole surface can lose to the air; the rest is dropped",
                      dropped_m3_per_year=float(moved["nowhere"]))
         share, level, lake = lk.flooded(table, own, ground, loss, moved["extra"], moved["overflows"])
-        flows = lk.lake_flows(table, label, recv, ground, ctx.mesh.nbr, share, lake, volume, moved["extra"], moved["overflows"])
+        ties = dr.mesh_ties(ctx.mesh)                                 # exact ties as Drainage settles them
+        flows = lk.lake_flows(table, label, recv, ground, ctx.mesh.nbr, share, lake, volume, moved["extra"], moved["overflows"], ties)
         discharge, found, crossing = flows["discharge"], flows["lakes"], flows["crossing"]
 
         to_air = np.where(land, (1.0 - share) * from_soil + share * from_water, 0.0)
@@ -243,7 +247,7 @@ class BucketHydrology(Process):
             ctx.driver("river_discharge", "local_runoff", local)
             ctx.driver("river_discharge", "through_lake", through)
             ctx.driver("river_discharge", "from_upstream", flow - local - through)
-            source = dr.largest_upstream(flows["stack"], flows["receivers"], volume.sum(axis=0))
+            source = dr.largest_upstream(flows["stack"], flows["receivers"], volume.sum(axis=0), ties.rank)
             ctx.driver("river_discharge", "largest_source", source.astype(np.int32))
             ctx.driver("river_discharge", "place", np.where(sea, RIVERS_END_AT_SEA, np.where(
                 crosses, IN_A_LAKE_THAT_OVERFLOWS, np.where(share > 0.0, IN_A_CLOSED_LAKE, ON_DRY_GROUND))).astype(np.int32))

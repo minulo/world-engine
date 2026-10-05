@@ -27,10 +27,11 @@ KEEP_BYTES = 512_000_000        # a view of a store keeps up to this much of wha
 _PACKAGES = ("numpy", "scipy", "numba", "llvmlite", "zarr", "numcodecs", "PyYAML", "threadpoolctl")
 
 
-def code_fingerprint() -> str:
-    """SHA-256 over the engine's own source files, in name order. Names are taken with forward slashes and line
-    ends as single line feeds, so that one checkout gives one fingerprint on every system."""
-    root = Path(__file__).resolve().parent
+def code_fingerprint(root=None) -> str:
+    """SHA-256 over the engine's own source files (or the Python files under `root`), in name order. Names are
+    taken with forward slashes and line ends as single line feeds, so that one checkout gives one fingerprint on
+    every system."""
+    root = Path(__file__).resolve().parent if root is None else Path(root)
     h = hashlib.sha256()
     for name, path in sorted((p.relative_to(root).as_posix(), p) for p in root.rglob("*.py")):
         h.update(name.encode("utf-8"))
@@ -38,9 +39,10 @@ def code_fingerprint() -> str:
     return h.hexdigest()[:16]
 
 
-def lock_fingerprint() -> str | None:
-    lock = Path(__file__).resolve().parents[2] / "requirements.lock"
-    return hashlib.sha256(lock.read_bytes()).hexdigest()[:16] if lock.exists() else None
+def lock_fingerprint(lock=None) -> str | None:
+    """SHA-256 over the lock file of the pinned packages, line ends taken as single line feeds; None without one."""
+    lock = Path(__file__).resolve().parents[2] / "requirements.lock" if lock is None else Path(lock)
+    return hashlib.sha256(lock.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:16] if lock.exists() else None
 
 
 def package_versions() -> dict:

@@ -488,6 +488,14 @@ def test_the_why_answers_for_water_on_land_lead_from_a_river_to_the_rain_behind_
     for field in ("runoff", "soil_moisture", "snow_water", "snow_cover", "evapotranspiration", "potential_evapotranspiration", "basin_id"):
         answer = explain(view, last, field)
         assert any(step.get("end") for step in answer["chain"]), field        # every chain reaches a parameter, a seed or its limit
+    # what a step holds beside its sentence: a driver that names a cell or a row is no amount, and takes no unit
+    # (the third check of build step 2 found the largest source given as "456 m³/s")
+    step = explain(view, mouth, "river_discharge")["chain"][0]["drivers"]
+    assert step["largest_source"] == f"cell {source}" and step["lake"] == "no row" and step["from_upstream"].endswith("m³/s")
+    step = explain(view, open_lake, "river_discharge")["chain"][0]["drivers"]
+    assert step["lake"] == f"row {int(which[open_lake])} of the table lakes"
+    top = int(np.flatnonzero(land & (w.drivers["river_discharge"]["largest_source"] < 0))[0])     # a cell that nothing drains through
+    assert explain(view, top, "river_discharge")["chain"][0]["drivers"]["largest_source"] == "no other cell"
 
 
 def test_no_why_answer_for_water_on_land_says_what_its_numbers_contradict(plain):

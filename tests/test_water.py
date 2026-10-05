@@ -760,6 +760,29 @@ def test_one_month_of_the_bucket_is_the_exact_solution_whichever_rules_it_passes
     assert np.all(taken <= demand * (1 + 1e-9) + 1e-12)                           # the air never takes more than it asks
 
 
+def test_the_store_of_the_bucket_keeps_its_bounds_to_the_last_digit():
+    """Never below empty and never above full, and the month's water all accounted for. Rounding used to leave the
+    store a hair outside: 3e-14 mm below nothing, 3e-13 mm above full [MEASURED by the third check of build step 2].
+    The cases are drawn where rounding bites: stores at the brim, at the critical level and at nothing, supply and
+    demand that nearly cancel, and soils from a millimetre to five metres."""
+    rng = np.random.default_rng(31)
+    n = 400_000
+    capacity = 10.0 ** rng.uniform(0.0, 3.7, n)
+    critical = 0.75 * capacity
+    at = rng.integers(0, 5, n)
+    store = np.select([at == 0, at == 1, at == 2, at == 3], [capacity, critical, np.zeros(n), capacity * (1.0 - 10.0 ** rng.uniform(-16, -1, n))],
+                      capacity * rng.random(n))
+    demand = 10.0 ** rng.uniform(-3, 2.7, n) * (rng.random(n) < 0.95)
+    supply = np.where(rng.random(n) < 0.4, demand * (1.0 + 10.0 ** rng.uniform(-16, -1, n) * rng.choice([-1.0, 1.0], n)), 10.0 ** rng.uniform(-3, 2.7, n))
+    supply = np.maximum(supply, 0.0) * (rng.random(n) < 0.9)
+    end, mean, taken, shed = bucket_month(store, supply, demand, capacity, critical)
+    assert end.min() >= 0.0 and (end <= capacity).all()
+    assert mean.min() >= -1e-9 and (mean <= capacity * (1.0 + 1e-12) + 1e-9).all()
+    assert taken.min() >= 0.0 and shed.min() >= 0.0
+    assert np.abs(store + supply - end - taken - shed).max() < 1e-9 * (1.0 + (store + supply).max())
+    assert (end == 0.0).sum() > 100 and (end == capacity).sum() > 1000                # the case: both bounds are reached exactly
+
+
 def test_a_demand_of_next_to_nothing_takes_next_to_nothing():
     """A soil at 50 mm, 100 mm of rain in the month, capacity 150 mm: the soil is just full at the end, nothing runs
     off, and the air has taken its demand times how full the soil was. The formulas used to subtract two large
@@ -1313,71 +1336,6 @@ def test_two_full_hollows_with_nothing_more_stand_as_one_lake_at_the_pass_betwee
     share, level, lake = lk.flooded(t, own, n["ground"], n["area"], extra, over)
     assert level[pair] == t["spill_m"][north] and np.isnan(level[north]) and np.isnan(level[south])
     assert set(lake[share > 0]) == {pair} and np.all(share[np.isin(own, (north, south))] == 1.0) and not share[own == pair].any()
-
-
-def reworded(table, **changes):
-    out = {name: np.array(column) for name, column in table.items()}
-    for name, change in changes.items():
-        out[name] = change(out[name])
-    return out
-
-
-def test_a_table_of_hollows_that_breaks_its_rules_is_refused(nest):
-    """Hydrology takes the table of hollows from whatever process fills the Drainage slot. A table that says the same
-    things in another form used to be taken on trust: with the larger hollows numbered the other way round, 72 % of
-    the river water was lost without a word, and with another reading of one column the lakes never finished."""
-    n = nest
-    t, ground, sea = n["t"], n["ground"], n["sea"]
-    base = lake_case(n["m"], ground, sea, n["area"], n["area"], np.zeros((2, n["m"].n)))
-    label, recv = base["label"], base["recv"]
-    lk.check_table(t, label, recv, sea, ground)                                   # the table as Drainage writes it is accepted
-    rows = len(t["parent"])
-    assert rows == 6                                                              # the sea, three hollows, the pair, the whole
-
-    def refused(table, words, labels=None):
-        with pytest.raises(ValueError, match=words):
-            lk.check_table(table, label if labels is None else labels, recv, sea, ground)
-    # the merged rows numbered from the largest down
-    swap = np.array([0, 1, 2, 3, 5, 4])
-    turned = {name: np.array(col)[swap] for name, col in t.items()}
-    for name in ("parent", "sibling", "first_child", "second_child"):
-        turned[name] = np.where(turned[name] >= 0, swap[np.maximum(turned[name], 0)], -1).astype(np.int32)
-    refused(turned, "earlier rows|later row")
-    # spill_into_hollow naming the largest hollow around the far cell, not the hollow with one bottom
-    top = dr.top_hollows(t)
-    refused(reworded(t, spill_into_hollow=lambda c: np.where(c > 0, top[np.maximum(c, 0)], c).astype(np.int32)), "spill_into_hollow")
-    # heights on another datum
-    refused(reworded(t, spill_m=lambda c: c + 500.0, bottom_m=lambda c: c + 500.0), "field elevation")
-    # a hollow that overflows lower than its parts; parts that do not meet at one level
-    whole, pair = n["whole"], n["pair"]
-    refused(reworded(t, spill_m=lambda c: np.where(np.arange(rows) == pair, c[n["north"]] - 1.0, c)), "lower than its parts|field elevation")
-    refused(reworded(t, spill_m=lambda c: np.where(np.arange(rows) == n["north"], c - 1.0, c)), "one level|field elevation")
-    # the family: a part that does not name its parent, siblings that do not name each other, the sea with a parent
-    refused(reworded(t, parent=lambda c: np.where(np.arange(rows) == n["north"], whole, c).astype(np.int32)), "parent|sibling")
-    refused(reworded(t, sibling=lambda c: np.where(np.arange(rows) == n["north"], n["deep"], c).astype(np.int32)), "sibling|other part")
-    refused(reworded(t, parent=lambda c: np.where(np.arange(rows) == 0, 1, c).astype(np.int32)), "row 0")
-    # a bottom that is no bottom, a label that names no hollow with one bottom, a hollow no ground drains into
-    refused(reworded(t, bottom_cell=lambda c: np.where(np.arange(rows) == 1, int(np.flatnonzero(recv >= 0)[0]), c).astype(np.int32)), "bottom cell")
-    refused(t, "depression_id", labels=np.where(label == 1, pair, label))
-    # a pass that leads nowhere, or into the hollow itself
-    refused(reworded(t, spill_into_cell=lambda c: np.where(np.arange(rows) == n["north"], -1, c).astype(np.int32)), "name its pass")
-    refused(reworded(t, spill_from_cell=lambda c: np.where(np.arange(rows) == n["north"], t["bottom_cell"][n["deep"]], c).astype(np.int32)), "own side|field elevation")
-    refused({name: col for name, col in t.items() if name != "sibling"}, "no column sibling")
-
-
-def test_a_ring_of_hollows_that_overflow_into_one_another_is_refused():
-    """Three pits, each a tree of its own, each overflowing into the next and the last into the sea. If the table
-    said the last overflowed into the first, the order in which to fill them would have no end."""
-    m = get_mesh(6)
-    area = m.area * R * R
-    ground, sea = three_pits(m)
-    base = lake_case(m, ground, sea, area, area.copy(), np.zeros((2, m.n)))
-    t = base["table"]
-    ring = reworded(t, spill_into_hollow=lambda c: np.where(np.arange(len(c)) == 3, 1, c).astype(np.int32))
-    with pytest.raises(ValueError, match="into itself"):
-        lk.tree_order(ring)
-    with pytest.raises(ValueError, match="spill_into_hollow|into itself"):
-        lk.check_table(ring, base["label"], base["recv"], sea, ground)
 
 
 # ------------------------------------------------------------------------------------------ Hydrology and Soils

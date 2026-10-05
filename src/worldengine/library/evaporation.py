@@ -1,7 +1,7 @@
 """How much water the air can take up from a wet surface: the Priestley-Taylor rule.
 
-Model: the form in which the SPLASH model states it [DOCUMENTED: Davis et al. 2017, Geoscientific
-Model Development 10, 689, equations 10 to 13, 19, 20, 22, B1, B2 and B8]:
+Model: the rule with the formulas and the constants of the SPLASH model [DOCUMENTED: Davis et al.
+2017, Geoscientific Model Development 10, 689, equations 10 to 13, 19, 20, 22, B1, B2 and B8]:
 
     demand = (1 + w) * s / (s + g) * Rn / Lv          kg of water per m² and second
 
@@ -21,7 +21,21 @@ The two parts of Rn follow the same paper. Of the sunlight at the top of the air
 (c + d * sunshine) * (1 + 2.67e-5 * height) reaches the ground, and the ground reflects 0.17
 of it. The heat the surface radiates away, less what the air radiates back, is
 (b + (1 - b) * sunshine) * (A - T), T in degrees C. "sunshine" is the share of the possible
-hours of sunshine: the paper takes it from measurements of cloud.
+hours of sunshine: the paper takes it from measurements of cloud [DOCUMENTED: the same paper].
+
+Which radiation the rule is applied to is NOT the paper's. The paper follows the day: it
+applies the rule to the hours in which the ground gains energy (its equations 14, 24 and 25),
+and gives the night's loss of heat back to the soil as condensation (its equations 16 and 18)
+[DOCUMENTED: read through a page reader]. Here Rn is the net radiation of the whole day, the
+day's gain less the night's loss, as the caller hands it over [INFERRED: mine. It began as a
+misreading of the paper, which the third check of build step 2 found; it is kept, and said].
+What it comes to over Earth's land [MEASURED: python tools/earth_demand.py]: the demand is
+1,003 mm a year; the paper's form gives 1,246 mm from the same numbers and gives 194 mm back
+as condensation, 1,052 mm net. The engine's demand is the paper's potential evapotranspiration
+less a fifth, and 5 % below the paper's net taking of water. It was not changed because the
+error of the one share of sunshine is six times that and has the other sign over land
+(docs/BUILD_NOTES.md, section 7), and because 194 mm of dew a year is more than I can check
+against anything measured.
 
 Outside the ground the formulas were fitted to, each is held at a limit [INFERRED: the limits
 are mine; the paper does not treat these cases]. Ground below sea level gets the sunlight of
@@ -30,7 +44,8 @@ sunlight than arrives. A surface hotter than A loses nothing. The air pressure i
 set share of its base from the height at which the formula ends, about 44 km up; below sea
 level it is carried on, since more air lies above such ground.
 
-Ignores: wind and the dryness of the air, which the rule folds into the one number w. A
+Ignores: the course of the day (see above); wind and the dryness of the air, which the rule
+folds into the one number w. A
 kilogram of water on a square metre is taken as one millimetre: the paper divides by the
 density of water at the cell's temperature (its equation 19), which makes the demand larger
 by about 0.4 % at 30 C [UNVERIFIED: from the density of water as I recall it, 995.7 kg/m3

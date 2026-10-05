@@ -22,12 +22,12 @@ tables:
     # (library/lakes.py, check_table).
     rules:
       - "Row 0 is the sea: no parent, no parts."
-      - "Rows 1 to H are the hollows with one bottom, and the field depression_id holds one of these rows for every cell that drains into a hollow (0 otherwise). The bottom_cell of such a row is a land cell without a receiver whose depression_id is that row."
+      - "Rows 1 to H are the hollows with one bottom, one for every land cell without a receiver: that cell is the row's bottom_cell. Down its receivers the water of every cell ends in the sea or at one of these bottoms, and the field depression_id holds the row of that bottom (0 for the sea)."
       - "Every later row is made of two earlier rows, its first_child and second_child, which name it as their parent and each other as sibling. A parent stands in a later row than its parts."
       - "A hollow inside another always names its pass. spill_into_hollow is the row, among rows 1 to H, of the hollow that the cell beyond the pass drains into (0 if it drains to the sea), and never a larger hollow around that cell."
       - "The pass of a part leads into its sibling. The two parts of a hollow share one spill_m, and no hollow overflows lower than its parts."
-      - "spill_m and bottom_m are heights of the field elevation, on its datum: spill_m is the higher of the two cells of the pass (where the cell beyond is sea: no lower than the cell on the hollow's own side). Hydrology floods the cells whose elevation lies below spill_m."
-      - "A hollow inside no other overflows into ground whose own hollow overflows no higher, so that no ring of hollows overflows into itself. One with no way out at all has no value for spill_m and -1 for the cells of its pass."
+      - "spill_m and bottom_m are heights of the field elevation, on its datum: spill_m is the higher of the two cells of the pass (where the cell beyond is sea: no lower than the cell on the hollow's own side), and bottom_m is the height of bottom_cell. A hollow made of two has the bottom of its deeper part. Hydrology floods the cells whose elevation lies below spill_m."
+      - "A hollow inside no other overflows into ground whose own hollow overflows no higher, so that no ring of hollows overflows into itself. One with no way out at all has no value for spill_m, and -1 for the cells of its pass and for spill_into_hollow."
     columns: {parent: int32, sibling: int32, first_child: int32, second_child: int32, bottom_cell: int32, bottom_m: float64,
               spill_m: float64, spill_from_cell: int32, spill_into_cell: int32, spill_into_hollow: int32,
               area_when_full_m2: float64, volume_when_full_m3: float64}

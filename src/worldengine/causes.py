@@ -199,7 +199,14 @@ def explain(view, cell: int, field: str) -> dict:
                       lon=f"{abs(lon[c]):.1f}° {'east' if lon[c] >= 0 else 'west'}", planet=attrs["planet"], field=f)
         for t, v in dvals.items():
             p = dpat.get(t) or {}
-            slots[t] = names[t].replace("_", " ") if t in names else _fmt(v, p.get("unit", unit))
+            if t in names:
+                slots[t] = names[t].replace("_", " ")
+            elif p.get("cell") or p.get("row_of"):           # a driver that names a cell or a row is no amount: it takes no unit
+                nothing = not (v == v) or v < 0
+                slots[t] = (("no other cell" if nothing else f"cell {int(v)}") if p.get("cell") else
+                            ("no row" if nothing else f"row {int(v)} of the table {p['row_of']}"))
+            else:
+                slots[t] = _fmt(v, p.get("unit", unit))
         quiet = bool(pat.get("quiet"))
 
         def said_by(t, p, text):

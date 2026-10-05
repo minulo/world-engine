@@ -134,7 +134,7 @@ fields:
      description: "Water returned to the air by soil, plants and lakes; zero on sea. In a cell partly under a lake: the soil's share from the dry part and open water's from the flooded part. Member of the group moisture_source."}
   potential_evapotranspiration:
     {family: Water, unit: mm/month, shape: month_cell, kind: number, default: missing, allow_missing: true, range: [0, 5000],
-     description: "Water the air could take from the ground of the cell if that ground were wet. Ground under snow gives the air nothing in this model, so the value is that of bare wet ground times the share of the cell that is free of snow: zero where snow covers the ground all month. No value on sea."}
+     description: "Water the air could take from the ground of the cell if that ground were wet, worked out from the net radiation of the whole day: the night's loss of heat is taken off the day's gain, and no dew is counted apart. Ground under snow gives the air nothing in this model, so the value is that of bare wet ground times the share of the cell that is free of snow: zero where snow covers the ground all month. No value on sea."}
   soil_moisture:
     {family: Water, unit: 0 to 1, shape: month_cell, kind: number, default: missing, allow_missing: true, range: [0, 1],
      description: "Water held in the soil, as a fraction of what it can hold. The part of a cell that lies under a lake counts as full. No value on sea."}

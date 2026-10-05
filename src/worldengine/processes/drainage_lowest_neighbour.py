@@ -31,12 +31,17 @@ water, taken from the table of seas. Sea cells have no receiver.
 
 Ignores: rivers that split, as in deltas; groundwater; valleys narrower than a cell; the
 currents inside a lake (its water is handed to the outlet by the shortest way).
-Wrong where: flat plains get straight, parallel rivers. A cell's height is the mean of its
-ground, so a river that crosses a range through a gorge narrower than a cell finds the range
-closed: the mesh then shows a hollow where there is none, or sends the river out by another
-pass [INFERRED; MEASURED on Earth's relief, see docs/BUILD_NOTES.md]. Where ground is exactly
-equal, bed and all, the result depends on how the cells are numbered (library/drainage.py,
-"Ties").
+Wrong where: a cell has one height, and no valley narrower than a cell is in it. A river
+that crosses a range through a gorge finds the range closed: the mesh then shows a hollow
+where there is none, or sends the river out by another pass [INFERRED. MEASURED on Earth's
+relief for the estuary of the St Lawrence; five other narrows looked at are closed in the
+relief data before any mesh: docs/BUILD_NOTES.md, section 4.4]. Where heights are exactly
+equal the rule of the lowest neighbour cannot choose. The choice then falls to the bed, to
+the mesh's geometry and last to the cell numbers (library/drainage.py, "Ties"): in a world
+of the engine's own that touches only the choice of the sea cell a river runs into, but on
+relief given in whole metres it decides where whole rivers go [MEASURED: on Earth's relief
+a third of the land cells tie with a neighbour, and settling the ties otherwise moves the
+mouth of a seventh of the land's area: docs/BUILD_NOTES.md, section 4.4].
 """
 import numpy as np
 
@@ -62,12 +67,13 @@ class LowestNeighbourDrainage(Process):
         area = ctx.read("cell_area").astype(np.float64)
         bed = ctx.read("elevation").astype(np.float64)
         surface = dr.drainage_surface(bed, ctx.read("sea_depth"), sea, ctx.read("table:seas")["surface_m"])
-        recv = dr.receivers(surface, sea, mesh.nbr, bed)
+        ties = dr.mesh_ties(mesh)                                               # exact ties: the wider way, then the cell numbers
+        recv = dr.receivers(surface, sea, mesh.nbr, bed, ties)
         stack = dr.flow_stack(recv)
-        label, table = dr.hollows(surface, sea, recv, stack, mesh.edge_cells, area, bed)
+        label, table = dr.hollows(surface, sea, recv, stack, mesh.edge_cells, area, bed, ties)
 
         # with every hollow full: one path from each cell to the sea, across each lake to its outlet
-        full = dr.overflow_receivers(recv, surface, mesh.nbr, label, table)
+        full = dr.overflow_receivers(recv, surface, mesh.nbr, label, table, ties)
         full_stack = dr.flow_stack(full)
         drained = dr.accumulate(full_stack, full, np.where(sea, 0.0, area))
         mouth = dr.mouths(full_stack, full, sea)

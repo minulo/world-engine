@@ -28,8 +28,8 @@ with the pinned ones.
 ## Use
 
     python -m worldengine order                                  # the running order computed from the declarations
-    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; 48 s where it was built
-    python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 20 minutes where it was built
+    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; half a minute where it was built
+    python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 10 to 20 minutes where it was built
     python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/
     python -m worldengine explain worlds/first.zarr --lat 18 --lon -102 --field biome
     python -m worldengine info worlds/first.zarr
@@ -39,11 +39,12 @@ with the pinned ones.
     python -m worldengine build --profile preview --interventions data/examples/place_label.yaml --out worlds/forest.zarr
 
 The folder comes with `worlds/first.zarr`, the default world on the preview mesh, so `serve` works
-at once. The times are from a slow two-core machine; a laptop should be several times faster.
+at once. The times are from a two-core machine whose speed changes from day to day by a factor of
+two (docs/BUILD_NOTES.md, section 4.7); nothing was timed on a laptop.
 
 The same seed and parameters always give the same world, bit for bit, on one machine with the pinned
 versions. On a machine with another kind of processor the last digits can differ (docs/BUILD_NOTES.md,
-section 5.1); a world store carries its fingerprints, so a difference shows. A world store is written
+section 5.2); a world store carries its fingerprints, so a difference shows. A world store is written
 once and never changed.
 
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, switch to the flat map, play
@@ -84,15 +85,23 @@ Four public data files let single processes be judged against Earth, and let the
 on Earth's own relief (docs/BUILD_NOTES.md, sections 4.3 to 4.6). They are not kept in this folder.
 
     python tools/fetch_reference_data.py           # fetches 35 MB from one pinned commit and checks every file
-    python tools/earth_rivers.py                   # Earth's great rivers and lakes as the engine makes them, beside the measured ones
+    python tools/earth_relief.py                   # what the relief data hold before any process runs: closed valleys, exact ties
+    python tools/earth_rivers.py --settlements 20  # Earth's great rivers and lakes as the engine makes them, beside the measured ones
+    python tools/earth_rivers.py --trace Danube    # one river's way over the mesh, cell by cell
+    python tools/earth_demand.py                   # the air's demand for water over land, beside measured radiation
     python tools/earth_twin.py --profile preview   # the whole engine on Earth's relief, printed beside Earth
+
+Read section 4.4 of the notes before any single river. The relief file comes in whole metres and
+holds closed valleys of its own, so where a river runs on it is decided mostly by the data and by how
+exact ties are settled, not by the engine. What the yardstick does measure: the water of all the
+land, and what the land of a great basin sheds, like for like (0.68 of the measured depth).
 
 Without the data the tests that need it are skipped. The precipitation file asks that GPCP be cited
 in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 574 tests, about 13 minutes where it was built
+    python -m pytest                    # 643 tests, about 9 minutes where it was built
 
 34 of them are expected failures: patterns of Earth, and one condition of the design, that the
 engine is known to miss, each with the number measured. They are the list of known errors in
@@ -142,7 +151,8 @@ Extra checks that are not part of the test run:
 
 * A better model for a slot: one new file in `processes/`, its constants in `data/models.yaml`, and one
   changed line naming it. It may read different fields, but it must write the slot's list.
-  docs/BUILD_NOTES.md, section 9, says what a replacement of Drainage or Hydrology must also honour.
+  docs/BUILD_NOTES.md, section 9, says what a replacement of Drainage or Hydrology must also honour:
+  the rules of the table of hollows, and one place where exact ties are settled.
 * A new field: one entry in `data/fields.yaml` plus a process that writes it.
 * A push (an external change to a field or a group): one entry in `data/interventions.yaml`.
   No code changes. `data/examples/` shows two.

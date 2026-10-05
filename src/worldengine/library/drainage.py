@@ -12,29 +12,114 @@ The parts:
   owners()                   for each cell, the hollow whose lake reaches it first as the water rises
   through_full_hollows()     the flow paths once given hollows are full: across each lake to its outlet cell,
                              and from there to the cell beyond the pass
+  Ties, mesh_ties()          how exact ties are settled
+  count_ties()               how many choices are ties, and what settles them
 
 Heights here are those of the "drainage surface": the ground on land, the water surface on the sea.
 
-Ties. Exact ties are not rare, and they are decided in this order.
-  * A cell with several equally low neighbours: on a coast this is the usual case, because every cell of one
-    sea stands at the same water level. The neighbour whose bed lies lowest is taken, and among those the
-    lowest cell number.
-  * A hollow whose outlet cell has several lower neighbours beyond the hollow: every one of those passes has
-    exactly the height of the outlet cell. The water leaves to the lowest of those neighbours, as the rule for
-    a single cell says, then to the one with the lowest bed, then to the lowest cell numbers.
-  * Level ground is drained toward its nearest way out, and a level floor toward its lowest-numbered cell.
-Nothing here varies from run to run. A result depends on how the cells are numbered only where ground, bed
-and all, is exactly equal: on relief given in whole metres, or on exactly symmetric ground.
+Ties. Where two ways are exactly equal in height the rule of the lowest neighbour cannot choose, and the
+height says nothing about which is right. Such ties are common in two places [MEASURED: docs/BUILD_NOTES.md]:
+on every coast, because all cells of one sea stand at one water level and wide stretches of a sea floor
+made by one rule lie at one depth; and on relief that is given in whole metres, as measured relief is.
+They are settled in this order.
+  1. The lower bed: the solid ground of the cell the water would run to, which differs from the drainage
+     surface under the sea.
+  2. The wider way: the longer boundary shared by the two cells (Ties.way, Ties.edge). [INFERRED: mine.
+     It is a property of the mesh's geometry and not of the ground, so it settles a tie without claiming
+     to know the ground better than the data do; it turns with the planet, and it does not change when
+     the cells are numbered otherwise. mesh_ties says how the lengths are compared, and where rounding
+     errors in the geometry still decide.]
+  3. The order of the cells that the caller gives (Ties.rank); the cell numbers if none is given.
+The same three steps settle every choice among equals in this module:
+  * a cell with several equally low neighbours;
+  * a hollow with several passes of exactly its height: the pass whose far side lies lowest is taken
+    first, which is where a single cell's water goes by the rule, and then the three steps;
+  * level ground, which is drained toward its nearest way out, counted in cells, and among equally near
+    ways by the three steps; a level floor with no way out drains to one of its cells, the first in the
+    order of step 3, which is then the bottom of its hollow;
+  * the water of a full hollow, which crosses its lake to the outlet cell by the shortest way, counted in
+    cells, among equally short ways over the lowest ground, and then by steps 2 and 3.
+Without `ties` only step 1 and the cell numbers decide. Nothing here varies from run to run. With the
+ties of the mesh (mesh_ties) a result depends on how the cells are numbered only where bed and boundary
+are both equal: where the ground repeats itself exactly across a line of symmetry of the mesh, and in
+the choice of the bottom of a level floor.
 """
 from __future__ import annotations
 
-from collections import deque
+from typing import NamedTuple
 
 import numpy as np
 from numba import njit
 
 NO_CELL = -1                    # no receiver: a sea cell, or the bottom of a hollow
 SEA = 0                         # the label of ground that drains to the sea, and row 0 of the table of hollows
+EQUAL_WIDTHS = 1.0e-9           # shared boundaries are compared after rounding to this share of the longest of the mesh,
+                                # so that rounding errors in the mesh's geometry seldom settle a tie (mesh_ties says how seldom)
+
+
+class Ties(NamedTuple):
+    """How exact ties are settled once the bed has failed to settle them (the module's first lines, "Ties")."""
+    way: np.ndarray             # (cells, neighbours): how far the way from a cell to each neighbour is preferred; the larger wins
+    edge: np.ndarray            # (pairs of neighbouring cells, in the order of the mesh's edge_cells): the same number
+    rank: np.ndarray            # (cells): where even that is equal, or one cell of several must be named: the lower wins
+
+
+def mesh_ties(mesh) -> Ties:
+    """The ties of a mesh settled by its geometry: the wider way first, the longer boundary shared by two cells,
+    and then the cell numbers.
+
+    The lengths are rounded to EQUAL_WIDTHS of the longest before they are compared. The mesh has boundaries that
+    are mirror images of each other and exactly as long, and its geometry carries rounding errors of its own: up to
+    about 1e-13 of the longest boundary at level 5, 1e-12 at level 6 and 1e-11 at level 7. Unrounded, those errors
+    would tell nearly every such pair apart. Rounded, the pair counts as equal and the order of the cells decides,
+    unless the two lengths fall on either side of a rounding step: then the rounding error still decides. That is
+    the same on every run, and it is rare [MEASURED: in the sorted list of all boundary lengths, of the neighbours
+    that differ by less than 1e-11 of the longest, the rounding splits none of 30,448 at level 5, 2 of 121,824 at
+    level 6 and 29 of 487,377 at level 7]. Rounding to a grid is not a tolerance: two lengths that differ by far
+    less than EQUAL_WIDTHS can round apart, and two that differ by nearly that much can round together."""
+    width = np.round(mesh.edge_dual / (mesh.edge_dual.max() * EQUAL_WIDTHS))
+    way = np.where(mesh.nbr >= 0, width[np.maximum(mesh.nbr_edge, 0)], -np.inf)
+    return Ties(way=way, edge=width, rank=np.arange(mesh.n, dtype=np.int64))
+
+
+def count_ties(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.ndarray, ties: Ties) -> dict:
+    """How many of the choices of receivers() are exact ties, and what settles them:
+      choose     land cells with a lower neighbour: they choose a receiver
+      tied       of those, the ones with several equally low neighbours
+      by_bed, by_width, by_number    of the tied, how many the lower bed settles, the wider way, and the order of the cells
+      level      land cells on level ground: a neighbour at their own height and none lower"""
+    valid = nbr >= 0
+    beside = np.where(valid, nbr, 0)
+    around = np.where(valid, surface[beside], np.inf)
+    lowest = around.min(axis=1)
+    low = around == lowest[:, None]
+    chooses = ~sea & (lowest < surface)
+    under = np.where(low, bed[beside], np.inf)
+    deepest = low & (under == under.min(axis=1)[:, None])
+    wide = np.where(deepest, ties.way, -np.inf)
+    widest = deepest & (wide == wide.max(axis=1)[:, None])
+    tied, bed_left, width_left = low.sum(axis=1) > 1, deepest.sum(axis=1) > 1, widest.sum(axis=1) > 1
+    return {"choose": int(chooses.sum()), "tied": int((chooses & tied).sum()), "by_bed": int((chooses & tied & ~bed_left).sum()),
+            "by_width": int((chooses & bed_left & ~width_left).sum()), "by_number": int((chooses & width_left).sum()),
+            "level": int((~sea & (lowest == surface)).sum())}
+
+
+def _settle(ties, nbr):
+    """(way, rank) of `ties`; with none, every way equal and the cell numbers for rank."""
+    if ties is None:
+        return np.zeros(nbr.shape), np.arange(nbr.shape[0], dtype=np.int64)
+    return np.asarray(ties.way, dtype=np.float64), np.asarray(ties.rank, dtype=np.int64)
+
+
+def _pick(among, height, way, rank, nbr):
+    """For each row of `nbr`, one neighbour of those marked in `among`: the one of lowest `height`, then of the
+    widest `way`, then of the lowest `rank` (all given per row and neighbour). A row with none marked gets any."""
+    low = np.where(among, height, np.inf)
+    among = among & (low == low.min(axis=1)[:, None])
+    wide = np.where(among, way, -np.inf)
+    among = among & (wide == wide.max(axis=1)[:, None])
+    slot = np.where(among, rank, np.iinfo(np.int64).max).argmin(axis=1)
+    return nbr[np.arange(nbr.shape[0]), slot].astype(np.int64)
 
 
 def drainage_surface(elevation: np.ndarray, sea_depth: np.ndarray, sea: np.ndarray, sea_levels=()) -> np.ndarray:
@@ -57,37 +142,38 @@ def drainage_surface(elevation: np.ndarray, sea_depth: np.ndarray, sea: np.ndarr
     return surface
 
 
-def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.ndarray | None = None) -> np.ndarray:
+def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.ndarray | None = None,
+              ties: Ties | None = None) -> np.ndarray:
     """For each cell, the neighbour its water runs to; NO_CELL for a sea cell and for the bottom of a hollow.
 
     A cell drains to its lowest neighbour if that neighbour is lower. Among equally low neighbours the one whose
     bed lies lowest is taken (`bed`: the solid ground of every cell, which differs from `surface` under the sea),
-    and then the lowest cell number. Level ground (cells with a neighbour at their own height and none lower)
-    drains toward its nearest way out, a cell at the same height that does drain. Level ground with no way out is
-    the floor of a hollow: it drains to one of its cells, the one with the lowest number, which is the hollow's
-    bottom.
+    then the one reached by the widest way, then the first in the order of the cells (`ties`; the module's first
+    lines say why). Level ground (cells with a neighbour at their own height and none lower) drains toward its
+    nearest way out, a cell at the same height that does drain. Level ground with no way out is the floor of a
+    hollow: it drains to one of its cells, the first in the order of the cells, which is the hollow's bottom.
     """
     n = surface.size
     bed = surface if bed is None else np.asarray(bed, dtype=np.float64)
+    way, rank = _settle(ties, nbr)
     valid = nbr >= 0
     safe = np.where(valid, nbr, 0)
     around = np.where(valid, surface[safe], np.inf)
     lowest = around.min(axis=1)
-    low = around == lowest[:, None]
-    under = np.where(low, bed[safe], np.inf)
-    low &= under == under.min(axis=1)[:, None]
-    none = np.iinfo(np.int64).max
-    pick = np.where(low, nbr.astype(np.int64), none).min(axis=1)
+    pick = _pick(around == lowest[:, None], bed[safe], way, rank[safe], nbr)
     recv = np.where((lowest < surface) & ~sea, pick, NO_CELL)
     stuck = np.flatnonzero((recv < 0) & ~sea & (lowest == surface))
     if stuck.size == 0:
         return recv
-    neighbours = [[j for j in row if j >= 0] for row in nbr.tolist()]
-    height = surface.tolist()
-    bed_of = bed.tolist()
+    around_of, height, bed_of, rank_of = nbr.tolist(), surface.tolist(), bed.tolist(), rank.tolist()
     is_stuck = np.zeros(n, dtype=bool)
     is_stuck[stuck] = True
     seen = np.zeros(n, dtype=bool)
+
+    def best(cell, among):
+        """Of the neighbours of `cell` for which `among` holds: the lowest bed, the widest way, the first in order."""
+        return min((bed_of[j], -way[cell, k], rank_of[j], j) for k, j in enumerate(around_of[cell]) if j >= 0 and among(j))[-1]
+
     for start in stuck.tolist():
         if seen[start]:
             continue
@@ -96,30 +182,29 @@ def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.nda
         seen[start] = True
         k = 0
         while k < len(ground):
-            for j in neighbours[ground[k]]:
-                if is_stuck[j] and not seen[j] and height[j] == level:
+            for j in around_of[ground[k]]:
+                if j >= 0 and is_stuck[j] and not seen[j] and height[j] == level:
                     seen[j] = True
                     ground.append(j)
             k += 1
         inside = set(ground)
-        queue, done = deque(), set()
-        for i in sorted(ground):                             # the ways out: cells at the same height that drain
-            ways = [j for j in neighbours[i] if height[j] == level and j not in inside and (sea[j] or recv[j] >= 0)]
-            if ways:
-                recv[i] = min(ways, key=lambda j: (bed_of[j], j))
-                done.add(i)
-                queue.append(i)
-        if not queue:                                        # no way out: the floor of a hollow
-            bottom = min(ground)
-            done.add(bottom)
-            queue.append(bottom)
-        while queue:
-            i = queue.popleft()
-            for j in neighbours[i]:
-                if j in inside and j not in done:
-                    recv[j] = i
-                    done.add(j)
-                    queue.append(j)
+        drains = lambda j: height[j] == level and j not in inside and (sea[j] or recv[j] >= 0)
+        steps = {}                                           # cells between each cell and its way out
+        for i in ground:                                     # the ways out: cells at the same height that drain
+            if any(j >= 0 and drains(j) for j in around_of[i]):
+                recv[i] = best(i, drains)
+                steps[i] = 0
+        if not steps:                                        # no way out: the floor of a hollow
+            steps[min(ground, key=lambda i: rank_of[i])] = 0
+        edge, d = list(steps), 0
+        while edge:                                          # ring by ring inward: each cell to a neighbour one ring nearer
+            d += 1
+            ring = {j for i in edge for j in around_of[i] if j in inside and j not in steps}
+            for j in ring:
+                recv[j] = best(j, lambda i: steps.get(i) == d - 1)
+            for j in ring:
+                steps[j] = d
+            edge = list(ring)
     return recv
 
 
@@ -206,7 +291,7 @@ HOLLOW_COLUMNS = ("parent", "sibling", "first_child", "second_child", "bottom_ce
 
 
 def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.ndarray, edge_cells: np.ndarray,
-            area: np.ndarray, bed: np.ndarray | None = None):
+            area: np.ndarray, bed: np.ndarray | None = None, ties: Ties | None = None):
     """The closed hollows of the land and how they nest (Barnes, Callaghan and Wickert 2020).
 
     A hollow is the ground that drains to one bottom. Two neighbouring hollows meet at their lowest pass: the
@@ -215,10 +300,13 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
     hollows form a tree of pairs; a hollow whose lowest pass leads to ground that already drains to the sea ends
     its tree, and its overflow runs on from the cell beyond the pass.
 
-    Passes of exactly equal height are common: when the higher cell of a pass is the hollow's own, every lower
+    Passes of exactly equal height are common [MEASURED: tests/test_water.py counts them on rough ground where no
+    two cells tie]: when the higher cell of a pass is the hollow's own, every lower
     neighbour of that cell beyond the hollow makes a pass of that same height. Among them the pass whose lower
     cell is lowest is taken, which is where a cell's water goes by the rule for a single cell; then the lowest
-    bed (`bed`: the solid ground, which differs from `surface` under the sea), then the lowest cell numbers.
+    bed (`bed`: the solid ground, which differs from `surface` under the sea), then the widest pass, then the
+    first in the order of the cells (`ties`; the module's first lines). Of two hollows that become one, the one
+    with the lower bottom is named first; of two equally low bottoms, the first in the order of the cells.
 
     Returns (label, table):
       label   per cell, the number of the hollow it drains into, or SEA (0) if its water reaches the sea
@@ -248,6 +336,8 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
     # The lowest pass between every two labels that touch.
     a, b = edge_cells[:, 0].astype(np.int64), edge_cells[:, 1].astype(np.int64)
     touch = label[a] != label[b]
+    narrow = -(np.zeros(a.size) if ties is None else np.asarray(ties.edge, dtype=np.float64))[touch]     # the widest first
+    rank = np.arange(n, dtype=np.int64) if ties is None else np.asarray(ties.rank, dtype=np.int64)
     a, b = a[touch], b[touch]
     swap = label[a] > label[b]
     a, b = np.where(swap, b, a), np.where(swap, a, b)        # the cell with the lower label first
@@ -256,12 +346,15 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
     height = np.maximum(surface[a], surface[b])
     lower = np.minimum(surface[a], surface[b])               # among passes of one height: the lowest far side first
     lower_bed = np.minimum(under[a], under[b])
-    order = np.lexsort((b, a, lower_bed, lower, height, other, one))
-    one, other, a, b, height, lower, lower_bed = (v[order] for v in (one, other, a, b, height, lower, lower_bed))
+    early, late = np.minimum(rank[a], rank[b]), np.maximum(rank[a], rank[b])     # the order of the cells, whichever side each is on
+    order = np.lexsort((late, early, narrow, lower_bed, lower, height, other, one))
+    keys = (one, other, a, b, height, lower, lower_bed, narrow, early, late)
+    one, other, a, b, height, lower, lower_bed, narrow, early, late = (v[order] for v in keys)
     lowest = np.ones(one.size, dtype=bool)
     lowest[1:] = (one[1:] != one[:-1]) | (other[1:] != other[:-1])
-    one, other, a, b, height, lower, lower_bed = (v[lowest] for v in (one, other, a, b, height, lower, lower_bed))
-    order = np.lexsort((b, a, lower_bed, lower, height))     # the passes from the lowest up
+    keys = (one, other, a, b, height, lower, lower_bed, narrow, early, late)
+    one, other, a, b, height, lower, lower_bed, narrow, early, late = (v[lowest] for v in keys)
+    order = np.lexsort((late, early, narrow, lower_bed, lower, height))          # the passes from the lowest up
 
     group = list(range(count + 1))                           # which labels have merged; the sea's group keeps top 0
     top = list(range(count + 1))
@@ -285,7 +378,7 @@ def hollows(surface: np.ndarray, sea: np.ndarray, recv: np.ndarray, stack: np.nd
             group[own_group] = sea_group
             continue
         both = len(parent)                                   # two hollows that fill to their pass become one
-        if (bottom_height[tb], bottom_cell[tb]) < (bottom_height[ta], bottom_cell[ta]):
+        if (bottom_height[tb], rank[bottom_cell[tb]]) < (bottom_height[ta], rank[bottom_cell[ta]]):
             deeper, shallower = tb, ta
         else:
             deeper, shallower = ta, tb
@@ -348,15 +441,17 @@ def top_hollows(table) -> np.ndarray:
     return top
 
 
-def through_full_hollows(recv: np.ndarray, surface: np.ndarray, nbr: np.ndarray, label: np.ndarray, table, rows):
+def through_full_hollows(recv: np.ndarray, surface: np.ndarray, nbr: np.ndarray, label: np.ndarray, table, rows,
+                         ties: Ties | None = None):
     """The receivers as they are when the hollows `rows` (rows of the table of hollows) are full and overflow.
 
     Inside each of them the ground at or below the level of its pass lies under one sheet of water. That water
     is handed on from cell to cell by the shortest way, counted in cells, to the hollow's outlet cell: the cell
     on its own side of the pass. Among equally short ways the one over the lowest ground is taken, then the
-    lowest cell number. The outlet cell hands the water to the cell beyond the pass. Ground of the hollow above
-    that level keeps its receiver, which leads down into the water. [INFERRED: the engine has no model of the
-    currents in a lake; the shortest way is the plainest rule that brings all the water to the outlet.]
+    widest, then the first in the order of the cells (`ties`; the module's first lines). The outlet cell hands
+    the water to the cell beyond the pass. Ground of the hollow above that level keeps its receiver, which
+    leads down into the water. [INFERRED: the engine has no model of the currents in a lake; the shortest way
+    is the plainest rule that brings all the water to the outlet.]
 
     `rows` must hold no hollow together with one of its parts, and no hollow without a pass.
     Returns (receivers, lake): for each cell its receiver, and the row of `rows` whose sheet of water covers it
@@ -404,14 +499,14 @@ def through_full_hollows(recv: np.ndarray, surface: np.ndarray, nbr: np.ndarray,
     near = nbr[cells]
     safe = np.maximum(near, 0)
     nearer = (near >= 0) & (lake[safe] == lake[cells][:, None]) & (steps[safe] == steps[cells][:, None] - 1)
-    ground = np.where(nearer, surface[safe], np.inf)
-    nearer &= ground == ground.min(axis=1)[:, None]
-    out[cells] = np.where(nearer, near.astype(np.int64), np.iinfo(np.int64).max).min(axis=1)
+    way, rank = _settle(ties, nbr)
+    out[cells] = _pick(nearer, surface[safe], way[cells], rank[safe], near)
     out[here] = beyond
     return out, lake
 
 
-def overflow_receivers(recv: np.ndarray, surface: np.ndarray, nbr: np.ndarray, label: np.ndarray, table) -> np.ndarray:
+def overflow_receivers(recv: np.ndarray, surface: np.ndarray, nbr: np.ndarray, label: np.ndarray, table,
+                       ties: Ties | None = None) -> np.ndarray:
     """The receivers as they are when every hollow is full and overflows.
 
     Each of the largest hollows (those inside no other) then holds one lake up to its pass, and its water runs
@@ -424,7 +519,7 @@ def overflow_receivers(recv: np.ndarray, surface: np.ndarray, nbr: np.ndarray, l
     beyond = np.asarray(table["spill_into_cell"])
     top = top_hollows(table)
     tops = np.flatnonzero((parent < 0) & (np.arange(parent.size) > SEA))
-    out, _ = through_full_hollows(recv, surface, nbr, label, table, tops[beyond[tops] >= 0])
+    out, _ = through_full_hollows(recv, surface, nbr, label, table, tops[beyond[tops] >= 0], ties)
     leaves = np.flatnonzero((np.asarray(table["first_child"]) < 0) & (np.arange(parent.size) > SEA))
     shut = leaves[beyond[top[leaves]] < 0]                   # bottoms inside a hollow with no way out
     deepest = bottom[top[shut]]
@@ -442,7 +537,7 @@ def mouths(stack: np.ndarray, recv: np.ndarray, sea: np.ndarray) -> np.ndarray:
 
 
 @njit(cache=True)
-def _largest_upstream(stack, recv, values):
+def _largest_upstream(stack, recv, values, rank):
     best = np.full(recv.size, -np.inf)                       # the largest value among the cells upstream of each cell
     where = np.full(recv.size, -1, dtype=np.int64)
     for k in range(stack.size - 1, -1, -1):
@@ -451,15 +546,17 @@ def _largest_upstream(stack, recv, values):
         if r < 0:
             continue
         b, w = best[i], where[i]                             # the largest among cell i and everything upstream of it
-        if w < 0 or values[i] > b or (values[i] == b and i < w):
+        if w < 0 or values[i] > b or (values[i] == b and rank[i] < rank[w]):
             b, w = values[i], i
-        if where[r] < 0 or b > best[r] or (b == best[r] and w < where[r]):
+        if where[r] < 0 or b > best[r] or (b == best[r] and rank[w] < rank[where[r]]):
             best[r] = b
             where[r] = w
     return where
 
 
-def largest_upstream(stack: np.ndarray, recv: np.ndarray, values: np.ndarray) -> np.ndarray:
+def largest_upstream(stack: np.ndarray, recv: np.ndarray, values: np.ndarray, rank: np.ndarray | None = None) -> np.ndarray:
     """For each cell, the cell with the largest of `values` among the cells that drain through it, the cell itself
-    left out; NO_CELL where nothing drains through the cell. Among equals the lowest cell number."""
-    return _largest_upstream(stack, np.ascontiguousarray(recv, dtype=np.int64), np.ascontiguousarray(values, dtype=np.float64))
+    left out; NO_CELL where nothing drains through the cell. Among equals the first in the order of the cells
+    (`rank`; the cell numbers if none is given)."""
+    rank = np.arange(recv.size, dtype=np.int64) if rank is None else np.ascontiguousarray(rank, dtype=np.int64)
+    return _largest_upstream(stack, np.ascontiguousarray(recv, dtype=np.int64), np.ascontiguousarray(values, dtype=np.float64), rank)

@@ -10,6 +10,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from worldengine.library import drainage as dr           # noqa: E402
 from worldengine.library import operators as op          # noqa: E402
 from worldengine.mesh import get_mesh                    # noqa: E402
 from worldengine.store import StoreView                  # noqa: E402
@@ -110,6 +111,11 @@ def water(v, m, f, area, land, wet, rain, from_land, mean, share):
     in_hollow = f["depression_id"] > 0
     print(f"  closed hollows: {int((hollows['first_child'][1:] < 0).sum())} with one bottom, {int((hollows['first_child'] >= 0).sum())} made of two; "
           f"{share(land & in_hollow) / share(land):.3f} of the land drains into one")
+    elevation = f["elevation"].astype(np.float64)
+    surface = dr.drainage_surface(elevation, f["sea_depth"], wet, v.table("seas")["surface_m"])
+    t = dr.count_ties(surface, wet, m.nbr, elevation, dr.mesh_ties(m))
+    print(f"  exact ties: of {t['choose']} land cells with a lower neighbour, {t['tied']} have several equally low: the lower bed settles {t['by_bed']}, "
+          f"the wider way {t['by_width']}, the cell numbers {t['by_number']}; {t['level']} land cells lie on level ground")
     flooded = f["lake_fraction"].astype(np.float64)
     order = np.argsort(-lakes["area_m2"])[:5]
     print(f"  lakes: {len(lakes['hollow'])}, of which {int(lakes['overflows'].sum())} overflow; {(flooded * area).sum() / (area * land).sum():.3f} of the land under water; "

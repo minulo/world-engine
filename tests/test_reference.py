@@ -133,7 +133,190 @@ def test_a_coarse_grid_is_read_between_the_four_points_around_each_cell_centre()
     assert edge.any() and np.abs(patched - got)[edge].max() < 20.0                # made from the neighbours that have a value
 
 
+# ---------------------------------------------------------------------------------------------- the relief data by itself
+def island_grid():
+    """A grid of one degree, all ocean at -100 m but for one land between 20 south and 20 north, 40 and 100 east:
+    a plateau at 100 m with, inside it,
+      a basin, floor at 20 m, behind a ring at 300 m with one notch at 150 m;
+      an inland sea, bed at -50 m, behind ground at 5 m that reaches the coast;
+      a pit, floor at 40 m, behind a wall at 400 m whose one gap, at 60 m, touches the pit at a corner only;
+    and, across the line where the grid's columns begin, a strip of land at 10 m from 175 east to 175 west with a
+    bay at -30 m that is open to the ocean only toward the west, beyond the last column."""
+    lat = -89.5 + np.arange(180.0)
+    lon = -179.5 + np.arange(360.0)
+    la, lo = lat[:, None] * np.ones((1, 360)), np.ones((180, 1)) * lon[None, :]
+    h = np.full((180, 360), -100.0)
+    land = (np.abs(la) < 20) & (lo > 40) & (lo < 100)
+    h[land] = 100.0
+    ring = (np.abs(la) < 10) & (lo > 50) & (lo < 70)
+    h[ring] = 300.0
+    h[(np.abs(la) < 8) & (lo > 52) & (lo < 68)] = 20.0                           # the basin
+    h[(np.abs(la - 0.5) < 0.6) & (lo > 67.9) & (lo < 70)] = 150.0                # the notch through the ring, eastward
+    h[(np.abs(la) < 5) & (lo > 80) & (lo < 90)] = -50.0                          # the inland sea
+    h[(np.abs(la) < 7) & (lo > 78) & (lo < 92) & (h > 0)] = 5.0                  # its low shores
+    h[(np.abs(la) < 2) & (lo >= 92) & (lo < 100)] = 5.0                          # ... and low ground from them to the coast
+    h[(la > -19) & (la < -14) & (lo > 92) & (lo < 97)] = 400.0                   # the wall, one point thick, round ...
+    h[(la > -18) & (la < -15) & (lo > 93) & (lo < 96)] = 40.0                    # ... the pit, three points by three
+    h[(np.abs(la + 14.5) < 0.1) & (np.abs(lo - 96.5) < 0.1)] = 60.0              # the gap: the wall's north-east corner
+    strip = (np.abs(la) < 10) & ((lo > 175) | (lo < -175))
+    h[strip] = 10.0
+    h[(np.abs(la) < 3) & (lo > 177)] = -30.0                                     # the bay: columns 177.5 to 179.5 east
+    h[(np.abs(la) < 3) & (lo < -175)] = -30.0                                    # ... and on through the first columns, to the ocean
+    return lat, lon, h
+
+
+def test_water_raised_from_the_ocean_finds_the_hollows_of_a_grid():
+    """A Priority-Flood written for the comparison with the mesh, on a grid built for the purpose: what is ocean,
+    and the level at which every other point is joined to it."""
+    lat, lon, h = island_grid()
+    f = ref.flood_grid(lat, lon, h, open_ocean=(-60.0, -120.0))
+    at = lambda la, lo: ref.raw_at(f, la, lo)
+    assert at(-60.0, -120.0)["ocean"] and at(30.5, 60.5)["ocean"]
+    assert at(0.5, 85.5) == {"height": -50.0, "ocean": False, "level": 5.0}       # below sea level, but behind land: no ocean
+    assert at(0.5, 45.5) == {"height": 100.0, "ocean": False, "level": 100.0}     # the plateau drains down to the sea
+    assert at(0.5, 60.5) == {"height": 20.0, "ocean": False, "level": 150.0}      # the basin fills to its notch, not to its ring
+    assert at(9.5, 60.5)["level"] == 300.0                                        # the ring itself
+    # the pit is joined to the plateau through the corner of its wall: water passes between two points that touch
+    # at a corner. Counting the four points beside each point alone, the pit would fill to the top of its wall
+    assert at(-16.5, 94.5) == {"height": 40.0, "ocean": False, "level": 100.0}
+    assert at(-14.5, 96.5) == {"height": 60.0, "ocean": False, "level": 100.0} and at(-14.5, 95.5)["level"] == 400.0
+    assert at(0.5, 179.5)["ocean"] and at(0.5, -177.5)["ocean"]                   # the bay is ocean: the columns wrap round
+    assert at(8.5, 179.5) == {"height": 10.0, "ocean": False, "level": 10.0}
+    r = ref.raw_hollows(f)
+    weight = np.cos(np.deg2rad(lat))[:, None] * np.ones((1, 360))
+    not_ocean = ~f["ocean"]
+    under = not_ocean & np.isin(h, (20.0, -50.0, 40.0, 60.0))                    # the basin, the inland sea, the pit and its gap: nothing else
+    assert np.isclose(r["not_ocean"], (weight * under).sum() / (weight * not_ocean).sum())
+    assert np.isclose(r["land"], (weight * np.isin(h, (20.0, 40.0, 60.0))).sum() / (weight * (not_ocean & (h > 0))).sum())
+    assert np.isclose(r["ocean_share_of_planet"], (weight * f["ocean"]).sum() / weight.sum())
+    with pytest.raises(ValueError, match="open ocean is not below sea level"):
+        ref.flood_grid(lat, lon, h, open_ocean=(0.5, 45.5))
+
+
+def test_a_valley_is_judged_inside_its_own_box_and_against_the_way_round():
+    """The basin of island_grid as a river's valley. Inside a box that holds the notch, the way out rises to 150 m,
+    to a place beyond the ring and to the sea alike. Inside a box that leaves the notch out, it rises to the ring,
+    300 m; by any way at all the basin is joined to the ocean at 150 m. A place that is ocean has no level and
+    stands open. A place outside its box is refused."""
+    lat, lon, h = island_grid()
+    f = ref.flood_grid(lat, lon, h, open_ocean=(-60.0, -120.0))
+    places = {"through the notch": ((0.5, 60.5), (0.5, 75.5), (-15.0, 15.0, 45.0, 79.0)),
+              "through the notch to the sea": ((0.5, 60.5), None, (-25.0, 25.0, 45.0, 110.0)),
+              "over the ring": ((0.5, 60.5), None, (-25.0, 25.0, 35.0, 67.5)),
+              "open": ((30.5, 60.5), None, (25.0, 35.0, 50.0, 70.0))}
+    r = ref.raw_narrows(f, places)
+    assert r["through the notch"] == {"start_m": 20.0, "barrier_m": 150.0, "to_ocean_m": 150.0}
+    assert r["through the notch to the sea"] == {"start_m": 20.0, "barrier_m": 150.0, "to_ocean_m": 150.0}
+    assert r["over the ring"] == {"start_m": 20.0, "barrier_m": 300.0, "to_ocean_m": 150.0}
+    assert r["open"]["start_m"] == -100.0 and np.isnan(r["open"]["to_ocean_m"])
+    for outside in (((40.5, 60.5), None, (-15.0, 15.0, 45.0, 79.0)), ((0.5, 60.5), (40.5, 60.5), (-15.0, 15.0, 45.0, 79.0))):
+        with pytest.raises(ValueError, match="does not lie inside the valley's box"):
+            ref.raw_narrows(f, {"outside": outside})
+
+
+class FlatEarth:
+    """As much of earth_reference.Earth as narrows() looks at, on ground built for the purpose."""
+
+    def __init__(self, mesh, ground, wet, ways=None):
+        self.mesh, self.ground, self.mean, self.wet, self.ways = mesh, ground, ground + 50.0, wet, ways
+
+    def cell(self, lat, lon):
+        a, b = np.deg2rad(lat), np.deg2rad(lon)
+        return int(np.argmax(self.mesh.xyz @ np.array([np.cos(a) * np.cos(b), np.cos(a) * np.sin(b), np.sin(a)])))
+
+    def lake_at(self, lat, lon):
+        return {"level_m": 40.0, "overflows": True}
+
+    def books(self):
+        return {} if self.ways is None else {"flows": {"receivers": self.ways}}
+
+
+def test_the_way_through_a_valley_on_the_mesh_stays_on_land_and_inside_its_box():
+    """A valley along the equator from 0 to 40 east, floor at 10 m, with a bar across it at 20 east that rises to
+    200 m. North of it lies a sea, and south of it a second valley without a bar. The way from one end to the other
+    must go over the bar: it may not take to the sea, and it may not leave the box for the valley to the south."""
+    m = get_mesh(5)
+    lat, lon = m.lat, m.lon
+    ground = np.full(m.n, 1000.0)
+    valley = (np.abs(lat) < 3.5) & (lon > -5) & (lon < 45)
+    ground[valley] = 10.0
+    ground[valley & (np.abs(lon - 20) < 2.5)] = 200.0                             # the bar
+    wet = (lat >= 3.5) & (lat < 12) & (lon > -5) & (lon < 45)                     # a sea along the valley's north side
+    ground[wet] = -50.0
+    south = (lat <= -3.5) & (lat > -9) & (lon > -5) & (lon < 45)
+    ground[south] = 10.0                                                         # the valley to the south: no bar
+    earth = FlatEarth(m, ground, wet)
+    box = (-3.4, 12.0, -3.0, 43.0)
+    r = ref.narrows(earth, {"bar": ((0.0, 2.0), (0.0, 38.0), box)})["bar"]
+    assert r["barrier_m"] == 200.0 and abs(r["barrier_at"][1] - 20.0) < 3.0 and abs(r["barrier_at"][0]) < 3.5
+    assert r["lake_level_m"] == 40.0 and r["lake_overflows"] and r["leaves_at"] is None
+    # with the valley to the south inside the box, the way goes round the bar
+    assert ref.narrows(earth, {"bar": ((0.0, 2.0), (0.0, 38.0), (-9.0, 12.0, -3.0, 43.0))})["bar"]["barrier_m"] == 10.0
+    # to the sea: the goal is any sea cell inside the box, and it is reached at once, at the valley's own height
+    assert ref.narrows(earth, {"bar": ((0.0, 2.0), None, box)})["bar"]["barrier_m"] == 10.0
+    # where the water goes instead: down the ways handed over, to the sea; the cell of the highest mean on that way
+    ways = np.full(m.n, -1)
+    path = [earth.cell(0.0, lon_) for lon_ in (2.0, 6.0, 10.0, 14.0)]
+    path = [c for k, c in enumerate(path) if c not in path[:k]]
+    north = earth.cell(6.0, 14.0)
+    for a, b in zip(path, path[1:] + [north]):
+        ways[a] = b
+    earth = FlatEarth(m, ground, wet, ways)
+    earth.mean[path[1]] = 900.0
+    r = ref.narrows(earth, {"bar": ((0.0, 2.0), (0.0, 38.0), box)})["bar"]
+    assert r["over_mean_m"] == 900.0 and r["handed_m"] == 10.0 and r["over_at"] == (float(lat[path[1]]), float(lon[path[1]]))
+    assert r["leaves_at"] == (float(lat[path[-1]]), float(lon[path[-1]]))
+
+
 # ---------------------------------------------------------------------------------------------- the readers
+def test_the_three_ways_of_settling_earths_ties_are_what_the_harness_says_they_are():
+    """Earth(ties=...): None leaves the engine's own rule; a number draws a width for every pair of neighbours and a
+    place in the order for every cell, another draw for another number; "mean" prefers the way toward the cell of
+    the lower mean height. While such an Earth runs a process, the library hands out its ties in place of the
+    mesh's own, and the mesh's own again afterwards, also when the run fails."""
+    from worldengine.library import drainage as dr
+    m = get_mesh(4)
+    bare = ref.Earth.__new__(ref.Earth)                                          # no data is read: only what the ties look at
+    bare.mesh, bare.mean = m, np.linspace(500.0, -500.0, m.n)
+    valid = m.nbr >= 0
+    bare.ties = None
+    assert bare._ties() is None
+    bare.ties = 3
+    three = bare._ties()
+    assert sorted(three.rank) == list(range(m.n)) and not np.array_equal(three.rank, np.arange(m.n))      # the order of the cells is drawn too
+    assert np.unique(three.edge).size == m.edge_cells.shape[0]                   # every pair its own width: the widths settle nearly every tie
+    assert np.array_equal(three.way[valid], three.edge[m.nbr_edge[valid]]) and np.all(np.isneginf(three.way[~valid]))
+    again = bare._ties()
+    assert np.array_equal(again.edge, three.edge) and np.array_equal(again.rank, three.rank)              # the same draw for the same number
+    bare.ties = 4
+    four = bare._ties()
+    assert not np.array_equal(four.edge, three.edge) and not np.array_equal(four.rank, three.rank)
+    bare.ties = "mean"
+    low = bare._ties()
+    c = 100
+    ring = [(k, int(j)) for k, j in enumerate(m.nbr[c]) if j >= 0]
+    best = max(ring, key=lambda kj: low.way[c, kj[0]])[1]
+    assert bare.mean[best] == min(bare.mean[j] for _, j in ring)                 # the wider way is the one toward the lower mean
+    assert low.rank[np.argmin(bare.mean)] == 0 and sorted(low.rank) == list(range(m.n))
+    bare.ties = "lowest"
+    with pytest.raises(ValueError, match="ties can be None, a number"):
+        bare._ties()
+    # standing in for the library's function, and stepping out again
+    real = dr.mesh_ties
+    bare.ties = 3
+    with bare._settling():
+        handed = dr.mesh_ties(m)
+        assert np.array_equal(handed.rank, three.rank) and np.array_equal(handed.edge, three.edge)
+    assert dr.mesh_ties is real
+    with pytest.raises(RuntimeError, match="the run fails"):
+        with bare._settling():
+            raise RuntimeError("the run fails")
+    assert dr.mesh_ties is real
+    bare.ties = None
+    with bare._settling():
+        assert dr.mesh_ties is real                                              # the engine's own rule: nothing is swapped
+
+
 @needs_data
 def test_the_relief_is_read_the_right_way_up_and_the_right_way_round():
     lat, lon, height = ref.relief()
