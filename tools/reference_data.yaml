@@ -1,0 +1,29 @@
+# The Earth reference data that the Earth tests and the Earth twin use. None of it is part of the engine, and none of
+# it is kept in this repository: tools/fetch_reference_data.py fetches each file from the pinned commit below and
+# checks it against its SHA-256. A world is never built from it unless a parameter file asks for the Earth twin.
+source:
+  repository: "https://github.com/NCAR/GeoCAT-datafiles"
+  raw: "https://raw.githubusercontent.com/NCAR/GeoCAT-datafiles"
+  commit: ad7bedcc2a14a37f08da1a5ce3f0859ad9e51023
+  licence: "The repository carries an Apache-2.0 LICENSE file. The data sets were made by others (NOAA, NASA, the Climatic Research Unit) and are passed on by NCAR's GeoCAT project as example data."
+files:
+  ETOPO5.DAT:
+    path: binary_files/ETOPO5.DAT
+    bytes: 18662400
+    sha256: 471d3dd534144aa9a6551fe3e76320a06a45dade6fd8d45f7d6ad981d59f93c3
+    what: "ETOPO5: height of the land and depth of the sea floor on a grid of 5 minutes of arc, as whole metres (big-endian 16-bit, 2160 rows from 90 N southward, 4320 columns from 0 E eastward). Lakes are given by their surface in some places and by their bed in others."
+  V22_GPCP.1979-2010.nc:
+    path: netcdf_files/V22_GPCP.1979-2010.nc
+    bytes: 15937228
+    sha256: 6d37505e655f36e9d9c889d16d142260f3eda6e57f6eacebbf54d1fcc7cc5a2d
+    what: "GPCP version 2.2: precipitation in mm a day, every month from 1979 to 2010, on a grid of 2.5 degrees. Gauges on land merged with satellites."
+  absolute.nc:
+    path: netcdf_files/absolute.nc
+    bytes: 63192
+    sha256: e4babac4a86af8f4bc0bbfebf28270bfee31a56beaf7d591900bffaa7031b439
+    what: "The Climatic Research Unit's mean monthly surface temperature of 1961 to 1990, in degrees C, on a grid of 5 degrees."
+  landsea.nc:
+    path: netcdf_files/landsea.nc
+    bytes: 67596
+    sha256: d5c1618abe78a1740727ba665da9a5056ddfd2bc5b54a466d96139f1255aee09
+    what: "A land-sea mask on a grid of 1 degree: 0 ocean, 1 land, 2 lake, 3 small island, 4 ice shelf."
