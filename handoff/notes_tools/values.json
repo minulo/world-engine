@@ -1,0 +1,122 @@
+{
+ "date": "2026-10-06",
+ "biomes": "tropical 20.9 (19.0), dry 24.9 (30.2), temperate 13.3 (13.4), cold 26.5 (24.6), polar 14.5 (12.8)",
+ "suite": {
+  "tests": 864,
+  "minutes": "10",
+  "passed": 829,
+  "xfailed": 35,
+  "skipped": 102,
+  "passed_without": 761,
+  "xfailed_without": 1,
+  "commit": "d116240",
+  "seconds": "575",
+  "seconds_without": "396"
+ },
+ "times": {
+  "rounds": {
+   "preview": 23,
+   "standard": 24,
+   "twin_preview": 15,
+   "twin_standard": 15
+  },
+  "sizes": {
+   "big": 220,
+   "first": 21,
+   "twin_preview": 20,
+   "twin_standard": 210
+  },
+  "build_preview": {
+   "s": "23 s",
+   "gb": "0.4 GB",
+   "exit": 0,
+   "seconds": 23.3
+  },
+  "build_standard": {
+   "s": "456 s",
+   "gb": "5.3 GB",
+   "exit": 0,
+   "seconds": 456.0
+  },
+  "twin_preview": {
+   "s": "19 s",
+   "gb": "0.6 GB",
+   "exit": 0,
+   "seconds": 19.4
+  },
+  "twin_standard": {
+   "s": "297 s",
+   "gb": "5.2 GB",
+   "exit": 0,
+   "seconds": 296.9
+  },
+  "scan_preview": {
+   "s": "116 s",
+   "gb": "0.2 GB",
+   "exit": 0,
+   "seconds": 116.2
+  },
+  "scan_standard": {
+   "s": "266 s",
+   "gb": "0.7 GB",
+   "exit": 0,
+   "seconds": 265.5
+  },
+  "rivers": {
+   "s": "19 s",
+   "gb": "1.5 GB",
+   "exit": 0,
+   "seconds": 19.3
+  },
+  "rivers_s20": {
+   "s": "67 s",
+   "gb": "1.5 GB",
+   "exit": 0,
+   "seconds": 67.4
+  },
+  "rivers_s100": {
+   "s": "252 s",
+   "gb": "1.6 GB",
+   "exit": 0,
+   "seconds": 252.5
+  },
+  "relief": {
+   "s": "42 s",
+   "gb": "1.7 GB",
+   "exit": 0,
+   "seconds": 41.5
+  },
+  "demand": {
+   "s": "16 s",
+   "gb": "1.2 GB",
+   "exit": 0,
+   "seconds": 15.5
+  }
+ },
+ "twin": {
+  "swing": 13.6,
+  "swing_earth": 30.9,
+  "E": 46,
+  "white": 35,
+  "lakes_standard": 8.5
+ },
+ "twin_table": [],
+ "step2_table": [],
+ "world_table": [],
+ "audit_seconds": 846.8,
+ "audit_exit": 0,
+ "audit_time_row": "| The refusal audit (`tools/refusal_audit.py`) | | 847 s | | 2.1 GB |",
+ "worlds_same": "The four worlds of the table were built again on 2026-10-06, on the tree of commit 8e5f588 (the README and one test file differed from it, and no build reads either). The reports of `tools/world_report.py` and `tools/earth_twin.py` give every number of sections 4.6, 4.8 and 8 as those sections had it, and the scan of the \"why\" answers reads 225,324 answers of each preview world (every cell) and 156,728 of each standard one (every 23rd cell) and reports none. [MEASURED: `handoff/logs/worlds/`] I could not compare the new worlds field by field with those of 2026-10-05: their stores were not handed over.",
+ "viewer_check": "It was not run on 2026-10-06; its last run was before the fourth check's fixes.",
+ "install": "was run as written on Linux only. [MEASURED on 2026-10-06, in a fresh workspace: the lock file installed into a new virtual environment, and the engine so installed gave the running order, built the default preview world in 23 s and answered the README's example] Not on Windows (item 10).",
+ "design_doc_s6": "was brought up to step 2 on 2026-10-06 in its section Build order and in its sources only. Its layers still describe the design as approved: where step 2 departs from a layer, the tables of departures say so and the layer does not. Its field dictionary does not list `snow_cover`.",
+ "design_doc_s7": "Items 1 to 8, 22 and 23 are of step 1; items 9 to 21, 24 and 25 of step 2. All are recorded in the design document as well, under its own numbers, since 2026-10-06. Until then the document held nine, all of step 1, and this section said that it held all (section 5.4).",
+ "fifth": {
+  "design_doc": "The document is updated: a second table under its first holds the missing departure of step 1 and those of step 2 (its rows 10 to 25), and beside it stand the results of step 2, where the world is wrong now, and the sources of step 2. Section 7 says how the two lists relate and has the two rows it lacked (its items 22 and 23).",
+  "audit": "On commit d116240 the audit, run with every test, finds 249 refusals in the code, reaches all of them and finds each held: with other words written in its place, a test fails. [MEASURED: `handoff/logs/refusal_audit.log`, 847 s] What the audit cannot show is in the tool's description: a test that asks for one word of a sentence counts as holding it.",
+  "commit": "d116240",
+  "ran": "the whole suite with the Earth data and without it; the refusal audit with every test, the Earth tests among them; the Earth tools (as built, 20 and 100 random settlements, twelve other valley shares, the planet file's water, a demand of 0.76, the trace of each of 24 rivers); the four worlds, their reports and the scan of their \"why\" answers. The logs of the Earth tools agree number for number with those of the snapshot on which the first sitting had rewritten the tests (`handoff/logs/before_rerun/`); two lines of the tools' wording had changed since. The Earth tools and the worlds ran on commit 8e5f588 and the suite and the audit on d116240; between the two only the README, the reasons of two tests and the hand-over files changed.",
+  "not_done": "The check of the viewer in a browser was not run again. Nothing was run on Windows. No sixth, independent check of this answer has been made: the texts of sections 4.2 to 4.5, 5.4 and 11 and the reasons rewritten in `tests/test_earth.py` are mine alone, and four rounds in a row an independent check found that my account claimed more than was measured."
+ },
+ "refusals_row": "Pass since 2026-10-06; before that it was not met, though this row said \"Pass\". Every refusal of the scheduler is checked for its message (`tests/test_scheduler.py`). Of the engine's own, the fifth check took out twelve and reworded three with every engine test passing. Now `tools/refusal_audit.py` finds 249 refusals in the code of `src/worldengine`, and each is reached by a test and held by one: with other words in its place a test fails [MEASURED: `handoff/logs/refusal_audit.log`; section 5.4]"
+}

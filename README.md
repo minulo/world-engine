@@ -96,7 +96,7 @@ on Earth's own relief (docs/BUILD_NOTES.md, sections 4.3 to 4.6). They are not k
     python tools/earth_rivers.py --settlements 20  # Earth's great rivers and lakes as the engine makes them, beside the measured
                                                    # ones, and how often each outcome comes when the exact ties of the relief
                                                    # are settled at random; --settlements 100 --demands prints the numbers of
-                                                   # section 4.4 of the notes, in about 6 minutes where it was built
+                                                   # section 4.4 of the notes, in about 4 to 6 minutes where it was built
     python tools/earth_rivers.py --trace Danube    # one river's way over the mesh, cell by cell
     python tools/earth_demand.py                   # the air's demand for water over land, beside a published budget of the land
     python tools/earth_twin.py --profile preview   # the whole engine on Earth's relief, printed beside Earth
@@ -132,8 +132,8 @@ Extra checks that are not part of the test run:
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
     python tools/why_scan.py worlds/first.zarr     # reads the "why" answers of every cell against the numbers of the cell
     python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks in a headless browser
-    python tools/refusal_audit.py                  # is every refusal of the engine held by a test? Takes about as long as
-                                                   # three runs of the test suite
+    python tools/refusal_audit.py                  # is every refusal of the engine held by a test? A quarter of an hour
+                                                   # where it was built
 
 The two trials print their results. The files in `trials/results/` are the records of build step 1,
 and a trial writes over them only when run with `--write`. `tools/viewer_check.py` needs the

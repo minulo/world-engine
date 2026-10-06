@@ -1,0 +1,17 @@
+start 2026-10-06T04:23:33Z
+........................................................................ [  8%]
+....ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss [ 16%]
+ssssssssssssssssssssssssssss............................................ [ 25%]
+........................................................................ [ 33%]
+........................................................................ [ 41%]
+........................................................................ [ 50%]
+........................................sssss....s...................... [ 58%]
+........................................................................ [ 66%]
+........................................................................ [ 75%]
+........................................................................ [ 83%]
+........................................................................ [ 91%]
+.............................................x.......................... [100%]
+=========================== short test summary info ============================
+XFAIL tests/test_world.py::test_the_driest_land_band_between_the_equator_and_60_degrees_lies_between_15_and_40[north] - The driest northern band lies at 58 degrees, with 297 mm a year; the dry belt at 24 degrees gets 362 mm [MEASURED]. The land of that band, a sixth of it, stands 1,053 m high on average, has a yearly mean of -13 C and lies under snow all year: cold air holds little vapour, and ground under snow gives the air nothing back. On Earth the land at these latitudes gets 690 mm (tests/test_earth.py). The engine's land is too cold there and its summers too weak (docs/BUILD_NOTES.md), and the same condition fails on Earth's own relief, for the same reason [INFERRED: the cause].
+761 passed, 102 skipped, 1 xfailed in 395.64s (0:06:35)
+end 2026-10-06T04:30:09Z

@@ -1,11 +1,11 @@
 # Build notes
 
-State of the build on 2026-10-05: build steps 0, 1 and 2 of the design document "World engine design:
+State of the build on 2026-10-06: build steps 0, 1 and 2 of the design document "World engine design:
 physical causes, replaceable processes". Steps 0 and 1 had two independent reviews and a third,
 narrower check. Step 2 had two independent reviews, a third check that overturned part of what I
 had concluded from the Earth tests, and a fourth, by two reviewers, of what I changed in answer and
 of the engine, the tests, the tools and these notes. The fourth overturned part of the account I
-wrote after the third. Each was followed by fixes (section 5). ⟦FIFTH⟧
+wrote after the third. Each was followed by fixes (section 5). A fifth check, by two reviewers, looked at nothing but the claims: these notes, the README, the reasons of the tests and the descriptions in the code. It found no wrong number and again found that the account claimed more than was measured (section 5.4). The answer to it was written in two sittings; the second worked from the first's written hand-over and logs (`HANDOFF.md`, `handoff/`), and measured every number of sections 4.2 to 4.5 again on the committed code.
 
 Labels: **[MEASURED]** I ran it in the build environment and read the number. **[DOCUMENTED]** I opened
 the source during the build. **[INFERRED]** my reasoning. **[UNVERIFIED]** recalled, not checked.
@@ -13,7 +13,8 @@ the source during the build. **[INFERRED]** my reasoning. **[UNVERIFIED]** recal
 planet.
 
 The build environment was a cloud workspace with 2 processor cores and about 8 GB of memory, Python 3.13,
-and the versions in `requirements.lock`. Nothing here was run on the target laptop.
+and the versions in `requirements.lock`. The measurements of 2026-10-06 were made in a fresh workspace
+of the same kind, set up from the lock file. Nothing here was run on the target laptop.
 
 ## 1. What exists
 
@@ -24,20 +25,22 @@ and the versions in `requirements.lock`. Nothing here was run on the target lapt
 | 2. Water on land | Built. One condition of the design for it fails on Earth, the closed Caspian, and the land sheds too little water (section 4) | Drainage, Hydrology and a stand-in for Soils; tests of each on ground built for the purpose, on the default world and on Earth's own relief, rain and warmth |
 | 3 to 11 | Not started | |
 
-`python -m pytest` runs 787 tests in about 9 minutes. 753 pass. The other 34 are
+`python -m pytest` runs 864 tests in about 10 minutes. 829 pass. The other 35 are
 expected failures: each states a pattern of Earth, or a condition of the design, that the engine does
 not meet, with the number measured (sections 3.1 and 4.2 to 4.6). Two conditions of the design are
 among them: the dry belt of the north, which fails on the engine's own world and again on Earth's
-relief, and the closed Caspian. Without the Earth reference data (section 4.3) the 97 tests that
-need it are skipped. Of the other 690, 689 pass and 1 is an expected failure that the engine's own world gives without any data of Earth. [MEASURED]
+relief, and the closed Caspian. Without the Earth reference data (section 4.3) the 102 tests that
+need it are skipped. Of the other 762, 761 pass and 1 is an expected failure that the engine's own
+world gives without any data of Earth. [MEASURED: the whole suite on commit d116240, with the data
+(575 s) and without (396 s); `handoff/logs/suite_with_data.log`, `suite_without_data.log`]
 
 ## 2. Step 0 against its "done when"
 
 | Condition in the design | Result |
 |---|---|
-| Three toy processes with a loop, a modifier and a push reach a known steady answer | Pass. a = 7 and b = 8 to within 1e-6 after 52 rounds [MEASURED: `tests/test_engine.py`] |
+| Three toy processes with a loop, a modifier and a push reach a known steady answer | Pass. a = 7 and b = 8 [MEASURED: `tests/test_engine.py`, which asks for them to within 1e-5; the fifth check measured 8.5e-7 after 52 rounds] |
 | First-round defaults are tested | Pass. Round 1 reads the default of fields.yaml; round 2 reads the blended copy |
-| Every refusal message is tested | Pass. Every refusal of the scheduler is checked for its message (`tests/test_scheduler.py`, 60 tests), and the engine's own in the four engine test files |
+| Every refusal message is tested | Pass since 2026-10-06; before that it was not met, though this row said "Pass". Every refusal of the scheduler is checked for its message (`tests/test_scheduler.py`). Of the engine's own, the fifth check took out twelve and reworded three with every engine test passing. Now `tools/refusal_audit.py` finds 249 refusals in the code of `src/worldengine`, and each is reached by a test and held by one: with other words in its place a test fails [MEASURED: `handoff/logs/refusal_audit.log`; section 5.4] |
 | A world holding only geometry is identical on a second run | Pass, and identical in two fresh interpreters with different hash seeds |
 | It opens in the viewer through the local server | Pass. Checked in a headless browser (`tools/viewer_check.py`) and by tests of the server's answers |
 
@@ -56,7 +59,7 @@ of the smallest, at every level from 5 to 7; the cells are 240, 120 and 60 km ap
 | Each process meets the fixed pass conditions of its first version | Pass for the conditions that need no Earth data, with one exception since step 2: the dry belt of the north (section 3.1). The conditions that feed a process real inputs are run for four processes (section 4.3) |
 | Its tolerance is recorded | Not done. Section 4.3 gives the misfits measured so far; none is adopted as a tolerance |
 | The two patterns the first version cannot show are measured and recorded as failures | Not measured against ERA5. What the engine's own world shows: no wind reverses with the season, and the sinking air is the same at every longitude |
-| The crust trial meets conditions fixed before it runs | Pass on the default world at both mesh sizes, after one change to how the first condition is measured. Two failures outside the default setting. Section 3.2 gives all of it. You confirmed the decision on 2026-10-04: the crust stays on moving points |
+| The crust trial meets conditions fixed before it runs | Pass on the default world at both mesh sizes, after one change to how the first condition is measured. Outside the default setting three runs fail the second condition, and in four of ten other seeds the first cannot be measured. Section 3.2 gives all of it. You confirmed the decision on 2026-10-04: the crust stays on moving points |
 | explain() returns a chain | Pass |
 | The frozen-region example works in reduced form | Pass (section 3.4) |
 | A place label alone changes no other field | Pass: every other field keeps its fingerprint |
@@ -91,8 +94,8 @@ and the fourth check measured the band] On Earth the land at these latitudes get
 the rain data of section 4.3] The same condition fails in the north on Earth's own relief (section
 4.6), which points at the engine's cold northern land and not at this world's mountains. [INFERRED]
 
-When the condition first failed I reworded the test so that it passed, and the first reviewer of
-step 2 found that. The design's condition is back as the design wrote it
+When the condition first failed I reworded the test so that it passed, and the second review of
+step 2, the engine's, found that. The design's condition is back as the design wrote it
 (`test_the_driest_land_band_between_the_equator_and_60_degrees_lies_between_15_and_40`), marked as an
 expected failure in the north. The rewording is kept beside it under its own name: equatorward of
 50° the driest band lies in the dry belt, with 1.55 and 2.09 times as much rain on the land of the
@@ -224,17 +227,22 @@ changes. Moved to a place without forest, the entry labels nothing and the world
 ## 4. Step 2: water on land
 
 The design's "done when" for step 2: the river and closed-basin tests pass. Section 4.2 holds them
-against the build, and sections 4.3 to 4.6 go further than the design asked, on Earth's own data.
-By that "done when", read strictly, step 2 is not done: one closed-basin test, the Caspian, fails as
-built. I count the step closed with that failure stated. The reasons are in sections 4.4 and 4.5; the
-judgment is mine and yours to overrule.
+against the build. By that "done when", read strictly, step 2 is not done: one closed-basin test,
+the Caspian, fails as built. The design's row for Hydrology also says "River flow data is still to
+be chosen"; I chose 21 gauges, and 13 of them miss. I count the step closed with both stated. The
+judgment is mine and yours to overrule (section 11).
+
+Sections 4.3 to 4.6 hold the two processes against data sets of Earth. Every number in sections 4.2
+to 4.5 was measured again after the fifth check, which changed the water that is poured on Earth's
+relief and what a random settlement of the ties draws (section 5.4). The tables of sections 4.2, 4.4
+and 4.5 are written out of the tools' logs by a script (`handoff/notes_tools/sec4.py`), not typed.
 
 ### 4.1 What was built
 
 | Slot | Stage | Model | What it writes |
 |---|---|---|---|
 | Drainage | geological | Every cell hands its water to its lowest neighbour. The closed hollows are found as a depression hierarchy (Barnes, Callaghan and Wickert 2020): each hollow, its bottom, its pass, the hollow it spills into, and how hollows nest | `flow_receiver`, `depression_id`, `spill_elevation`, `slope`; `drainage_area` and `basin_id`, both as they are with every hollow full; the table `hollows` |
-| Hydrology | climate | In the order the water takes: a snow store with degree-day melt (Hock 2003); the air's demand for water by the Priestley-Taylor rule in the form of Davis et al. 2017; soil water as Manabe's bucket; runoff summed down the flow paths; lakes that spread in closed hollows until their surface loses what arrives, or overflow at their pass (after Fill-Spill-Merge, Barnes, Callaghan and Wickert 2021) | `snow_water`, `snow_cover`, `potential_evapotranspiration`, `soil_moisture`, `runoff`, `runoff_annual`, `river_discharge`, `lake_fraction`, `lake_level`, the table `lakes`; and `evapotranspiration`, its member of the group `moisture_source`, which Moisture reads in the next round |
+| Hydrology | climate | In the order the water takes: a snow store with degree-day melt (Hock 2003); the air's demand for water by the Priestley-Taylor rule, with the constants and the two radiation formulas of Davis et al. 2017, applied to the whole day, which is not the paper's way (section 7, item 14); soil water as Manabe's bucket; runoff summed down the flow paths; lakes that spread in closed hollows until their surface loses what arrives, or overflow at their pass (after Fill-Spill-Merge, Barnes, Callaghan and Wickert 2021) | `snow_water`, `snow_cover`, `potential_evapotranspiration`, `soil_moisture`, `runoff`, `runoff_annual`, `river_discharge`, `lake_fraction`, `lake_level`, the table `lakes`; and `evapotranspiration`, its member of the group `moisture_source`, which Moisture reads in the next round |
 | Soils | climate | A stand-in until step 7: every soil holds 150 mm, Manabe's bucket | `soil_water_capacity` |
 
 Seventeen fields and two tables are new; the world now holds 52 fields. Nothing in them is placed. A
@@ -254,13 +262,15 @@ the most water and goes on from there to that cell's rain; a lake's answer gives
 | The drained areas add up to the land area | Pass, to 1 part in a billion |
 | One basin under even rain: the flow at its mouth is (rain − evaporation) × area | Pass |
 | Water in = water out for every basin | Pass on rough ground with lakes and snow: what falls on each basin goes back to the air or leaves at its mouth |
-| Earth: the Amazon reaches the Atlantic and the Nile the Mediterranean | Pass as built: 203 and 270 km from their mouths, where 600 km was allowed. The Amazon passes however the ties of the relief are settled. The Nile passes in 10 of 20 random settlements, and by a way that is not its valley: its pass is no finding (section 4.4) |
+| Earth: the Amazon reaches the Atlantic and the Nile the Mediterranean | Pass as built: 354 and 270 km from their mouths, where the test allows 600 km, and in each of 20 random settlements of the ties. The Nile meets it by distance alone: between 26° and 30° north the mesh's river runs west of 28.5° east, outside the real valley [UNVERIFIED, from memory: where the real river runs] |
 | Earth: central Asia and the Great Basin are closed | Pass |
-| Earth: the Amazon carries the most water | Pass: the largest flow into the sea is 161,911 m³/s, 142 km from the Amazon's mouth. The Amazon carries 210,000 m³/s [DOCUMENTED: Dai and Trenberth, Table 2] |
-| Earth: the Caspian stays closed | **Fails as built.** As the engine settles ties the lake overflows, by 0.47 km³ of the 669 that reach it in a year. In random settlements of the ties it stays closed in 10 of 20 and in 55 of 100: it stands at the brim of its hollow, and the ties decide whether a little runs over. At each of the five other valley shares tried it stays closed in all of 20 random settlements. What no settlement and no share changes: the lake is two to three times the real sea's size, or more (sections 4.4 and 4.5) |
+| Earth: the Amazon carries the most water | Pass: the largest flow into the sea is 144,605 m³/s, 297 km from the place taken as the Amazon's mouth. The Amazon carries 210,000 m³/s [DOCUMENTED: Dai and Trenberth, Table 2] |
+| Earth: the Caspian stays closed | **Fails as built.** The lake at the Caspian's place overflows by 17.9 km³ a year, of the 590 km³ that rivers and shores bring it. It keeps its water in 1 of 20 random settlements of the ties and in 7 of 100. The water that runs over ends in a second, closed lake of 19,939 km² at 42.2° north, 57.1° east; in none of the 93 settlements of 100 that overflow does it reach the sea. Whether a lake that overflows into a neighbouring closed lake "stays closed" is a question for you (section 11); the test reads the condition as written, and fails |
+| "River flow data is still to be chosen" (the design's row for Hydrology) | I chose 21 gauges (section 4.4). As built 8 of the 21 carry the measured flow within a factor of two, and 13 miss. Whether the gauges belong to the "done when" of step 2 is yours to say (section 11) |
 
-All [MEASURED]: `tests/test_water.py` and `tests/test_water_rules.py` for the first five,
-`tests/test_earth.py` for the rest.
+All [MEASURED]: `tests/test_water.py` and `tests/test_water_rules.py` for the first five, `tests/test_earth.py`
+for the rest; the Earth rows as the water stands since the fifth check (section 4.5: the sea of the mesh at
++1.9 m).
 
 ### 4.3 Earth's data, and the Earth tests
 
@@ -284,53 +294,53 @@ engine never imports. What is still missing: winds and pressure (ERA5), measured
 of climate classes, a map of river basins, relief with its rivers cut in, ocean-floor ages and crust
 thickness.
 
-The grids are coarse beside the mesh. Rain every 2.5° and temperature every 5° are read off between
-grid points at each cell's centre; mountains narrower than that are not in them.
+**The inputs are data sets, not the truth.** The relief is in whole metres on a grid of 9 km. Rain
+every 2.5° and temperature every 5° are read off between grid points at each cell's centre;
+mountains narrower than that are not in them. No data set of snowfall is at hand: the snow handed to
+Hydrology is made by the harness from each month's mean temperature. Where a published figure can be
+set beside it, over the Volga's basin, the snow made is 43 % of the precipitation and the published
+share 30 %, and what the land sheds there follows the snow (section 4.4). [MEASURED for the 43 %;
+DOCUMENTED for the 30 %: Kalugin 2022] Earlier versions of this section said that a test hands a
+process "the truth as its input"; the fifth check found that it does not.
 
-**How the tests are built.** A test hands one process inputs measured on Earth and asks for a pattern
-an atlas shows: given the truth as its input, does the process return the truth? Each condition says
-where it comes from. "The design's" means that the pattern stands in the design document's table of
-tests, which was written and approved before any code: the Amazon reaches the Atlantic, the Caspian
-stays closed. The numbers that make a test of such a pattern (within how many kilometres, by what
-factor) are not in the design; they were chosen when the test was written. "Found, then kept" is
-something a run showed, or a condition written with its result in view; it guards a result and
-proves less. A design condition that the engine fails is not loosened: it stays, marked as an
-expected failure, with the number measured.
+**How the tests are built.** A test hands one process those data and asks for a pattern an atlas
+shows. Each condition says where it comes from. "The design's" means that the pattern stands in the
+design document's table of tests, which was written and approved before any code: the Amazon reaches
+the Atlantic, the Caspian stays closed. The numbers that make a test of such a pattern (within how
+many kilometres, by what factor) are not in the design; they were chosen when the test was written.
+"Found, then kept" is something a run showed, or a condition written with its result in view; it
+guards a result and proves less. A design condition that the engine fails is not loosened: it stays,
+marked as an expected failure, with the number measured.
 
 No number of these tests can be shown to have been set before a run. Every Earth test came into the
-repository together with its first results, and for the 24 river mouths the first commit says "Found,
-then kept" itself. Earlier versions of these notes and of the test file called several conditions
-"set before the run"; the fourth check found that the history bears that out for none of them, and
-the label is gone. [MEASURED: `git log` of `tests/test_earth.py`]
+repository together with its first results. [MEASURED: `git log` of `tests/test_earth.py`] Every
+miss that a test asks about is an expected failure. Their count is not the count of known misses:
+sections 4.4, 4.6 and 8 list misses that no test states, among them the lake at the Caspian's place
+at two and a half to three times the real sea's size, rivers that meet their condition by ways that
+are not their valleys, and the far south of the Earth twin, 7 K too warm.
 
-The second review of step 2 found conditions of mine that had been written after the run and could
-not fail; they are labelled for what they are, and every miss that a test asks about is an expected
-failure. Their count is not the count of known misses: sections 4.4, 4.6 and 8 list misses that no
-test states, among them the lake at the Caspian's place at two and a half to three times the real
-sea's size, three rivers that meet their condition by ways that are not their valleys, and the far
-south of the Earth twin, 7 K too warm.
-
-**What the river tests can show.** Less than I first wrote, and less again than I wrote after the
-third check. The relief data decide most of what the rivers do, before any process runs (section
-4.4). The tests settle the exact ties of the relief twenty times at random beside the engine's own
-way, with everything drawn that the heights leave open; the tool does it a hundred times. A reason
-names a cause only where a tool measures it.
+**What the river tests can show** is little about Drainage (section 4.4). Four things stand between
+the relief data and a river, and none of them is the process under test: closed valleys in the data,
+exact ties of whole metres, my rule for putting the relief on the mesh, and the volume of water
+poured. The tests settle the ties twenty times at random beside the engine's own way; the tool does
+it a hundred times. A reason of an expected failure names a cause only where a tool measures it.
 
 | Process | Fed with | Condition | Where it comes from | Result |
 |---|---|---|---|---|
-| SeaLevel | Earth's relief, the planet file's water | The sea rests within 60 m of Earth's level and covers 69 to 73 % of the planet, as one ocean | The design's pattern; the bounds chosen with the test | Pass: −5 m, 70.3 % |
-| SeaLevel | the same | The Black Sea, the Red Sea and the Baltic are part of the ocean | Stated as misses | **3 fail.** The relief data cut the Black Sea off themselves: on their own grid the lowest way from it to the ocean rises to 2 m. The Red Sea and the Baltic are ocean in the data; their straits are narrower than a cell and closed on the mesh |
-| Drainage | Earth's relief (valley floors: section 4.5) | The design's two conditions for Drainage (section 4.2): the Amazon reaches the Atlantic and the Nile the Mediterranean; central Asia and the Great Basin are closed | The design's patterns; the 600 km chosen with the test | Pass as built. The Nile passes in 10 of 20 random settlements of the ties |
-| Drainage | the same | Each of 24 great rivers leaves the land within 300 km of its real mouth | Found, then kept | As the engine settles ties **16 pass, 8 fail**; in a random settlement 14 to 17 pass. 14 rivers pass in all of 20 settlements, 6 in none, and 4 are decided by the ties: section 4.4 |
-| Hydrology | Earth's relief, rain and warmth | Of the rain on land, 0.50 to 0.75 goes back to the air; 28 to 52 thousand km³ a year reach the sea | The bounds chosen with the test | Pass, at the dry end: 0.735 and 31.7, whatever the ties. Earth: 0.65 and 40 [DOCUMENTED: Trenberth, Fasullo and Mackaro 2011] |
+| SeaLevel | Earth's relief, and the water that the ocean of the relief data holds (1.3376e+18 m³) | The sea rests within 60 m of Earth's level and covers 69 to 73 % of the planet, as one ocean | The design's pattern and the design's water; the bounds chosen with the test | Pass: +1.9 m, 70.75 % |
+| SeaLevel | the same | The Black Sea, the Red Sea and the Baltic are part of the ocean | Stated as misses | **3 fail.** The relief data cut the Black Sea off themselves: on their own grid the lowest way from it to the ocean rises to 2 m. The Red Sea and the Baltic are ocean in the data. On the mesh a cell is sea only if the water covers its mean height: the cell that holds the Red Sea's strait has a mean height of 15.8 m though 65 % of its points are ocean in the data, and the cell that keeps the Baltic apart 2.1 m with 75 %. (I had laid both to straits "narrower than a cell"; the fifth check measured the cells) |
+| Drainage | Earth's relief (valley floors: section 4.5) | The design's two conditions for Drainage (section 4.2) | The design's patterns; the 600 km chosen with the test | Pass as built and in each of 20 random settlements |
+| Drainage | the same | Each of 24 great rivers leaves the land within 300 km of its real mouth | Found, then kept | As built **15 pass, 9 fail**; in a random settlement 13 to 16 pass. 13 rivers pass in all of 20 settlements, 7 in none, and 4 are decided by the ties |
+| Hydrology | Earth's relief, rain and warmth; snow made by the harness | Of the rain on land, 0.50 to 0.75 goes back to the air; 28 to 52 thousand km³ a year reach the sea | The bounds chosen with the test | Pass, at the dry end: 0.738 and 30.7, of 117.2 thousand km³ of rain. A published budget has 0.65 and 40, of 114 [DOCUMENTED: Trenberth, Fasullo and Mackaro 2011] |
 | Hydrology | the same | The largest flow into the sea is the Amazon's, within a factor of two | The design's pattern; the bounds chosen with the test | Pass |
-| Hydrology | the same | Each of 21 great rivers carries, at its last gauging station, the flow measured there within a factor of two | Found, then kept | As the engine settles ties **7 pass, 14 fail**; in a random settlement 6 to 9 pass. 6 rivers pass in all of 20 settlements, 11 in none, and 4 are decided by the ties: section 4.4 |
-| Hydrology | the same | Like for like, the land of the great basins sheds within 15 % of the depth measured | Stated as a miss, after the third check | **Fails: 0.68** of the measured depth, over the 14 basins whose size on the mesh is like the real one's (0.64 without the Amazon, which carries half the weight) |
+| Hydrology | the same | Each of 21 great rivers carries, at its last gauging station, the flow measured there within a factor of two | Found, then kept | As built **8 pass, 13 fail**; in a random settlement 6 to 9 pass. 6 rivers pass in all of 20 settlements, 10 in none, and 5 are decided by the ties |
+| Hydrology | the same | Like for like, the land of the great basins sheds within 15 % of the depth measured | Stated as a miss, after the third check | **Fails: 0.69** of the measured depth, over the 15 basins whose size on the mesh is like the real one's (0.66 without the Amazon, which carries 52 % of the weight) |
 | Hydrology | the same | The Caspian stays closed | The design's | **Fails as built** (section 4.2) |
-| Hydrology | the same | Lakes cover under 4 % of the land | Stated as a miss | **Fails: 6.0 %**. Earth: 3.7 % of its ice-free land, lakes of all sizes [DOCUMENTED at second hand: Verpoorter et al. 2014] |
+| Hydrology | the same | Lakes cover under 4 % of the land | Stated as a miss | **Fails: 6.3 %**. Earth: 3.7 % of its ice-free land, lakes of all sizes [DOCUMENTED at second hand: Verpoorter et al. 2014] |
 | Hydrology | the same | The basin of the Congo holds no great lake | Stated as a miss | **Fails**: a lake of 880,226 km². The relief data close the river's valley |
-| Hydrology | the same | The Black Sea, the Baltic and the Great Lakes come back as lakes near their real size; open water at the Caspian's place loses 0.8 to 1.1 m a year | Found, then kept | Pass: 472,814, 294,490 and 298,119 km²; 1.00 m at the place tested, 0.94 m over the whole lake |
-| Biomes | Earth's rain and warmth | Each of the five main climate groups takes a share of the land within 6 points of Peel, Finlayson and McMahon 2007 | The design asks for more, agreement with the published map; five shares and the 6 points were chosen with the test | Pass: tropical 21.1 (19.0), dry 24.7 (30.2), temperate 13.3 (13.4), cold 26.2 (24.6), polar 14.7 (12.8) |
+| Hydrology | the same | The Black Sea, the Baltic and the Great Lakes come back as lakes near their real size | Found, then kept; the bounds are those of the first version | **2 pass, 1 fails.** The Baltic 265,947 km² at 8 m and the Great Lakes 298,119 km² at 179 m pass. The lake at the Black Sea's place, 612,693 km², stands at 32 m where the test asks for under 30: its outlet cell is 78 % ocean in the data, has a mean height of −5.6 m and is handed to Drainage at 32 m by the valley rule. Before the fifth check's change of the water it stood at 0 m and the test passed |
+| Hydrology | the same | Open water at the Caspian's place loses 0.8 to 1.1 m a year | Found, then kept | Pass: 1.00 m at the place tested, 0.93 m over the whole lake |
+| Biomes | Earth's rain and warmth | Each of the five main climate groups takes a share of the land within 6 points of Peel, Finlayson and McMahon 2007 | The design asks for more, agreement with the published map; five shares and the 6 points were chosen with the test | Pass: tropical 20.9 (19.0), dry 24.9 (30.2), temperate 13.3 (13.4), cold 26.5 (24.6), polar 14.5 (12.8) |
 
 All [MEASURED: `tests/test_earth.py`, on the standard mesh]. The design asks Biomes for agreement with
 the published map cell by cell; five shares are a weaker test, and the map is not at hand.
@@ -340,448 +350,436 @@ and 32.5° south (629 mm). [MEASURED from the rain data and the land mask]
 
 ### 4.4 The great rivers, taken apart
 
-Three tools print every number in this section: `python tools/earth_relief.py`,
-`python tools/earth_rivers.py --settlements 100 --demands` and
-`python tools/earth_rivers.py --trace RIVER`. [MEASURED] `tests/test_earth.py` holds the numbers
-of the engine's own settlement and of 20 random ones, and the lines of the reports that carry
-them. The counts of 100 random settlements are from one run of the tool; no test holds those.
+Three tools print the numbers of this section: `python tools/earth_relief.py`,
+`python tools/earth_rivers.py --settlements 100 --demands` and `python tools/earth_demand.py`; the way
+of one river, cell by cell, is `python tools/earth_rivers.py --trace RIVER`. [MEASURED: the logs of
+these runs on the committed code are in `handoff/logs/`] `tests/test_earth.py` holds the numbers of
+the engine's own settlement and of 20 random ones. The counts of 100 random settlements are from one
+run of the tool; no test holds those. Where this section says what a river does on its way, the
+reason of that river's expected failure in `tests/test_earth.py` says it at length, and a test beside
+it holds its numbers.
 
-**What I had wrong.** Two checks took my accounts of this section apart, with measurements of
-their own. I have repeated each measurement with tools of mine, and they hold.
+Three checks took earlier accounts of this section apart (sections 5.2 to 5.4). What they left is
+below. It says less than the accounts it replaces: numbers and what was measured, and a cause only
+where a tool measures one.
 
-The third check:
+**1. Four things decide where these rivers run, and none is Drainage.**
 
-* I laid six closed valleys to the mesh: "narrows narrower than a cell are closed at 60 km". Five of
-  the six are closed in the relief data themselves, on their grid of 9 km.
-* I wrote that on plains "the rule of the lowest neighbour takes a river across ground that is a
-  little lower". The ground was not lower. It was exactly as high, and the cell numbers chose.
-* I wrote that the land sheds too much in cold, wet plains, and that this is why the lake at the
-  Caspian's place is too large. The comparison set unlike areas side by side. Like for like the land
-  sheds too little in ten basins of fourteen, and 0.68 of the measured depth over all of them.
-
-The fourth check, of the account I wrote after the third:
-
-* I gave the shortfall a measured cause: the demand for water "1.31 times too high over land with one
-  share of sunshine", with clouds as the mend. That was not measured. The table it rested on puts the
-  sunlight at the ground within half a percent of the published figure, a cut of the demand with
-  another cause fits as well, and neither cut mends the single basins (below, "What the land sheds").
-* I counted in how many of 20 random settlements of the ties each river passes, and wrote "every time"
-  and "never". The random settlements drew two of the four things that settle a tie between passes
-  and left the other two as the engine has them. With all of it drawn, rivers that "never" passed
-  pass half the time (below, point 2).
-* I wrote of the Volga that "a fifth of the excess is the model's [MEASURED]". The source gives the
-  river's runoff twice, and the two figures do not agree. On the other one the model's part is nothing.
-* I laid the sixth closed valley, the St Lawrence's, to the width of a cell. It is closed by my own
-  rule for putting the relief on the mesh (below, point 3).
-
-What follows replaces those accounts.
-
-**1. The relief data hold closed hollows of their own.** On ETOPO5's own grid, with water raised from
-the ocean over everything else, 13.3 % of all that is not ocean lies under water when every hollow
-is full. On the mesh, with the valley rule of section 4.5, it is 10.2 %, and another 3.6 % of the
-land lies exactly level with that water: the mesh does not add hollows to Earth's relief on the
-whole. Of the mesh's twelve lakes larger than 100,000 km², eleven lie in hollows that the data hold
-as well; at five of the eleven the data's own hollow is a half to a fifth of the mesh's lake in
-size. [MEASURED: the eleven by `tools/earth_relief.py`; the sizes by the fourth check] Some of those
-hollows are real: the Caspian, the Black Sea, and the Great Lakes, whose beds the data
-give. Others are not: the basins of the Congo, the Amazon and the Danube, the West Siberian plain and
-the lowlands of the Amur and the Lena hold no such lakes on Earth. [MEASURED that the data hold the
-hollows; UNVERIFIED, from memory, which of them are real] The six narrows:
+*The relief data hold closed hollows and closed valleys of their own.* On ETOPO5's own grid
+13.3 % of all that is not ocean lies under water when every hollow of the data is full. On the
+mesh, with the valley rule of section 4.5, it is 10.5 %, and another 3.7 % of the land lies exactly
+level with that water. Of the mesh's 12 lakes larger than 100,000 km², 11 have their lowest point
+in a hollow that the data hold as well. [MEASURED: `tools/earth_relief.py`, parts 2 and 4] Six narrows
+of great rivers:
 
 | Narrows | In the data: the river above stands at | its valley rises to | joined to the ocean, by any way, at | On the mesh: the valley rises to | the lake above stands at |
 |---|---|---|---|---|---|
 | Congo, Bolobo to Kinshasa | 274 m | 610 m | 457 m | 518 m | 457 m |
-| Danube, the Iron Gate | 98 m | 317 m | 317 m | 208 m | 177 m |
+| Danube, the Iron Gate | 98 m | 317 m | 317 m | 208 m | 208 m |
 | Lena, Zhigansk to the delta | 91 m | 152 m | 152 m | 137 m | 122 m |
 | Amur, below Komsomolsk | 76 m | 213 m | 122 m | 137 m | 107 m |
-| Yangtze, the Three Gorges | 404 m | 945 m | 823 m | 762 m | 381 m |
-| St Lawrence, below Quebec | open to the sea | | | 204 m | 102 m |
+| Yangtze, the Three Gorges | 404 m | 945 m | 823 m | 762 m | 396 m |
+| St Lawrence, below Quebec | open to the sea | |  | 204 m | 102 m |
 
-Five of the six are closed before the mesh sees them. A mesh of another spacing would be handed the
-same closed valleys by these data. [INFERRED: not tried on another mesh. On this one the valley rule
-lowers all five barriers, the Congo's from 610 to 518 m. At a valley share of 0.02 it brings the
-Congo's down to 457 m, the level of the lake above it, and the ties then decide whether the river
-takes its valley: section 4.5] Relief made for hydrology has its rivers cut in beforehand. [UNVERIFIED:
-recalled; I know of such data sets but opened none] Nothing of the kind is among the four files.
+5 of the six are closed in the data, before the mesh sees them. [MEASURED: `tools/earth_relief.py`,
+part 3] Relief made for hydrology has its rivers cut in beforehand. [UNVERIFIED: recalled; I know of
+such data sets and opened none] Nothing of the kind is among the four files.
 
-**2. The heights tie, and ties decide where rivers go.** ETOPO5 is in whole metres, and 48 % of its
-land lies in steps of 100 feet. On the mesh 17,454 of 48,733 land cells have a land neighbour at
-exactly their own height; 91 m is the height of 1,543 cells and 61 m of 1,257. Where two ways are
-exactly equal the rule of the lowest neighbour cannot choose, and the data cannot say which is
-right. Of the 42,980 land cells that have a lower neighbour, 9,869 have several equally low: the
-lower bed settles 3,296 of those, the wider way 6,521 and the order of the cells 52. Another 5,063
-cells lie on level ground.
+*The heights tie.* ETOPO5 is in whole metres, and 48 % of its land lies in steps of 100 feet. On
+the mesh 16,510 of 47,962 land cells have a land neighbour at exactly their own height. Of the
+42,657 land cells that have a lower neighbour, 9,641 have several equally low: the lower bed
+settles 3,341 of those, the wider way 6,249 and the order of the cells 51. Another 4,578 cells
+lie on level ground. With the wider way left out, the water of 14.9 % of the land reaches the sea
+in another cell; with the order of the cells turned round, of 0.04 %. [MEASURED: `tools/earth_relief.py`,
+part 1] Where two ways are exactly equal the data cannot say which is right, and the engine's rule
+(the lower bed, then the wider way: section 7, item 20) claims no knowledge of the ground. As the
+engine settles ties is one settlement among many. So the ties are also settled at random. A random
+settlement draws four things: the width of every way, the order of the cells, which of several
+passes of one height is taken, and the order in which level ground is drained. It does not draw
+the way across the water of a full hollow, which decides the cells the water passes and not where
+it leaves. A count of draws bounds little: "in none of 20" rules out only what comes more often than
+about one time in seven. [Twice a check found that "in all" and "in none" had been counted over
+draws that left a step out: the fourth, the choice among passes; the fifth, level ground.]
 
-Until the third check such a tie went to the lower bed and then to the lower cell number. After the
-bed it now goes to the wider way, the longer boundary between two cells (section 7, item 20). That
-is no truer than the cell number. Its one merit is that it does not change when the cells are
-numbered otherwise; what it leaves open, images of one boundary and level ground, still goes to the
-order of the cells. [MEASURED by the fourth check: under a random renumbering the receivers of 525
-to 627 land cells on level floors change, and no mouth, gauge or total moves] The measure of how
-much ties matter: with the wider way left out again, the water of 15.5 % of the land reaches the
-sea in another cell; with the order of the cells turned round, of 0.03 %.
+*The valley rule* (section 4.5) hands Drainage the floor of each cell's valleys and leaves out the
+water in a cell. A cell is sea on the mesh if the poured water covers its mean height; a cell that
+holds an arm of the sea between high shores is therefore land, and is handed in at the height of its
+shores. Two of the cells that hold the St Lawrence's estuary below Quebec are such cells: 62 % and
+32 % of their points are ocean in the data, and they come in at 162 and 204 m. Of the land cells, 3,418
+are a tenth or more ocean in the data; 2,956 of those come in above 10 m and 1,125 above 100 m. The
+same rule raises the lakes that stand for the Black Sea and the Baltic; and the Gulf of Ob, which is
+ocean in the data, is not sea on the mesh. [MEASURED: `tests/test_earth.py`, the test of the estuary and the test of the seas
+behind straits]
 
-As the engine settles ties is therefore one settlement among many, with no better claim to be
-Earth's than another. So the ties are also settled at random: every way draws its width, every cell
-its place in the order, and among passes of one height any may be taken. A result counts as a
-finding only if the draws agree with the engine's settlement. A count of draws bounds little: "in
-none of 20" rules out only what comes more often than about one time in seven.
+*The water poured* sets the level of the mesh's sea, and with it which cells are land, which points
+of a cell the valley rule counts, and where a river "leaves the land". Section 4.5 gives what a
+volume 0.19 % smaller decides.
+
+**2. What the ties decide.**
 
 | Outcome | As the engine settles ties | In 20 random settlements | In 100 |
 |---|---|---|---|
-| River mouths within 300 km, of 24 | 16 | 14 to 17 | 14 to 17 |
-| … rivers that pass in all, in none, in some | | 14, 6, 4 | 14, 6, 4 |
-| The Nile's mouth | 270 km: passes | passes in 10 | in 64 |
-| The Yangtze's mouth | 60 km: passes | in 6 | in 38 |
-| The Yenisei's mouth | 350 km: fails | in 1 | in 3 |
-| The Huang He's mouth | 1,261 km: fails | in 14 | in 56 |
-| Gauges within a factor of two, of 21 | 7 | 6 to 9 | 6 to 9 |
-| … rivers that pass in all, in none, in some | | 6, 11, 4 | 6, 11, 4 |
-| The Orinoco at its gauge (984 km³ measured) | 355 km³: fails | 350 to 606 km³; passes in 2 | 348 to 606; in 9 |
-| The Yenisei at its gauge (577 km³) | 77 km³: fails | 73 to 810; in 3 | 71 to 847; in 14 |
-| The Ob at its gauge (397 km³) | 604 km³: passes | 29 to 599; in 1 | 26 to 605; in 6 |
-| The St Lawrence at its gauge (226 km³) | 470 km³: fails | 213 to 477; in 11 | 213 to 477; in 52 |
-| The lake at the Caspian's place | overflows, by 0.47 km³ a year | closed in 10; overflows by up to 6.0 km³ | closed in 55; by up to 8.7 km³ |
-| … its size | 1.11 million km² at 61 m | 1.08 to 1.11 million km² at 54 to 61 m | the same |
-| Like for like, engine over measured | 0.68 | 0.64 to 0.70 | 0.63 to 0.72 |
-| Rain on land that goes back to the air | 0.7352 | 0.7347 to 0.7352 | 0.7347 to 0.7353 |
-| Rivers reaching the sea, thousand km³ | 31.72 | 31.72 to 31.77 | 31.71 to 31.77 |
-| Land under lakes | 6.02 % | 5.99 to 6.03 % | 5.99 to 6.03 % |
+| River mouths within 300 km, of 24 | 15 | 13 to 16 | 13 to 16 |
+| … rivers that pass in all, in none, in some | | 13, 7, 4 | 13, 7, 4 |
+| The Yangtze's mouth | 60 km: passes | passes in 12 | in 54 |
+| The Lena's mouth | 206 km: passes | passes in 13 | in 58 |
+| The Yenisei's mouth | 398 km: fails | passes in 1 | in 3 |
+| The Huang He's mouth | 1215 km: fails | passes in 13 | in 43 |
+| Gauges within a factor of two, of 21 | 8 | 6 to 9 | 5 to 9 |
+| … rivers that pass in all, in none, in some | | 6, 10, 5 | 5, 10, 6 |
+| The Orinoco at its gauge (984 km³ measured) | 356 km³: fails | 351 to 606; passes in 2 | 349 to 606; in 9 |
+| The Brahmaputra at its gauge (613 km³ measured) | 348 km³: passes | 247 to 338; passes in 2 | 247 to 478; in 16 |
+| The Yenisei at its gauge (577 km³ measured) | 77 km³: fails | 73 to 816; passes in 2 | 71 to 851; in 9 |
+| The Parana at its gauge (476 km³ measured) | 480 km³: passes | 477 to 514; passes in 20 | 10 to 514; in 98 |
+| The Ob at its gauge (397 km³ measured) | 598 km³: passes | 28 to 589; passes in 1 | 28 to 611; in 4 |
+| The St Lawrence at its gauge (226 km³ measured) | 470 km³: fails | 214 to 477; passes in 11 | 214 to 477; in 52 |
+| The lake at the Caspian's place | overflows by 17.9 km³ a year | keeps its water in 1 of 20; overflows by up to 23.4 km³ | keeps its water in 7 of 100; by up to 24.5 km³ |
+| … its size | 1.09 million km² at 61 m | 1.07 to 1.09 million km² at 60 to 61 m | 1.07 to 1.12 million km² at 60 to 61 m |
+| … where the water that runs over ends | in a closed lake | in the sea in 0 of the 19 that overflow | in the sea in 0 of 93 |
+| Like for like, engine over measured | 0.69 | 0.65 to 0.71 | 0.65 to 0.73 |
+| Rain on land that goes back to the air | 0.7385 | 0.7380 to 0.7385 | 0.7380 to 0.7385 |
+| Rivers reaching the sea, thousand km³ | 30.66 | 30.66 to 30.72 | 30.65 to 30.72 |
+| Land under lakes | 6.28 % | 6.25 to 6.28 % | 6.25 to 6.29 % |
 
-Eight outcomes turn on the ties: four mouths and four gauges. Three of them pass as the engine
-settles ties (the Nile's and the Yangtze's mouths, the Ob's gauge) and five fail, and none of the
-eight is a finding. The Ob passes as built and in 6 random settlements of 100. The Huang He's mouth
-and the St Lawrence's gauge fail as built and pass in more than half. The two columns of counts
-disagree with each other as well: the Nile passes in 10 of the first 20 draws and in 64 of 100. The
-totals of the land hardly depend on ties at all.
+[MEASURED: `tools/earth_rivers.py --settlements 20` and `--settlements 100`, part 7] An outcome that
+changes with the settling is decided by the ties and not by anything measured: as built it is no
+finding either way. That holds for 4 mouths and 6 gauges in this table. The totals of the
+land hardly depend on the ties.
 
-Until the fourth check the random settlements drew the widths and the order and left the choice
-among passes of one height as the engine makes it: the pass whose lower cell lies lowest. That
-choice is where a single cell's water would go when the lower cell is the far side of the pass.
-When it is the hollow's own cell, the choice is no truer than any other: on Earth's relief 47 of
-1,034 hollows then take a pass across a far cell level with the water, where a pass of the same
-height led down. [MEASURED by the fourth check] With that step left as it was, the counts of 20 read
-19, 6, 0 and 2 for the four mouths and 0, 6, 7 and 0 for the four gauges, and I wrote that the St
-Lawrence and the Orinoco fail "in every settlement".
+**3. Where the rivers leave the land.** As built, 9 of 24 great rivers leave the land more than 300 km
+from their real mouths.
 
-**3. The valley rule lowers divides and raises drowned valleys.** Section 4.5 hands Drainage the
-floor of each cell's valleys. A cell that holds a shore and a range is then handed in at the height
-of the shore: 2,078 of the 4,646 coastal land cells come in at 1 m or lower, and 69 of those have a
-mean height above 300 m. The Danube shows what follows. The plain above the Iron Gate fills to 177 m
-and overflows to the Adriatic through a coastal cell whose mean height is 544 m and which came in at
-0 m.
+| River | Leaves the land, as built | In 20 random settlements: from, to; within 300 km in | In 100 | What was measured beside it |
+|---|---|---|---|---|
+| Amazon | 354 km | 354 to 354 km; 0 | 354 to 354 km; 0 | The mesh's sea reaches up the estuary: the sea cell that takes the river lies 297 km from the place taken as the mouth. Under the planet file's water, 0.19 % less, the river left the land 203 km from it: the water poured decides this one |
+| Congo | 603 km | 603 to 668 km; 0 | 603 to 668 km; 0 | The data close its valley (table above). The basin fills as a lake to 457 m and overflows westward |
+| Ob | 586 km | 581 to 631 km; 0 | 581 to 804 km; 0 | The Gulf of Ob is ocean in the data and not sea on the mesh; the river comes within 71 km of its mouth at the head of the gulf and runs on across a full hollow |
+| Danube | 579 km | 579 to 579 km; 0 | 579 to 579 km; 0 | The river passes the Iron Gate and ends in the lake at the Black Sea's place, 203 km from its mouth at the nearest. The data cut the Black Sea off, and the condition follows the lake's water on to the Dardanelles |
+| Yenisei | 398 km | 294 to 398 km; 1 | 153 to 398 km; 3 | The ties decide, mostly against the river: it leaves the land with the Ob |
+| Volga | 1,865 km | 1,865 to 1,865 km; 0 | 1,865 to 1,865 km; 0 | The river of a closed sea. The condition follows the water on as if every hollow were full, and cannot be met as I wrote it |
+| St Lawrence | 1,090 km | 1,090 to 1,090 km; 0 | 1,090 to 1,090 km; 0 | The valley rule closes the estuary (below). The lake above overflows southward |
+| Amur | 1,290 km | 1,290 to 1,290 km; 0 | 1,290 to 1,290 km; 0 | The data close the lower valley (table above). The lowland's water leaves south, to the Sea of Japan |
+| Huang He | 1,215 km | 203 to 1,215 km; 13 | 203 to 7,570 km; 43 | The ties decide, and the engine's settlement gives the rarer outcome of the 20, though not of the 100 |
 
-The rule's other side closes the St Lawrence. A cell is sea on the mesh if its mean height lies
-below the sea. A cell that holds an arm of the sea between high shores is therefore land, and the
-rule gives it the height below which a tenth of its points above the sea lie: the water in it is
-left out. Two of the cells that hold the estuary below Quebec are such cells: 62 % and 32 % of their
-points are ocean in the data, their mean heights are 175 and 235 m, and they come in at 162 and
-204 m. Of the 48,733 land cells, 3,951 are a tenth or more ocean in the data; 1,240 of those come in
-above 10 m and 590 above 100 m. With every point of a cell counted instead, the estuary is open and
-the river leaves the land 32 km from its real mouth. That reading is no better rule: it lays 4,008
-land cells at or below the sea's level, where the rule as built lays 388, floods 11.5 % of the land,
-and brings 15 great rivers within 300 km of their mouths where the rule as built brings 16.
-[MEASURED: `tests/test_earth.py`; the fourth check found it]
+The condition asks where the water leaves the land, not by which way, so a pass says less than it
+seems to. The Nile passes by distance alone, by a way west of its valley (section 4.2). Two rivers
+pass by less than 10 km in every settlement: the Mississippi at 295 km and the Mekong at 292.
+[MEASURED: part 3 of the tool; the ways by `--trace`]
 
-**Where the rivers leave the land.** As the engine settles ties, eight of 24 great rivers leave the
-land more than 300 km from their real mouths.
-
-| River | Distance | In 100 random settlements | What was measured |
-|---|---|---|---|
-| Congo | 603 km | 603 to 738 km; within 300 km in none | The data close its valley (table above). The basin fills as a lake of 880,226 km² to 457 m and overflows westward, to the sea at 1.5° south |
-| Danube | 1,212 km | 1,171 to 1,212 km; in none | The data close the Iron Gate. The plain above it overflows to the Adriatic, through the lowered divide described above |
-| Amur | 1,274 km | up to 1,290 km; in none | The data close the lower river, and join the lowland above it to the ocean by a way south. On the mesh the water leaves south, to the Sea of Japan |
-| St Lawrence | 1,090 km | the same; in none | The valley rule closes the estuary (point 3). The lake above it overflows south, by Lake Champlain and the Hudson |
-| Ob | 633 km | 633 to 734 km; in none | The river reaches the head of its estuary, 28 km from its real mouth, and runs on. The Gulf of Ob is ocean in the data, 3 to 13 m deep; the cells that hold it and its shores have mean heights of −7 to 8 m, and the mesh's sea stands at −5.3 m. On the mesh the gulf is a lake, and the river follows it to its seaward end |
-| Yenisei | 350 km | 246 to 350 km; in 3 | The ties decide, mostly against the river. Near 66° north it leaves its valley, runs west over ground that is level at 30 m, and joins the Ob in its estuary |
-| Huang He | 1,261 km | 64 to 7,570 km; in 56 | The ties decide, and the engine's settlement gives the rarer outcome. As built its way crosses 48 cells under the water of full hollows and 4 of level ground |
-| Volga | 1,865 km | the same; in none | Not a fault of relief or mesh. The Volga ends in a closed sea, and this condition follows the water on as if every hollow were full. A river of a closed sea cannot meet it as I wrote it |
-
-The condition asks where the water leaves the land, not by which way. Three rivers that pass do so
-by ways that are not their valleys. The Nile leaves its valley near 22° north, crosses the hollows of
-the Western Desert and reaches the coast 270 km west of the delta. The Yangtze passes south of the
-Three Gorges, over a divide. The Lena leaves through a lake that overflows west of its delta. A pass
-of this condition says less than it seems to.
-
-**What the rivers carry.** The engine's flow at a gauge is the land whose water reaches it, times
+**4. What the rivers carry.** The engine's flow at a gauge is the land whose water reaches it, times
 what that land sheds, less what lakes on the way lose, less what a closed lake in the gauge's own
-cell keeps. Each part is worked out by itself. The books of all 21 gauges close to within 0.00003
-km³ a year, and those of every cell of the mesh to 6 parts in 100 million. Areas are in thousand
-km², flows in km³ a year, depths in mm a year. Rivers in bold miss by more than a factor of two as
-the engine settles ties.
+cell keeps. The books of all 21 gauges close to within 0.00001 km³ a year, and those of every cell
+of the mesh to 6 parts in 100 million. Areas are in thousand km², flows in km³ a year, depths
+in mm a year. Rivers in bold miss by more than a factor of two as built.
 
-| River | Flow measured | Flow, engine | Within a factor of two in, of 20 | of 100 | Basin on Earth | Land that reaches the gauge on the mesh | Shed, measured | Shed, engine | Lakes on the way lose |
-|---|---|---|---|---|---|---|---|---|---|
-| Amazon | 5,330 | 4,515 | 20 | 100 | 4,619 | 5,921 | 1,154 | 814 | 306 |
-| Mississippi | 536 | 482 | 20 | 100 | 2,896 | 2,396 | 185 | 211 | 25 |
-| Paraná | 476 | 480 | 20 | 100 | 2,346 | 2,987 | 203 | 168 | 23 |
-| Ob | 397 | 604 | 1 | 6 | 2,430 | 2,865 | 163 | 244 | 96 |
-| Ganges | 382 | 273 | 20 | 100 | 952 | 507 | 401 | 578 | 20 |
-| Columbia | 172 | 117 | 20 | 100 | 614 | 484 | 280 | 303 | 29 |
-| Rhine | 73 | 84 | 20 | 100 | 180 | 187 | 406 | 477 | 5 |
-| **Congo** | 1,271 | 8 | 0 | 0 | 3,475 | 50 | 366 | 250 | 4 |
-| **Orinoco** | 984 | 355 | 2 | 9 | 836 | 563 | 1,177 | 704 | 41 |
-| **Yangtze** | 910 | 127 | 0 | 0 | 1,705 | 839 | 534 | 187 | 29 |
-| **Brahmaputra** | 613 | 273 | 0 | 0 | 555 | 507 | 1,105 | 578 | 20 |
-| **Yenisei** | 577 | 77 | 3 | 14 | 2,440 | 201 | 236 | 395 | 2 |
-| **Lena** | 526 | 11 | 0 | 0 | 2,430 | 278 | 216 | 42 | 1 |
-| **Amur** | 312 | 26 | 0 | 0 | 1,730 | 100 | 180 | 317 | 6 |
-| **Mekong** | 292 | 143 | 0 | 0 | 545 | 275 | 536 | 559 | 11 |
-| **Mackenzie** | 288 | 115 | 0 | 0 | 1,660 | 1,740 | 173 | 88 | 37 |
-| **St Lawrence** | 226 | 470 | 11 | 52 | 774 | 1,244 | 292 | 443 | 81 |
-| **Danube** | 202 | 24 | 0 | 0 | 807 | 145 | 250 | 181 | 2 |
-| **Zambezi** | 105 | 11 | 0 | 0 | 940 | 233 | 112 | 71 | 6 |
-| **Indus** | 89 | 0 | 0 | 0 | 975 | 69 | 91 | 0 | 0 |
-| **Niger** | 33 | 5 | 0 | 0 | 1,516 | 116 | 22 | 78 | 4 |
+| River | Flow measured | Flow, engine | Within a factor of two in, of 20 | of 100 | Basin on Earth | Land that reaches the gauge on the mesh | … with every hollow full | Shed, measured | Shed, engine | Lakes on the way lose |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Amazon | 5,330 | 4,519 | 20 | 100 | 4,619 | 5,921 | 5,921 | 1,154 | 815 | 306 |
+| Brahmaputra | 613 | 348 | 2 | 16 | 555 | 565 | 903 | 1,105 | 652 | 21 |
+| Mississippi | 536 | 482 | 20 | 100 | 2,896 | 2,396 | 2,431 | 185 | 212 | 25 |
+| Parana | 476 | 480 | 20 | 98 | 2,346 | 3,010 | 3,387 | 203 | 168 | 26 |
+| Ob | 397 | 598 | 1 | 4 | 2,430 | 2,853 | 3,242 | 163 | 243 | 96 |
+| Ganges | 382 | 348 | 20 | 100 | 952 | 565 | 903 | 401 | 652 | 21 |
+| Columbia | 172 | 117 | 20 | 100 | 614 | 484 | 884 | 280 | 303 | 29 |
+| Rhine | 73 | 82 | 20 | 100 | 180 | 184 | 184 | 406 | 477 | 5 |
+| **Congo** | 1,271 | 8 | 0 | 0 | 3,475 | 50 | 50 | 366 | 250 | 4 |
+| **Orinoco** | 984 | 356 | 2 | 9 | 836 | 563 | 563 | 1,177 | 705 | 41 |
+| **Yangtze** | 910 | 128 | 0 | 0 | 1,705 | 839 | 1,567 | 534 | 187 | 29 |
+| **Yenisei** | 577 | 77 | 2 | 9 | 2,440 | 201 | 201 | 236 | 395 | 2 |
+| **Lena** | 526 | 4 | 0 | 0 | 2,430 | 32 | 32 | 216 | 130 | 0 |
+| **Amur** | 312 | 26 | 0 | 0 | 1,730 | 100 | 100 | 180 | 317 | 6 |
+| **Mekong** | 292 | 143 | 0 | 0 | 545 | 275 | 275 | 536 | 559 | 11 |
+| **Mackenzie** | 288 | 116 | 0 | 0 | 1,660 | 1,740 | 1,770 | 173 | 88 | 37 |
+| **St Lawrence** | 226 | 470 | 11 | 52 | 774 | 1,244 | 1,244 | 292 | 443 | 81 |
+| **Danube** | 202 | 66 | 0 | 0 | 807 | 650 | 650 | 250 | 293 | 124 |
+| **Zambezi** | 105 | 11 | 0 | 0 | 940 | 233 | 2,016 | 112 | 71 | 6 |
+| **Indus** | 89 | 0 | 0 | 0 | 975 | 95 | 1,397 | 91 | 0 | 0 |
+| **Niger** | 33 | 5 | 0 | 0 | 1,516 | 116 | 27 | 22 | 78 | 4 |
 
-The measured flows and basins are [DOCUMENTED: Dai and Trenberth, Table 2, the columns of the station.
-A page reader gave me the rows; the areas were read out twice, and the two readings agree]. The rule
-takes the largest flow within 150 km of the station. For the Ganges that is the mesh's Brahmaputra:
-the cell taken lies 138 km from the Ganges's station, and the two stations lie 179 km apart. No cell
-within 150 km of the Indus's station carries any water; the row gives the cell that the most land
-drains to with every hollow full, which 69 thousand km² reach as the water runs, shedding nothing.
+The measured flows and basins are [DOCUMENTED: Dai and Trenberth, Table 2, the columns of the
+station. A page reader gave me the rows; the areas were read out twice, and the two readings agree].
+The rule takes the largest flow within 150 km of the station. For the Ganges and the Brahmaputra
+that is one and the same cell of the mesh: it lies 138 km from the Ganges's station. No cell within
+150 km of the Indus's station carries any water; the row gives the cell that the most land drains to
+with every hollow full. [MEASURED: part 1 of the tool]
 
-The fourteen that miss as the engine settles ties, by what was measured:
+I give no cause for a gauge's miss here. An earlier version sorted the misses into "the data close
+the valley", "the ties decide", "closed lakes keep the water" and "the land sheds too little". The
+fifth check showed that the sorting claimed more than was tested: with the Congo's valley open (a
+valley share of 0.02) its gauge still misses, the Yangtze's basin sheds 0.22 of the measured depth
+like for like, and the Lena's 0.42 in the 33 of 100 settlements in which its basin is alike. What was measured beside each miss is in its reason in the test file.
 
-* **The data close the valley** (five): the Congo, the Lena, the Amur, the Danube and the Yangtze.
-  The first four leave by another way; the Yangtze's Sichuan basin keeps its water as a closed lake.
-* **The ties decide** (three): the Yenisei, the Orinoco and the St Lawrence, which pass in 14, 9 and
-  52 of 100 random settlements. The Mekong may belong here: 7 of the 21 land cells on its way lie on
-  level ground and it carries 31 to 143 km³ over the random settlements, but it passes in none. Its
-  cause is not established.
-* **Closed lakes upstream keep the water** (three): the Niger, the Zambezi and the Indus. With every
-  hollow full their basins are of the right order or larger, and the climate the engine gives them
-  never fills the hollows. The land sheds too little there (below), so these are misses of the
-  water as much as of the relief.
-* **The land sheds too little** (two): the Brahmaputra and the Mackenzie, whose basins are nearly
-  right. For the Brahmaputra the rain handed in may be at fault as much as the model (below).
-
-**What the land sheds, like for like.** The table above mixes two things: where the mesh runs the
+**5. What the land sheds, like for like.** The table above mixes two things: where the mesh runs the
 rivers, and what the land sheds. To see the second alone, take for each gauge the mesh's own river
 there, the cell within 150 km whose basin with every hollow full is nearest the real one in size,
-and keep the basins within a factor of 1.5 of the real area. Fourteen are alike as the engine
-settles ties. "Alike" here means near the gauge and alike in size. Whether the mesh's basin covers
-the same land as the real one I could not check, because no map of the real basins is among the
-data at hand: a basin of the right size may still take in a neighbour's land and leave out some of
-its own. [UNVERIFIED: that the fourteen cover the land of their real basins] The Brahmaputra, alike
-in 22 of 100 random settlements, and the Ob, in 6, show how loosely the mesh holds some of them.
+and keep the basins within a factor of 1.5 of the real area. 15 are alike as built. "Alike" means
+near the gauge and alike in size. Whether the mesh's basin covers the same land as the real one I
+could not check: no map of the real basins is among the data. [UNVERIFIED: that they cover the land
+of their real basins]
 
-| River | Basin on Earth | On the mesh | Rain handed in | Shed, measured | Shed, engine | Engine over measured | Measured runoff over the rain handed in | Alike in, of 20 | of 100 |
-|---|---|---|---|---|---|---|---|---|---|
-| Amazon | 4,619 | 5,154 | 2,339 | 1,154 | 828 | 0.72 | 0.49 | 20 | 100 |
-| Orinoco | 836 | 563 | 2,080 | 1,177 | 704 | 0.60 | 0.57 | 19 | 96 |
-| Yangtze | 1,705 | 1,567 | 1,151 | 534 | 115 | 0.21 | 0.46 | 20 | 100 |
-| Brahmaputra | 555 | 735 | 1,013 | 1,105 | 257 | 0.23 | 1.09 | 3 | 22 |
-| Mississippi | 2,896 | 2,431 | 947 | 185 | 208 | 1.13 | 0.20 | 20 | 100 |
-| Paraná | 2,346 | 3,134 | 1,228 | 203 | 158 | 0.78 | 0.17 | 20 | 100 |
-| Ob | 2,430 | 3,176 | 568 | 163 | 207 | 1.27 | 0.29 | 1 | 6 |
-| Ganges | 952 | 967 | 1,045 | 401 | 231 | 0.57 | 0.38 | 20 | 100 |
-| St Lawrence | 774 | 1,012 | 1,005 | 292 | 423 | 1.45 | 0.29 | 9 | 48 |
-| Mackenzie | 1,660 | 1,690 | 426 | 173 | 88 | 0.51 | 0.41 | 20 | 100 |
-| Columbia | 614 | 515 | 437 | 280 | 91 | 0.32 | 0.64 | 20 | 100 |
-| Niger | 1,516 | 1,135 | 312 | 22 | 8 | 0.37 | 0.07 | 20 | 100 |
-| Indus | 975 | 1,301 | 464 | 91 | 12 | 0.13 | 0.20 | 20 | 100 |
-| Rhine | 180 | 178 | 1,118 | 406 | 479 | 1.18 | 0.36 | 20 | 100 |
+| River | Basin on Earth | On the mesh | Rain handed in | Of it snow, as the harness makes it | Shed, measured | Shed, engine | Engine over measured | Measured runoff over the rain handed in | Alike in, of 20 | of 100 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Amazon | 4,619 | 5,154 | 2,339 | 0.00 | 1,154 | 828 | 0.72 | 0.49 | 20 | 100 |
+| Orinoco | 836 | 563 | 2,080 | 0.00 | 1,177 | 705 | 0.60 | 0.57 | 19 | 96 |
+| Yangtze | 1,705 | 1,567 | 1,151 | 0.01 | 534 | 115 | 0.22 | 0.46 | 20 | 100 |
+| Brahmaputra | 555 | 735 | 1,013 | 0.04 | 1,105 | 257 | 0.23 | 1.09 | 3 | 22 |
+| Mississippi | 2,896 | 2,431 | 947 | 0.09 | 185 | 209 | 1.13 | 0.20 | 20 | 100 |
+| Parana | 2,346 | 3,134 | 1,228 | 0.00 | 203 | 159 | 0.78 | 0.17 | 20 | 98 |
+| Ob | 2,430 | 3,176 | 568 | 0.41 | 163 | 207 | 1.27 | 0.29 | 1 | 4 |
+| Ganges | 952 | 967 | 1,045 | 0.01 | 401 | 231 | 0.58 | 0.38 | 20 | 100 |
+| St Lawrence | 774 | 1,012 | 1,005 | 0.28 | 292 | 423 | 1.45 | 0.29 | 9 | 48 |
+| Mackenzie | 1,660 | 1,690 | 426 | 0.35 | 173 | 88 | 0.51 | 0.41 | 20 | 100 |
+| Columbia | 614 | 515 | 437 | 0.33 | 280 | 91 | 0.32 | 0.64 | 20 | 100 |
+| Danube | 807 | 650 | 902 | 0.12 | 250 | 293 | 1.17 | 0.28 | 20 | 100 |
+| Niger | 1,516 | 1,135 | 312 | 0.00 | 22 | 8 | 0.37 | 0.07 | 20 | 100 |
+| Indus | 975 | 1,301 | 464 | 0.09 | 91 | 12 | 0.13 | 0.20 | 20 | 100 |
+| Rhine | 180 | 178 | 1,118 | 0.11 | 406 | 479 | 1.18 | 0.36 | 20 | 100 |
 
-All fourteen together, the engine's land sheds **0.68** of the depth measured, and 0.63 to 0.72 over
-100 random settlements. Ten basins shed too little and four too much; nine are within a factor of
-two. What the figure can bear:
+All 15 together, the engine's land sheds **0.69** of the depth measured (0.65 to 0.71 over 20 random
+settlements, 0.65 to 0.73 over 100). 10 basins shed too little and 5 too much; 10 are within a
+factor of two; the lowest is the Indus at 0.13 and the highest the St Lawrence at 1.45. [MEASURED:
+part 2 of the tool] What the figure can bear:
 
-* It is a mean weighted by water. The Amazon carries 53 % of it. Without the Amazon it is 0.64, and
-  the median of the fourteen basins' own ratios is 0.59.
+* It is a mean weighted by water. The Amazon carries 52 % of it. Without the Amazon it is 0.66,
+  and the median of the basins' own ratios is 0.60.
 * Two of its rows cannot test what Hydrology does with rain. Over the mesh's Brahmaputra basin the
-  rain handed in, 1,013 mm a year, is less than the runoff measured, 1,105 mm: no evaporation, however
-  small, gives 1 there. Over its Columbia basin the runoff measured is 0.64 of the rain handed in.
-  Either the rain data are low there or the mesh's basin is not the river's. Without the two the
-  figure is 0.72. [MEASURED; the reading INFERRED]
+  rain handed in, 1,013 mm a year, is less than the runoff measured, 1,105 mm. Over its Columbia
+  basin the runoff measured is 0.64 of the rain handed in. Either the rain data are low there or
+  the mesh's basin is not the river's. Without the two the figure is 0.73. [MEASURED; the
+  reading INFERRED]
 * The engine's depth is taken before any lake loses water and the measured one after, which favours
-  the engine. Taken after the engine's own lakes, as the flow at the same cells, it is 0.62.
-  [MEASURED; the fourth check found it]
-* It is not the same number as the shortfall of the rivers reaching the sea, 31.7 thousand km³ for
-  Earth's 40, which is 0.79. The two point the same way and measure different land.
+  the engine. Taken as the flow at the same cells it is 0.62.
+* It is not the same number as the shortfall of the rivers reaching the sea, and the two measure
+  different land.
 
-The four basins that shed too much (the St Lawrence, the Ob, the Rhine and the Mississippi) are
-all snowy lands of the northern mid-latitudes, and so is a fifth that is not among the 21 because it
-ends in a closed sea: the Volga sheds 1.8 or 1.5 times the published depth, like for like, according
-to which of two published figures is taken (below, at the Caspian). For the Volga most or all of
-the excess comes with the rain data. For the other four I have no published precipitation to hold
-the rain data against. [MEASURED for the ratios; UNVERIFIED that the rain data are high there as well]
+The basins that shed more than measured are the St Lawrence, the Ob, the Rhine, the Danube and the Mississippi. The
+share of snow in what the harness hands them runs from 0.09 to 0.41; the Mackenzie (0.35) and the
+Columbia (0.33) are as snowy and shed 0.51 and 0.32. I had called the first group "all snowy
+lands of the northern mid-latitudes"; the table does not bear a rule. [MEASURED]
 
-**Why the land sheds too little is not established.** What is measured [`python tools/earth_demand.py`;
-section 7, item 14]: the radiation formulas leave Earth's land 85.7 W/m² to warm the air and
-evaporate water, where a published budget of the land has 65.5, 1.31 times as much; and the land's
-evaporation under Earth's rain takes 45.1 W/m², where that budget has 38.5, 1.17 times as much. The
-excess of 20.2 W/m² is made of 0.7 from the sunlight that reaches the ground, 8.2 from the ground
-reflecting 0.17 of it where the budget has 0.21, and 11.3 from the formula for the heat that the
-ground radiates away. The sunlight at the ground, the one thing a share of sunshine sets, is right
-on the land's mean.
+**6. The Volga, under four precipitations.** The Volga ends in a closed sea and is not among the 21.
+It is the one basin for which a published precipitation and a published share of snow are at hand
+beside the published runoff: 585 mm a year, 30 % of it snow, over 1,360,000 km². The source gives
+the runoff three times, and the three do not agree: 262 km³ a year (193 mm), a runoff coefficient
+of 0.38 (222 mm) and a "water content" of 250 km³ (184 mm). [DOCUMENTED: Kalugin 2022; the depths
+are my arithmetic] On the mesh the land that drains through Volgograd covers 1,222,000 km².
 
-As a diagnosis I ran the same tests with the demand for water multiplied by a factor: 0.76, the
+| Precipitation handed to the land that drains through Volgograd on the mesh | mm a year | of it snow | The land sheds | in April | over the 193 mm | over the 222 mm | over the 184 mm |
+|---|---|---|---|---|---|---|---|
+| The rain data, with the snow the harness makes of them | 747 | 321 mm | 345 mm | 322 mm | 1.79 | 1.55 | 1.88 |
+| The rain data scaled to the published total; the harness's share of snow | 585 | 251 mm | 225 mm | 223 mm | 1.17 | 1.01 | 1.22 |
+| The published total with the published share of snow | 585 | 176 mm | 178 mm | 160 mm | 0.92 | 0.80 | 0.97 |
+| The rain data's total with the published share of snow | 747 | 224 mm | 287 mm | 232 mm | 1.49 | 1.29 | 1.56 |
+
+[MEASURED: part 2 of the tool; a test holds the four rows] The last three rows are diagnoses. What
+the four rows show, and all they show:
+
+* If the published 585 mm and 30 % are right for this land, the model sheds 0.80 to 0.97 of
+  the published runoff there, and the whole excess of the first row comes with what was handed in.
+* If the rain data's 747 mm are right, the model sheds 1.29 to 1.88 times the published
+  runoff.
+* The snow matters by itself: at either total, the harness's 43 % of snow in place of 30 % adds
+  47 to 58 mm to what the land sheds. Under every row the land sheds most of its
+  year's water in April; the source has 53 % of the runoff in the spring flood.
+
+Which precipitation is the true one is not known here. [UNVERIFIED either way] An earlier version
+said "four fifths of the excess come with the rain data; the model's part lies between nothing and
+a fifth". That rested on the second row alone, and on the published total being the true one.
+
+**7. Why the land sheds too little is not established.** What is measured
+[`python tools/earth_demand.py`; a test holds the table]:
+
+| Over land, W/m² on the year's mean | The engine's formulas under Earth's temperatures | A published budget of the land |
+|---|---|---|
+| Sunlight that reaches the ground | 185.7 | 184.7 |
+| Sunlight that the ground absorbs | 154.1 | 145.1 |
+| Heat that the ground radiates away | 68.3 | 79.6 |
+| Left to warm the air and evaporate water | 85.8 | 65.5 |
+| Of that, taken by evaporation | 45.1 (Hydrology under the rain data) | 38.5 |
+
+The published budget is a synthesis for 2000 to 2004, not a measurement of one kind. [DOCUMENTED:
+Trenberth, Fasullo and Kiehl 2009, Table 2b] The formulas leave the land 1.31 times the energy
+that the budget leaves it, and the land's evaporation is 1.17 times the budget's. The second
+comparison is not like for like: the engine is handed 117.2 thousand km³ of rain where the budget
+that goes with the 0.65 has 114, and share for share it is 0.738 of the rain for 0.65. The
+excess of 20.3 W/m² is made of 0.8 from the sunlight that reaches the ground, 8.2 from
+the ground reflecting 0.17 of it where the budget has 0.21, and 11.3 from the formula for the
+heat that the ground radiates away. The one share of sunshine enters both formulas:
+
+| One share of sunshine everywhere | Sunlight at the ground | Heat radiated away | Left |
+|---|---|---|---|
+| 0.50 | 165.8 | 58.9 | 78.7 |
+| 0.62 (as built) | 185.7 | 68.3 | 85.8 |
+| 0.76 | 209.4 | 79.6 | 94.2 |
+| The budget | 184.7 | 79.6 | 65.5 |
+
+With 0.62 the sunlight at the ground is right on the land's mean and the heat loss is 11.3 W/m²
+too small; a share of 0.76 would return the heat loss and put the sunlight 13 % too high. No single
+share mends both. What is measured points neither to clouds nor away from them. (I had written that
+the sunlight at the ground is "the one thing a share of sunshine sets"; that is false of the
+formula.)
+
+As a diagnosis the same tests were run with the demand for water multiplied by a factor: 0.76, the
 ratio of the two energies; 0.794, which is the Priestley-Taylor rule with its factor of 1.26 taken
 as 1.00, a cut with another cause; and 0.60.
 
 | | Demand as it is | × 0.794 | × 0.76 | × 0.60 | Earth |
 |---|---|---|---|---|---|
-| Like for like, engine over measured | 0.68 | 0.93 | 0.97 | 1.23 | 1 |
-| … its median over the fourteen basins | 0.59 | 0.87 | 0.91 | 1.12 | |
-| … without the Amazon | 0.64 | 0.91 | 0.96 | 1.28 | |
-| … basin by basin, lowest and highest | 0.13 and 1.45 | 0.28 and 1.67 | 0.32 and 1.74 | 0.42 and 2.28 | |
-| … basins within 15 % of the measured depth, of 14 | 1 | 2 | 2 | 4 | |
-| Rain on land that goes back to the air | 0.735 | 0.649 | 0.632 | 0.542 | 0.65 |
-| … as a depth over the land | 581 mm | 513 mm | 499 mm | 428 mm | |
-| Rivers reaching the sea, thousand km³ | 31.7 | 42.1 | 44.1 | 54.9 | 40 |
-| Gauges within a factor of two, of 21 | 7 | 12 | 11 | 10 | |
+| Like for like, engine over measured | 0.69 | 0.93 | 0.98 | 1.24 | 1 |
+| … its median over the basins that are alike | 0.60 | 0.94 | 0.98 | 1.18 |  |
+| … without the Amazon | 0.66 | 0.92 | 0.98 | 1.29 |  |
+| … basin by basin, lowest | 0.13 | 0.28 | 0.32 | 0.42 |  |
+| … highest | 1.45 | 1.67 | 1.74 | 2.28 |  |
+| … basins within 15 % of the measured depth, of 15 | 1 | 2 | 2 | 4 |  |
+| Rain on land that goes back to the air | 0.738 | 0.652 | 0.635 | 0.544 | 0.65 |
+| … as a depth over the land | 580 mm | 512 mm | 499 mm | 427 mm |  |
+| Rivers reaching the sea, thousand km³ | 30.7 | 40.8 | 42.8 | 53.5 | 40 |
+| Gauges within a factor of two, of 21 | 8 | 13 | 12 | 11 |  |
 
 [MEASURED: `python tools/earth_rivers.py --demands`; a test holds every cell of the table] That is
 no setting of the engine and no fit. What it shows:
 
 * A demand smaller by a fifth to a quarter would bring the weighted figure and the water of all the
-  land to Earth's.
-* The two cuts stand for different causes and mend alike, so the diagnosis cannot tell them apart.
-  Nor can it tell either from a third cause that I did not think of.
-* No one factor mends the basins. With the demand at 0.76 of itself the Amazon sheds 0.98 of its
-  measured depth and the Niger 1.10; the Mississippi, the Paraná, the Ob, the Rhine and the St
-  Lawrence shed 1.4 to 1.7 times theirs; and the Brahmaputra, the Columbia and the Indus a third.
-  The error is not one factor on the demand.
+  land near Earth's.
+* The two cuts stand for different causes and mend alike, so the diagnosis cannot tell them apart,
+  nor either from a cause that I did not think of.
+* No one factor brings the basins' ratios to 1: at 0.76 they still run from 0.32 to 1.74. The
+  ratios also carry the rain data and basins that are alike in size only, so this does not show
+  what the error of the demand is.
 
-What I had written here, that the table "shows that the error of the mean is the measured error of
-the radiation", does not follow from it, and the cause I named, one share of sunshine for every
-cell, is not what the radiation table shows to be off. Things I can name and did not test: the
-ground's reflection and the heat-loss formula over land; the partition of the land's energy between
-evaporation and warming the air, which the rule sets with one number; a rainy season as sunny as
-the dry one; a bucket fed with a month's mean rain, which sheds water only when the month's rain
-exceeds the month's demand and knows no storm; rain on a grid of 2.5°, which cannot hold the rain of
-a mountain front; temperatures on a grid of 5°, read without regard to a cell's height; frozen
-ground. [INFERRED: all of them. Nothing at hand measures radiation, sunshine or daily rain by region]
+Things I can name and did not test: the ground's reflection and the heat-loss formula over land; the
+partition of the land's energy between evaporation and warming the air, which the rule sets with one
+number; a rainy season as sunny as the dry one; a bucket fed with a month's mean rain, which knows
+no storm; rain on a grid of 2.5°; temperatures on a grid of 5°, read without regard to a cell's
+height; snow made from monthly means; frozen ground. [INFERRED: all of them. Nothing at hand
+measures radiation, sunshine or daily rain by region]
 
-**The lake at the Caspian's place.** It is far too large however the ties are settled: 1.08 to 1.11
-million km² at 54 to 61 m, where the real sea covers 371,000 to 436,000 km² in the sources I could
-open and stands 28 m below the ocean. [DOCUMENTED at second hand: Wikipedia gives 371,000 km² without
-the Garabogazköl lagoon and −28 m; a paper on the sea's level gives "about 436000 km2". The two
-disagree and I could not settle it; either way the lake is two and a half to three times too large]
-Whether it overflows is decided by the ties: as built it does, by 0.47 km³ of the 669 that reach it
-in a year, and in 100 random settlements it stays closed in 55. That holds at the valley share of
-a tenth alone. At each of the five other shares tried it stays closed in all of 20 random
-settlements (section 4.5). Its books as the engine settles ties:
+**8. The lake at the Caspian's place** covers 1.09 million km² at 61 m as built, and 1.07 to 1.12
+million km² in 100 random settlements. The real sea covers 371,000 km² and stands 28 m below the
+ocean. [DOCUMENTED at second hand: Wikipedia gives 371,000 km² without the Garabogazköl lagoon and
+−28 m; a paper on the sea's level gives "about 436000 km2"] Either way the lake is two and a half to
+three times too large. As built it overflows, by 17.9 km³ a year; it keeps its water in 1 of 20
+random settlements and in 7 of 100. The water that runs over crosses 4 land cells and ends in a
+second, closed lake of 19,939 km²; it reaches the sea in none of the settlements. Its books as built
+[MEASURED: part 4 of the tool]:
 
-* Rivers and shores bring it 588 km³ a year. About 300 reach the real sea. [DOCUMENTED at second
-  hand, the same paper: the Volga brings 237 km³ a year, about 80 % of the inflow]
-* The land that drains to it covers 4.06 million km², the lake included; the real sea drains about 3
-  million. [the same paper] The mesh's catchment holds the Don at Voronezh, which on Earth runs to the
-  Black Sea.
-* Each square metre of the lake loses 936 mm a year and gets 408 mm of rain.
+* Rivers and shores bring it 590 km³ a year. About 300 reach the real sea. [DOCUMENTED at second
+  hand, that paper: the Volga brings 237 km³ a year, about 80 % of the inflow]
+* The land that feeds it covers 2.96 million km² without the lake (4.05 million with the ground
+  under it). The paper gives about 3 million km² for the rivers that flow into the sea, and Wikipedia
+  3.6 million km² for the sea's catchment. Like for like the land is not larger than the real one;
+  the excess is in the depth, 199 mm a year off that land where 300 km³ off 3 million km² are 100 mm.
+  (I had set the 4.05 million, which holds the lake, beside the 3 million, which does not, and
+  written that "the larger catchment adds to the excess".) The mesh's land holds the Don at
+  Voronezh, which on Earth runs to the Black Sea.
+* Each square metre of the lake loses 933 mm a year and gets 408 mm of rain.
 
-Why twice the water arrives is established in part. The Volga gives most of it, and most or all of
-the Volga's excess comes with the rain data:
+Why twice the water arrives is not established. The Volga gives most of it, and point 6 leaves open
+whether the Volga's excess comes with the precipitation handed in or is the model's.
 
-| Over the land that drains through the Volga at Volgograd | Published for the real basin | On the mesh, under the rain data | On the mesh, handed the published precipitation |
-|---|---|---|---|
-| Area | 1.36 million km² | 1.25 million km² | the same land |
-| Rain and snow | 585 mm a year | 744 mm | 585 mm |
-| Shed to the river | 193 mm (262 km³ a year), or 222 mm (a runoff coefficient of 0.38) | 342 mm | 224 mm |
-| Back to the air | 392 mm, or 363 mm | 402 mm | 361 mm |
-
-[MEASURED for the mesh: the like-for-like measure at the place of Volgograd, in part 2 of
-`tools/earth_rivers.py`. The third reviewer found the first of the two columns at Samara, with a
-script of the reviewer's own: 775, 367 and 408 mm over 1.0 million km². DOCUMENTED for the basin:
-Kalugin 2022 gives the area, 585 mm, "The annual runoff of the Volga River is 262 km3" and, in the
-same paragraph, "The runoff coefficient of the Volga River is 0.38"; the depths in mm are my
-arithmetic. The two figures do not agree: 262 km³ over the basin is 0.33 of the precipitation] The
-ties do not decide it: in 100 random settlements the rain data hold 715 to 752 mm over that land.
-
-The last column is a diagnosis. The rain data over that land are scaled by one factor in every
-month, so that the year's total is the published one. The land then sheds 224 mm: 1.17 times the
-one published figure and 1.01 times the other, where under the rain data it sheds 1.77 or 1.54
-times. So four fifths of the river's excess, or all of it, come with the rain data, which hold a
-quarter more over this land than the paper gives for the basin; the model's part lies between
-nothing and a fifth. [MEASURED for the mesh's side] I had written "a fifth is the model's
-[MEASURED]" on the 193 mm alone; the fourth check found the second figure in the same paragraph of
-the source. The timing is the model's whatever the yearly sum: the engine makes 43 % of that
-precipitation snow and sheds 319 of its 342 mm in April, where the paper has 30 % of it as snow and
-53 % of the runoff in the spring flood. [MEASURED for the engine, by the fourth check and again by
-me; DOCUMENTED for the paper's two shares]
-Which of the two precipitations is nearer the truth I cannot say. [UNVERIFIED: I recall that GPCP
-raises its gauge readings for the snow that gauges miss, which would put it above plain station
-means; the page on GPCP that I opened does not say so]
-
-The larger catchment adds to the lake's excess. My earlier sentence, that the snowy plains shed
-too much, compared the runoff of a box with the published runoff of the basin and missed that the
-rain differed.
-
-**The land of the whole Earth, by this build:** 119.8 thousand km³ of rain a year (GPCP on the
-mesh's land), of which 0.706 would go back to the air if no cell were flooded; lakes with an outlet
-lose another 3.0 thousand km³ and closed lakes keep 0.4; 0.735 goes back in all, 581 mm a year over
-the land, and 31.7 thousand km³ reach the sea. [MEASURED]
+**9. The land of the whole Earth, by this build:** 117.2 thousand km³ of rain a year (GPCP on the
+mesh's land), of which 0.708 would go back to the air if no cell were flooded; lakes with an outlet
+lose another 3.1 thousand km³ and closed lakes keep 0.5; 0.738 goes back in all, 580 mm a
+year over the land, and 30.7 thousand km³ reach the sea. 561 lakes cover 6.28 % of the land.
+[MEASURED: part 5 of the tool] At the budget's share of 0.65 that rain would send 41.1 thousand km³
+to the sea. [my arithmetic: 40 of 114]
 
 **What this leaves of the river tests.** The totals of the land and the like-for-like depths test
-Hydrology. They show that the land gives the air too much and the rivers too little, by a size that
-is measured and a cause that is not. The mouths and the gauges test the relief data, their ties and
-the valley rule more than they test Drainage: of their 45 outcomes 8 turn on the ties, and of the
-17 that fail in every draw, 9 are laid to valleys that the relief data or the valley rule close.
-Drainage itself is held to its rule on
+Hydrology together with the data it is handed. They show that the land gives the air more and the
+rivers less than a published budget has, and sheds less than was measured in 10 of 15 gauged basins,
+by a size that is measured and for a cause that is not. The mouths and the gauges test the relief data, their ties, the valley
+rule and the water poured more than they test Drainage. Drainage itself is held to its rule on
 ground built for the purpose, where the answer is known (section 4.2). The third and the fourth
 checks held it against slow methods of their own, on 90 and on 3,450 rough grounds and on Earth's
 relief, and found no wrong receiver, hollow, pass or way across a lake. A fair test of rivers on
 Earth needs relief with the rivers cut in, which is not among the data at hand.
 
-### 4.5 The valley share
+### 4.5 The valley share, and the water poured
 
-A river runs along the floor of its valley, not at the mean height of the 60 km around it. The design
-asked for "relief converted so that valley floors survive". The Earth tests hand Drainage, for each
-land cell, the height below which a tenth of the cell's land points lie. The rule and the tenth are
-mine. The tenth stands in the first commit of the Earth tests and in every commit since. [MEASURED:
-`git log -S VALLEY_SHARE`] The history cannot show what was tried before that commit; I recall
-trying no other value. [UNVERIFIED] The rule keeps valley floors, loses the ridges between them and
-raises drowned valleys (section 4.4, point 3). The second review asked what the share decides.
-[MEASURED: `python tools/earth_rivers.py --valley-share x --settlements 20`, one run for each
-share. Tests hold the column of the tenth; nothing holds the other five]
+**The valley rule.** A river runs along the floor of its valley, not at the mean height of the 60 km
+around it. The design asked for "relief converted so that valley floors survive". The Earth tests
+hand Drainage, for each land cell, the height below which a tenth of the cell's land points lie. The
+rule and the tenth are mine. The tenth stands in the first commit of the Earth tests and in every
+commit since. [MEASURED: `git log -S VALLEY_SHARE`] The history cannot show what was tried before
+that commit; I recall trying no other value. [UNVERIFIED] The rule keeps valley floors, loses the
+ridges between them and leaves out the water in a cell (section 4.4, point 1).
 
-| Share of a cell's land points below the height used | 0.02 | 0.05 | **0.1** | 0.2 | 0.3 | 0.5 |
-|---|---|---|---|---|---|---|
-| River mouths within 300 km, of 24, as the engine settles ties | 17 | 16 | **16** | 16 | 16 | 15 |
-| … in 20 random settlements | 14 to 17 | 14 to 16 | **14 to 17** | 14 to 18 | 15 to 18 | 12 to 16 |
-| … rivers that pass in all 20, in none, in some | 11, 5, 8 | 14, 7, 3 | **14, 6, 4** | 14, 6, 4 | 14, 6, 4 | 12, 7, 5 |
-| … the Nile's mouth passes in, of 20 | 0 | 0 | **10** | 20 | 20 | 20 |
-| … the Congo's mouth passes in, of 20 | 9 | 0 | **0** | 0 | 0 | 0 |
-| Gauges within a factor of two, of 21, as the engine settles ties | 8 | 9 | **7** | 7 | 6 | 7 |
-| … in 20 random settlements | 7 to 9 | 6 to 10 | **6 to 9** | 7 to 9 | 6 to 8 | 6 to 7 |
-| … rivers that pass in all 20, in none, in some | 6, 11, 4 | 5, 11, 5 | **6, 11, 4** | 7, 12, 2 | 6, 12, 3 | 6, 13, 2 |
-| The lake at the Caspian's place, as the engine settles ties | closed | closed | **overflows** | closed | closed | closed |
-| … closed in, of 20 random settlements | 20 | 20 | **10** | 20 | 20 | 20 |
-| … its level | 0 to 30 m | 30 to 46 m | **54 to 61 m** | 61 m | 61 to 76 m | 91 to 106 m |
-| … its area, million km² | 0.88 to 1.03 | 0.96 to 1.14 | **1.08 to 1.11** | 1.10 to 1.14 | 0.98 to 1.12 | 1.31 to 2.10 |
-| Like for like, engine over measured, as the engine settles ties | 0.73 | 0.74 | **0.68** | 0.71 | 0.70 | 0.71 |
-| … in 20 random settlements | 0.66 to 0.77 | 0.67 to 0.71 | **0.64 to 0.70** | 0.66 to 0.71 | 0.65 to 0.71 | 0.69 to 0.77 |
-| Land under lakes, as the engine settles ties | 5.5 % | 5.7 % | **6.0 %** | 6.2 % | 6.3 % | 6.8 % |
-| Rain on land that goes back to the air | 0.732 | 0.733 | **0.735** | 0.736 | 0.737 | 0.741 |
-| Rivers reaching the sea, thousand km³ a year | 32.1 | 32.0 | **31.7** | 31.6 | 31.5 | 31.1 |
+What the share decides, at thirteen shares. Each row is one run of
+`python tools/earth_rivers.py --valley-share x --settlements 20`. [MEASURED: `handoff/logs/shares/`.
+Tests hold the row of the tenth; nothing holds the other twelve]
 
-What the columns show:
+| Valley share | Mouths within 300 km, as built | in 20 random settlements | Gauges within a factor of two, as built | in 20 | The lake at the Caspian's place, as built | keeps its water in, of 20 | overflow at most, km³ a year | its area, million km² | its level, m | Like for like, as built | in 20 | Land under lakes | Back to the air | To the sea, thousand km³ |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.02 | 16 | 13 to 17 | 9 | 7 to 9 | keeps its water | 20 |  | 0.89 to 1.04 | 18 to 30 | 0.73 | 0.68 to 0.79 | 5.87 % | 0.7357 | 30.99 |
+| 0.05 | 15 | 13 to 16 | 9 | 7 to 10 | keeps its water | 19 | 3.06 | 1.0 to 1.14 | 30 to 61 | 0.74 | 0.68 to 0.71 | 6.02 % | 0.7365 | 30.89 |
+| 0.07 | 15 | 12 to 17 | 10 | 7 to 9 | overflows by 0.04 km³ | 17 | 3.92 | 0.99 to 1.13 | 31 to 61 | 0.74 | 0.65 to 0.71 | 6.21 % | 0.7378 | 30.74 |
+| 0.08 | 15 | 13 to 16 | 9 | 7 to 9 | overflows by 5.39 km³ | 16 | 9.45 | 0.97 to 1.12 | 31 to 61 | 0.74 | 0.65 to 0.71 | 6.19 % | 0.7377 | 30.75 |
+| 0.09 | 15 | 13 to 16 | 8 | 6 to 9 | overflows by 19.74 km³ | 7 | 24.81 | 0.98 to 1.1 | 38 to 61 | 0.70 | 0.66 to 0.71 | 6.26 % | 0.7384 | 30.67 |
+| **0.1** | 15 | 13 to 16 | 8 | 6 to 9 | overflows by 17.88 km³ | 1 | 23.40 | 1.07 to 1.09 | 60 to 61 | 0.69 | 0.65 to 0.71 | 6.28 % | 0.7385 | 30.66 |
+| 0.11 | 15 | 13 to 16 | 8 | 6 to 8 | keeps its water | 20 |  | 1.1 to 1.13 | 61 | 0.69 | 0.65 to 0.71 | 6.29 % | 0.7385 | 30.66 |
+| 0.12 | 15 | 13 to 16 | 8 | 6 to 8 | keeps its water | 19 | 18.85 | 1.06 to 1.12 | 61 | 0.69 | 0.66 to 0.71 | 6.36 % | 0.7388 | 30.62 |
+| 0.13 | 15 | 13 to 16 | 8 | 6 to 9 | keeps its water | 20 |  | 1.11 to 1.13 | 61 | 0.70 | 0.65 to 0.71 | 6.39 % | 0.7389 | 30.61 |
+| 0.15 | 16 | 13 to 16 | 8 | 7 to 9 | keeps its water | 20 |  | 1.1 to 1.13 | 61 | 0.67 | 0.65 to 0.71 | 6.44 % | 0.7391 | 30.58 |
+| 0.2 | 15 | 14 to 16 | 6 | 5 to 7 | overflows by 5.64 km³ | 8 | 13.97 | 1.1 to 1.14 | 61 to 76 | 0.71 | 0.66 to 0.71 | 6.56 % | 0.7396 | 30.52 |
+| 0.3 | 15 | 14 to 16 | 6 | 6 to 9 | keeps its water | 19 | 5.12 | 0.96 to 1.12 | 61 to 77 | 0.70 | 0.65 to 0.73 | 6.78 % | 0.7405 | 30.42 |
+| 0.5 | 15 | 12 to 15 | 8 | 6 to 9 | overflows by 173.70 km³ | 0 | 178.72 | 1.83 | 111 | 0.71 | 0.69 to 0.77 | 6.94 % | 0.7420 | 30.25 |
 
-* **The counts hardly move, and at every share the ties move them as much as the share does.**
-  Which rivers pass changes with both. The Nile's mouth fails in all 20 settlements at shares of
-  0.02 and 0.05, passes in 10 at the tenth and in all 20 from 0.2 up. The Congo's passes at 0.02
-  alone, in 9 of 20: there the rule brings the barrier of its valley down to 457 m, the level of
-  the lake above it, and the ties decide whether the river takes the valley.
+What the rows show:
+
+* **The counts hardly move.** As built 15 to 16 mouths and 6 to 10 gauges pass over the thirteen
+  shares. Which rivers pass changes with the share and with the ties.
 * **The water of all the land moves little, and one way.** The larger the share, the more land lies
-  under lakes (5.5 to 6.8 %) and the less water reaches the sea (32.1 to 31.1 thousand km³ a year).
-* **The closed Caspian** is the one design condition of step 2 that fails as built, and it fails
-  at this share alone. At five of the six shares the lake stays closed in all 20 settlements. At
-  the tenth it stands exactly at the brim of its hollow, at 61 m, and the ties decide whether a
-  little runs over: it stays closed in 10 of 20 settlements and in 55 of 100. On the data's own
-  grid that brim stands at 91 m, one step of 100 feet higher. [MEASURED: `tools/earth_relief.py`]
-* **The lake is far too large at every share:** 0.88 to 1.14 million km² up to a share of 0.3,
-  which is 2.4 to 3.1 times the 371,000 km² of the real sea and 2.0 to 2.6 times the 436,000 km²
-  of the other source (section 4.4). At 0.5, as the engine settles ties, one lake of 2.09 million
-  km² covers the hollow of the Caspian and that of the Black Sea, where its lowest point lies; in
-  the random settlements the lake at the Caspian's place covers 1.31 to 2.10 million km².
-* **The engine's own settlement is one draw among many.** At a share of 0.05 it gives a
-  like-for-like figure of 0.74, outside the 0.67 to 0.71 of the 20 random settlements.
+  under lakes (5.87 to 6.94 %) and the less water reaches the sea (30.99 to 30.25 thousand km³ a
+  year).
+* **The closed Caspian fails as built at 6 of the thirteen shares** (0.07, 0.08, 0.09, 0.1, 0.2, 0.5) and holds at 7
+  (0.02, 0.05, 0.11, 0.12, 0.13, 0.15, 0.3). At 4 shares (0.02, 0.11, 0.13, 0.15) the lake keeps its water in all 20 random
+  settlements; at the others it overflows in some. No band of shares is safe, and the tenth is not a
+  share at which the condition fails "alone", as I had written from six shares: the fifth check ran
+  the shares between them.
+* **The lake is far too large at every share:** 0.89 to 1.14 million km² up to a share of 0.3, 2.4 to
+  3.1 times the 371,000 km² of the real sea. At 0.5 the lake covers 1.83 million km², at 111 m.
+* **The engine's own settlement is one draw among many.** At a share of 0.05 it gives a like-for-like
+  figure of 0.74, outside the 0.68 to 0.71 of the 20 random settlements.
 
-A different, equally defensible share would have let me report that every condition of the design
-passes. I report the tenth, as built: the condition fails. Every column shows the miss that
-matters, a lake two to three times the real sea's size. Whether a lake at its brim runs over is no
-finding either way.
+At 7 of the thirteen shares the Caspian's condition holds as built. I report the tenth, as
+built: it fails. (I did not run the design's other Earth conditions at the other shares under the
+water as it is now poured.)
+
+**Another reading of the rule, as a diagnosis.** With the ocean points of a cell counted as well, at
+the level of the mesh's sea, the St Lawrence's estuary is open and the river leaves the land 232 km
+from its mouth; the Danube's water then leaves for the Adriatic, 1,212 km from its mouth. 16 mouths
+pass for 15, 8 gauges for 8, and lakes cover 5.57 % of the land for 6.28 %. [MEASURED:
+`earth_reference.other_valley_reading`; a test holds it] Tuning the rule moves single rivers and not
+the counts. The tests stay on the rule as first chosen: the other was looked at with the results of
+the first in view.
+
+**The water poured.** The design's row for SeaLevel asks for "the volume of sea water measured from
+that relief at full detail". Until the fifth check the Earth tests poured the planet file's volume,
+0.19 % less, and no text said that it decides anything. It does. [MEASURED:
+`python tools/earth_rivers.py --sea-water planet --settlements 20` beside the run as built]
+
+| | The relief's own water (the design's; as built) | The planet file's, 0.19 % less |
+|---|---|---|
+| Volume poured | 1.33758e+18 m³ | 1.33500e+18 m³ |
+| The sea of the mesh comes to rest at | +1.9 m | -5.3 m |
+| … and covers | 70.75 % of the planet | 70.28 % |
+| Land cells | 47,962 | 48,733 |
+| River mouths within 300 km, of 24, as built; in 20 random settlements | 15; 13 to 16 | 16; 14 to 17 |
+| The Amazon's mouth, as built | 354 km | 203 km |
+| The Nile's mouth within 300 km in, of 20 | 20 | 10 |
+| Gauges within a factor of two, of 21, as built; in 20 | 8; 6 to 9 | 7; 6 to 9 |
+| The lake at the Caspian's place, as built | overflows by 17.88 km³ a year | overflows by 0.47 |
+| … keeps its water in, of 20 random settlements | 1 | 12 |
+| Like for like, engine over measured, as built | 0.69 | 0.68 |
+| Rain on land that goes back to the air | 0.7385 | 0.7352 |
+| Rivers reaching the sea, thousand km³ a year | 30.66 | 31.72 |
+| Land under lakes | 6.28 % | 6.02 % |
+
+The sea of the mesh stands 7.2 m lower under the planet file's water, 771 cells change between land
+and sea, and the heights handed to Drainage differ in 3,850 of the land cells common to both.
+[MEASURED: a test holds these] The Earth tests and tools now pour the relief's own water. The Earth
+twin still pours the planet file's, because that volume is a parameter of the planet and the twin is
+the engine as it stands (section 4.6).
 
 ### 4.6 The Earth twin
 
@@ -789,7 +787,8 @@ finding either way.
 The sea, the climate, the water on land and the biomes are the engine's own. The Isostasy slot is
 filled by a process that reads the mean height of ETOPO5 over each cell, and the Tectonics slot is
 left out: the twin has no plates and no crust, and says so when asked why its ground stands where it
-does. A twin is not a test. It shows where the engine's climate departs from the one planet whose
+does. The water poured on the twin is the planet file's volume, which is a parameter of the planet;
+the Earth tests of sections 4.2 to 4.5 pour what the ocean of the relief data holds, 0.19 % more. A twin is not a test. It shows where the engine's climate departs from the one planet whose
 climate is known, on relief the engine did not make. A test holds the lines of the tool's report against
 numbers worked out apart from it.
 
@@ -837,67 +836,63 @@ from Peel, Finlayson and McMahon 2007, the water of the land from Trenberth, Fas
 Four of these are stated as tests, and all four are expected failures (`tests/test_earth.py`, on the
 preview mesh): northern land is far warmer in July than in January; the cold climates with warm
 summers take a fifth of the land; the driest land band of the north lies in the dry belt; the land
-between 40° and 60° north gets the rain of Earth's. One cause runs through all four. The engine's
-land is too cold and its summers too weak, so snow that should melt stays, the polar climate takes
-the place of the cold one, cold air carries little vapour and white ground gives none back.
-[INFERRED: the chain is my reading; the first link is measured in section 8]
+between 40° and 60° north gets the rain of Earth's. What is measured of the first, on the preview twin: over the land between 40° and 60° north the coldest
+month is as cold as Earth's (−12.6 °C for −12.7 °C) and the warmest is 17 K too cold (1.4 °C for
+18.4 °C); the year is 9.3 K too cold (−5.8 °C for 3.5 °C); and 52 % of that land lies under snow in
+every month. [MEASURED: `handoff/pass2/twin_seasons.log`; a test holds these numbers] That the four
+failures share one cause is my reading: summers too weak, so that snow which should melt stays, the
+polar climate takes the place of the cold one, cold air carries little vapour and white ground
+gives none back. [INFERRED: the chain was not measured link by link] Which cause makes the summers
+weak is not established (section 8).
 
 What the twin gets right, on relief it did not make: the level and the extent of the sea, the mean
 temperature of the planet to within 1 K, the rain of tropical land to within 4 %, the dry belt of
 the south, and the Amazon as the largest river, at 0.7 to 0.8 of its flow. What it gets wrong beyond
 the cold north: the sea gets a fifth too much rain and the land a seventh too little, the far south
-is 7 K too warm, and more land lies under lakes than under Earth's measured climate on the same
-relief (8.5 % for 6.0 %): a hollow under snow that never melts loses nothing to the air, and fills.
-[MEASURED; the cause of the last INFERRED]
+is 7 K too warm, and 8.5 % of the land lies under lakes. [MEASURED] That is not to be set beside the
+lakes of section 4.3, as I had done: the twin's Drainage is handed the cells' mean heights, the Earth
+tests the valley floors. Earth's measured climate on the mean heights gives 7.3 %. The twin's excess
+over that lies between 40° and 60° north (18.9 % for 14.1 %); between 60° and 90° north, where all the
+twin's land is under snow all year, lakes cover 11.2 % for 11.0 %. [MEASURED by a reviewer of the fifth
+check on the stores of 2026-10-05; I did not repeat it]
 
 ### 4.7 Run times
 
-All [MEASURED] on the 2-core build environment, on 2026-10-05. The builds of the worlds, the test
-suite and the tools had the machine to themselves, but for two rows: the scan and the 100
-settlements ran beside another job and may be slow by a half. The laptop is not timed.
+All [MEASURED] on 2026-10-06, on a 2-core cloud workspace with about 7 GB of memory, each run with the
+machine to itself (`handoff/logs/`, the files ending in `.time`). The laptop is not timed.
 
-| What | Cells | Whole run | Climate rounds | A later round | Most memory held | World store |
-|---|---|---|---|---|---|---|
-| Default world, preview profile | 10,242 | 27 s | 23 | 0.9 s | 0.4 GB | 21 MB |
-| Default world, standard profile | 163,842 | 598 s | 24 | 21 s | 5.3 GB | 220 MB |
-| Earth twin, preview | 10,242 | 22 s | 15 | 0.8 s | 0.6 GB | 20 MB |
-| Earth twin, standard | 163,842 | 365 s | 15 | 19 s | 5.2 GB | 210 MB |
-| Earth's rivers (`tools/earth_rivers.py`, standard mesh) | 163,842 | 16 s | | | 1.5 GB | |
-| … with 20 random settlements of the ties | 163,842 | 71 s | | | 1.6 GB | |
-| … with 100, and the table of the cuts | 163,842 | 374 s | | | 1.6 GB | |
-| Earth's relief (`tools/earth_relief.py`) | 163,842 | 19 s | | | 1.4 GB | |
-| The demand for water (`tools/earth_demand.py`) | 163,842 | 15 s | | | 1.2 GB | |
-| The scan of the "why" answers (`tools/why_scan.py`), preview world, every cell | 10,242 | 120 s | | | | |
-| The test suite | | 9 minutes | | | | |
+| What | Cells | Whole run | Climate rounds | Most memory held |
+|---|---|---|---|---|
+| Default world, preview profile | 10,242 | 23 s | 23 | 0.4 GB |
+| Default world, standard profile | 163,842 | 456 s | 24 | 5.3 GB |
+| Earth twin, preview (the build and its comparison with Earth) | 10,242 | 19 s | 15 | 0.6 GB |
+| Earth twin, standard | 163,842 | 297 s | 15 | 5.2 GB |
+| Earth's rivers (`tools/earth_rivers.py`, standard mesh) | 163,842 | 19 s |  | 1.5 GB |
+| … with 20 random settlements of the ties | 163,842 | 67 s |  | 1.5 GB |
+| … with 100, and the table of the cuts | 163,842 | 252 s |  | 1.6 GB |
+| Earth's relief (`tools/earth_relief.py`) | 163,842 | 42 s |  | 1.7 GB |
+| The demand for water (`tools/earth_demand.py`) | 163,842 | 16 s |  | 1.2 GB |
+| The scan of the "why" answers (`tools/why_scan.py`), preview world, every cell | 10,242 | 116 s |  | 0.2 GB |
+| … standard world, every 23rd cell | 7,124 | 266 s |  | 0.7 GB |
+| The test suite, with the Earth data | | 575 s | | |
+| … without | | 396 s | | |
+| The refusal audit (`tools/refusal_audit.py`) | | 847 s | | 2.1 GB |
 
-In a later round of the standard build Moisture takes 16 s, Circulation 2.3 s, Hydrology 1.2 s,
-Biomes 0.5 s and EnergyBalance 0.4 s. The first round takes 69 s: EnergyBalance prepares its solver
-(28 s) and Moisture starts from dry air (30 s). The pass that records the causes costs one more round.
-The limit of the standard profile is 1,800 s.
+The world stores take 21 MB (preview) and 220 MB (standard); the twins 20 and 210 MB.
+The limit of the standard profile is 1,800 s. The standard builds hold more than 5 GB at their peak:
+on this machine nothing else of size can run beside one.
 
-**The machine's speed changes from day to day, by a factor of two.** The table is of 2026-10-05,
-after the fixes that answer the fourth check. The measurement before them, earlier the same day, gave
-580 s and 360 s for the two standard builds and 29 s and 23 s for the two preview ones. Two days of
-measurement before that gave, for the standard build, 492 to 531 s at the end of step 1 and 1,186 s
-at the first measurement of step 2; the preview build took 23 s and 48 s. On the slow day the code
-of step 1 was run again and took 1.5 times as long as on the day it was first measured. Like for
-like, step 2 costs seven more climate rounds (23 for 16 on the preview mesh, 24 for 17 on the
-standard one), because the water that land gives back must settle with the rain it feeds, and about
-5 % more per round for Hydrology. The times in the table are good to that factor of two and no
-better. The high_fidelity profile was not run. Its solvers would need about four times the memory of
-the standard profile's, so whether it fits in 32 GB is open. [INFERRED]
+**The machine's speed changes within a day, by a factor of two.** Earlier measurements, on other
+workspaces of the same kind: for the standard build 492 to 531 s at the end of step 1, and 1,186 s,
+580 s and 598 s on 2026-10-05, all three in one day; for the preview build 23 s to 48 s. The times
+in the table are good to that factor of two and no better. Like for like, step 2 costs seven more
+climate rounds than step 1 (23 for 16 on the preview mesh, 24 for 17 on the standard one), because
+the water that land gives back must settle with the rain it feeds. [MEASURED on 2026-10-05] The
+high_fidelity profile was not run. Its solvers would need about four times the memory of the
+standard profile's, so whether it fits in 32 GB is open. [INFERRED]
 
 The same seed gave the same world in two fresh interpreters with different hash seeds. [MEASURED:
-test, preview mesh] The standard world was built before the third check and after it. Of its 52
-fields, four differ between the two builds: the receiver and the slope of 557 coastal land cells,
-and, in sea cells only, the two fields that say which sea cell takes a river's water. That is the
-change in how exact ties are settled (section 5.2). [MEASURED: the two stores compared entry by
-entry. The fourth check found the 557 cells; I had written that every field on land came out the
-same] All four worlds of the table were built before the fixes that answer the fourth check and
-after them, and each is the same in every field and every table. [MEASURED: the fingerprints of the
-stores, entry by entry] The code that settles ties differed between those builds as well (section 7,
-item 20), so this is no test of repeatability; it shows that the change moved nothing in these four
-worlds.
+test, preview mesh] The four worlds of the table were built again on 2026-10-06, on the tree of commit 8e5f588 (the README and one test file differed from it, and no build reads either). The reports of `tools/world_report.py` and `tools/earth_twin.py` give every number of sections 4.6, 4.8 and 8 as those sections had it, and the scan of the "why" answers reads 225,324 answers of each preview world (every cell) and 156,728 of each standard one (every 23rd cell) and reports none. [MEASURED: `handoff/logs/worlds/`] I could not compare the new worlds field by field with those of 2026-10-05: their stores were not handed over.
 
 ### 4.8 What step 2 changed in the default world
 
@@ -921,10 +916,12 @@ step 1, and it now shows in the rain as well.
 ## 5. Rounds of checking, and what they changed
 
 Each round was done by reviewers who had not seen the code being written, with scripts of their
-own. Their reports are summarised here. Every finding marked high or medium that a test can hold
-has one; a finding about what I had written is mended in the text, and no test can hold that. The
-second review of step 1 found three such tests that also passed on the faulty code; they were
-rewritten, and from then on each new test was run against the code as it stood, to see it fail.
+own. Their reports are summarised here. Findings marked high or medium were given a test
+where a test can hold them; that every one has one I have not checked, and the fifth check found
+two claims of that kind that did not hold (section 5.4). A finding about what I had written is
+mended in the text, and no test can hold that. The second review of step 1 found three tests that
+also passed on the faulty code; they were rewritten. The fault came back: the second, third and
+fourth checks of step 2 each found tests that could not fail.
 
 | Round | Found | Changed |
 |---|---|---|
@@ -935,11 +932,11 @@ rewritten, and from then on each new test was run against the code as it stood, 
 | Step 1, 3. Physics | No high. 1 medium: on a planet without sea the solver left water in the air, more on finer meshes. 3 low, and five numbers in comments that did not reproduce | A month that nothing feeds is given its exact answer, zero. Ties among any number of equally near cells. The comments carry the measured numbers |
 | Step 1, 3. Engine | No high. 4 medium, one of them new: a notice silenced by a fix of round 2. 7 low | All fixed, 22 tests (`tests/test_engine_round3.py`) |
 | My own re-measurement | The crust trial no longer passed as measured | Section 3.2 |
-| Step 2, 1. Physics | The "why" answers contradicted their own numbers: in 52 % of river cells the "largest source upstream" was the cell itself; runoff was explained under a lake; sea cells were described as land. Where two passes out of a hollow tied, the lower-numbered cell won, not the lower ground. The mean snow of a month was wrong in the month the snow ran out. The bucket lost its footing where the air asks for next to nothing, and did not settle in deep soils. The demand's formula for heat radiated away gives 14 % too little over land. One constant had the exponent of its formula run into it (33.912 for 33.91) | Section 5.1 |
-| Step 2, 2. Engine | Tests that could not fail, and conditions reworded after a failure (the dry belt; several Earth tests). 28 of 53 changes made on purpose went unnoticed, among them halving the melt of snow. The Earth twin said its relief "follows from the planet parameters and the mesh alone". Hydrology trusted the table of hollows unseen. The fingerprint of a world left out the settle tolerances. The data tools failed on Windows encodings and trusted files they had not checked. Two machines with different processors gave different last digits | Section 5.1 |
+| Step 2, 1. Physics | The "why" answers contradicted their own numbers: in 52 % of river cells the "largest source upstream" was the cell itself; runoff was explained under a lake; sea cells were described as land. Where two passes out of a hollow tied, the lower-numbered cell won, not the lower ground. The mean snow of a month was wrong in the month the snow ran out. The bucket lost its footing where the air asks for next to nothing, and did not settle in deep soils. The demand's formula for heat radiated away gives 14 % too little over land. One constant had the exponent of its formula run into it (33.912 for 33.91). With numpy's AVX-512 code switched off, on the same machine, the preview world came out with other last digits | Section 5.1 |
+| Step 2, 2. Engine | Tests that could not fail, and conditions reworded after a failure (the dry belt; several Earth tests). 28 of 53 changes made on purpose went unnoticed, among them halving the melt of snow. The Earth twin said its relief "follows from the planet parameters and the mesh alone". Hydrology trusted the table of hollows unseen. The fingerprint of a world left out the settle tolerances. The data tools failed on Windows encodings and trusted files they had not checked | Section 5.1 |
 | Step 2, 3. Physics and numbers | No wrong number in Drainage, the snow year, the bucket or the lakes against slow methods of the reviewer's own. 3 high, 4 medium and 5 low in what I had concluded and claimed. Earth's relief is in whole metres, and ties settled by cell numbers decided several rivers. Five of six narrows "closed by the mesh" are closed in the relief data. "Too much runoff in cold plains" compared unlike land. A label marked DOCUMENTED misstated its paper. The check of the table of hollows let 5 of 36 breakages through. The books of a gauge could not fail to close. In the engine's own world the cell number chose the sea cell a river runs into | Section 5.2 |
-| Step 2, 4. Two reviewers: the changes after the third check, and the engine, the tests, the tools and these notes | No wrong number in a world against slow methods on 3,450 rough grounds and on Earth's relief. 1 finding marked high, 8 medium, 4 between medium and low and 9 low, in what I had concluded, labelled and tested. The cause of the runoff shortfall was stated as measured, and was not. "The same every time" rested on random settlements that left out the step that decides most. The Volga's "a fifth is the model's" stood on one of two published figures that disagree. The one design condition that fails on Earth had been reworded as "not decided". A "set before the run" label contradicted the test's first commit. "Why" answers contradicted their numbers in five ways. The check of the table of hollows still let eight breakages through. Of 126 changes made on purpose, 56 went unnoticed; no test ran any tool | Section 5.3 |
-| Step 2, 5. One reviewer: the claims alone, in the notes, the README, the tests' reasons and the descriptions in the code | ⟦FIFTH_ROW⟧ | Section 5.4 |
+| Step 2, 4. Two reviewers: the changes after the third check, and the engine, the tests, the tools and these notes | No wrong number in a world against slow methods on 3,450 rough grounds and on Earth's relief. 1 finding marked high, 8 medium, 4 between medium and low and 9 low, in what I had concluded, labelled and tested. The cause of the runoff shortfall was stated as measured, and was not. "The same every time" rested on random settlements that left out the step that decides most. The Volga's "a fifth is the model's" stood on one of two published figures that disagree. The one design condition that fails on Earth had been reworded as "not decided". A "set before the run" label contradicted the test's first commit. "Why" answers contradicted their numbers in five ways. The check of the table of hollows still let nine breakages through. Of 126 changes made on purpose, 56 went unnoticed; no test ran any tool | Section 5.3 |
+| Step 2, 5. Two reviewers: the claims alone, in the notes, the README, the tests' reasons and the descriptions in the code | No wrong number: every number that a tool prints was printed again by the reviewers and came out the same. 3 findings marked high, 2 between high and medium, 6 medium and 18 lower, all in what I had claimed. "The closed Caspian fails at this share alone" was false: it fails at shares between the six I had tried. The Earth tests poured another volume of water than the design's row names, and the outcomes turn on it. The random settlements still left one step undrawn, level ground. The Volga's "the model's part lies between nothing and a fifth" rested on a premise the notes could not decide. The notes said that all 21 departures are in the design document; 13 were not. "Every refusal message is tested: Pass" was false: fifteen refusals could be taken out or reworded with every engine test passing | Section 5.4 |
 
 Left as found, and listed in section 8: the rain of rising ground falls in one cell, the seasons on
 land are too weak, and the land gives the air too much water.
@@ -972,7 +969,7 @@ land are too weak, and the land gives the air too much water.
   it. The formula's shortfall over land is measured and recorded (section 7, item 14); I did not fit
   it away.
 * **Earth tests.** Rewritten as section 4.3 describes. A test of 21 great rivers at their gauges was
-  written before it was run; 15 failed. What I then wrote about why did not survive the third check
+  added; 15 failed. (No record shows that it was written before it was run: section 4.3.) What I then wrote about why did not survive the third check
   (section 5.2).
 * **The twin** has no Tectonics slot and answers truthfully about its relief. Its relief file is made
   afresh from the checked ETOPO5 on every use; a file left in its place is replaced.
@@ -1058,7 +1055,7 @@ repeated each measurement with tools of my own before acting on it.
   libraries' descriptions.
 * **Changes made on purpose.** 81 more, one at a time, to the code written after the third check:
   23 to the settling of ties, 9 to the two processes' use of it, 19 to the check of the table, 23
-  to the Earth harness and its tools, and 7 to the smaller things. The suite noticed 75. Of the six
+  to the Earth harness, and 7 to the smaller things. The suite noticed 75. Of the six
   it did not notice, three change nothing that can be seen: a condition on level ground that says
   the same as the one it replaced; a line of the flood of the raw grid that did nothing, and is
   gone; and the lakes' losses at a gauge worked out as what is left over, which equals their sum
@@ -1151,7 +1148,9 @@ much from the first and the third (the items on the boundary lengths and on the 
   row's own ground, and that a hollow inside no other overflows into the sea or into ground whose
   hollow overflows no higher. 49 ways of breaking the table are each refused in the words of the
   rule broken, and a test ties every written rule of `data/tables.yaml` to the refusals that
-  enforce it. What the check cannot show is in section 9.
+  enforce it. Of the first reviewer's eight, seven are refused now; the eighth, two rows that change
+  places, is accepted still, and the table's description now says that no reader relies on the
+  order. What the check cannot show is in section 9.
 * **A first guess outside the lineage (low to medium).** A field that a process reads from the
   round before starts from the default in `data/fields.yaml`. Changing that default changed 20
   fields of a world and none of their lineage fingerprints. The first guesses are in the lineage
@@ -1178,8 +1177,9 @@ much from the first and the third (the items on the boundary lengths and on the 
   or total moved as the engine settles ties, and the Huang He's way crosses 48 flooded cells for 47.
   [MEASURED]
 * **What the like-for-like figure can bear (low).** The Amazon carries half its weight; two of its
-  fourteen rows hold more measured runoff than the rain data can supply; taken after the engine's
-  own lakes it is 0.62 for 0.68. All three are in section 4.4, in the tool's report and in a test.
+  fourteen rows cannot test Hydrology (one holds more measured runoff than the rain handed in, the
+  other 0.64 of it); taken after the engine's own lakes it was 0.62 for 0.68. All three are in
+  section 4.4 and in the tool's report.
 * **The tools took any option (low).** A misspelt option was passed over without a word, `--help`
   ended with an error code, one tool built a world when asked for its help, and
   `fetch_reference_data.py --check` made the folder it was asked only to look at. Every tool now
@@ -1212,17 +1212,23 @@ much from the first and the third (the items on the boundary lengths and on the 
   books now count what such a lake keeps and close at every cell of the mesh. The test that the
   largest river "runs where it rains" passes on a source cell that lies under snow all year; its
   description says so now.
+* **Labels (low).** A published budget was called "measured", and texts of `data/models.yaml` that
+  say where a model is wrong carried no labels. Each was changed where it stood; this entry was
+  missing until the fifth check. Eight of those texts still carry no label. [MEASURED by the fifth
+  check]
 * **The suite had not been run whole on the code as committed (low).** One test file was changed
   after the last full run and before the commit. The fault then recurred, and worse, while I made
   the fixes above: I ran the tests of what I was changing and not the whole suite. Run whole
-  before this was written, the suite failed in five tests. One was a number written into the
-  library's code, against the design's rule that code holds none. Four were older tests that
+  before this was written, the suite failed in four tests, and a fifth had failed by itself in the
+  run of the changes on purpose. That fifth was a number written into the library's code, against
+  the design's rule that code holds none. The four were older tests that
   still asked for what the fixes of the "why" answers had changed on purpose: the outlet cell of
   a lake counted as lying in the lake, a cell wholly under a closed lake given the code of one
   partly under it, and every recorded driver counted as a term of a sum. None was a wrong number
   in a world: the four worlds of section 4.7 are the same in every field and table as before the
-  fixes. [MEASURED] The numbers of section 1 are of the whole suite on the code as committed,
-  with the Earth data and without.
+  fixes. [MEASURED] The numbers that section 1 gave after the fourth check were of the whole suite on the working
+  tree, 2 to 19 minutes before the commit; two text files changed after it, and the one test that
+  reads one of them passes on the commit. [MEASURED by the fifth check]
 * **Left as found, and said.** The Earth harness writes a folder beside the reference data and
   sets one variable of the environment; both are in the descriptions of the functions that do it.
   The two trials of step 1 wrote their result files on every run, and a README command would have
@@ -1233,7 +1239,8 @@ much from the first and the third (the items on the boundary lengths and on the 
 **Changes made on purpose, run again.** The 56 changes that the two reviewers had made unnoticed are 55
 different ones: both took the share of land under lakes of the whole planet. I carried all 55 over to
 the code as it stands and ran them again, seven of them a second time against the scan of the
-default world alone, with 13 changes of my own to the code written since: 75 runs. The suite
+default world alone, with 13 changes of my own to the code written since: 75 runs, 73 of them on the test files as they
+stood half an hour before the commit. The suite
 notices 71. Of the four it does not notice, two change nothing that a test could see: the rain
 over a basin summed over all its cells, sea included, where no sea cell lies upstream of land; and
 the lake at the Caspian's place looked for one degree further north, which finds the same lake.
@@ -1250,17 +1257,131 @@ time, and the tests run]
 
 ### 5.4 What the fifth check of step 2 changed
 
-⟦FIFTH_FOUND⟧
+Two reviewers, neither of whom had seen the work, with one brief: the claims alone. One took the
+numbers of sections 4.2 to 4.6 and 8 and the reasons of the Earth tests; the other took the record
+of the checks, the engine's own claims and the hand-over texts. Their reports are in
+`handoff/reviews/`. Both begin "The numbers hold": every number that a tool prints they printed
+again and got the same. [MEASURED by them] What they found was in the account built on the numbers.
+I repeated the measurements that the changes below rest on; where I only read a reviewer's number
+the text says "measured by the reviewer".
 
-**Not mended: the same world on another processor.** The second reviewer of step 2 built the default
-world on a processor without the AVX-512 instructions and got other last digits: differences of at
-most 4 parts in a million, no class changed. [MEASURED by the reviewer, with the instructions
-switched off; the fourth check measured it again on the preview mesh: 21 of 52 fields, at most 3.3
-parts in a million, no class, index or true-or-false value] The design's promise is the same world,
-bit for bit, on one machine with the pinned versions, and that holds. [MEASURED: two fresh
-interpreters] Across machines it does not hold to the last bit, and I know no way to make it hold
-short of giving up the fast mathematics library. A world store carries its own fingerprints, so a
-difference is seen, not hidden.
+One thing first, because you read it. In a message to you on 2026-10-05 I wrote of the closed
+Caspian: "It fails only at the setting I built with." That sentence was false. I had tried six
+valley shares and it failed at one; I had not tried the shares between them. The fifth check did:
+it fails as built at shares on both sides of mine. The hand-over notes of that sitting record that
+I told you so in a later message. [DOCUMENTED: `HANDOFF.md`; the messages themselves are not in the
+repository] Section 4.5 now gives thirteen shares.
+
+**Claims that were false, or stronger than the evidence.**
+
+* **"It fails at this share alone" (high).** Above. Section 4.5 is rewritten on thirteen shares. The
+  reviewer also traced where the overflow goes, which no text said: into a second, closed lake, not
+  to the sea. The harness now follows the water (`earth_reference.lake_books`), the tool prints it,
+  and whether that meets "stays a closed lake" is put to you (section 11).
+* **The water poured (medium to high).** The design's row for SeaLevel names "the volume of sea water
+  measured from that relief at full detail". The Earth tests poured the planet file's volume, 0.19 %
+  less, and no text named it as deciding anything. With the relief's own volume the sea of the mesh
+  stands at +1.9 m for −5.3 m, and outcomes move (section 4.5, the last table). The harness now
+  pours the relief's own volume, which is the design's; `--sea-water planet` keeps the other for
+  comparison; and every number of sections 4.2 to 4.5 and of `tests/test_earth.py` was measured
+  again. The Earth twin still pours the planet file's volume, and its tool says so.
+* **Level ground (medium).** A random settlement drew the widths, the order of the cells and the
+  choice among passes, and left the way over level ground as the engine has it. It now draws that
+  too (`Ties.level` in `library/drainage.py`; the engine's own path is unchanged). The counts of
+  section 4.4 are of settlements that draw all four.
+* **The Volga (medium to high).** "Most or all of the excess comes with the rain data; the model's
+  part lies between nothing and a fifth" needs the published precipitation to be the true one, and
+  carried the harness's share of snow into the published case. The harness now runs four
+  precipitations, the tool prints them with the source's third figure for the runoff, and section
+  4.4, point 6, states them conditionally. The test that carried the conclusion in its name is
+  renamed.
+* **The share of sunshine (medium).** "The one thing a share of sunshine sets" was false: the share
+  enters the heat-loss formula as well. Section 4.4, point 7, and section 7, item 14, say so; the
+  tool prints the table of shares; and the sentence "the error of the one share of sunshine is six
+  times as large", a cause that the fourth check had already found unmeasured, is gone from section
+  7 and from `library/evaporation.py`.
+* **Causes of the gauge misses (medium).** The sorting of fourteen misses by cause is withdrawn
+  (section 4.4, point 4). The reasons of the expected failures were written again; each gives what
+  was measured beside the miss and none names a cause that was not measured.
+* **The Caspian's catchment (medium to low).** I had set 4.06 million km², which held the lake,
+  beside the real rivers' 3 million, which does not. Like for like the land is not larger (section
+  4.4, point 8).
+* **"1.17 times what a published budget gives it" (medium to low)** is on rain that differs from
+  the budget's. Sections 4.3, 4.4 and 8 give the shares of the rain and both amounts of rain.
+* **Smaller, each corrected where it stood (low to medium, and low).** "All snowy lands of the
+  northern mid-latitudes" (two of the four were not snowy). The twin's lakes "on the same relief
+  (8.5 % for 6.0 %)": the twin's Drainage is handed mean heights and the 6.0 % was of the valley
+  rule; the sentence is gone, and what the reviewer measured stands in section 4.6. "Their inputs
+  are the truth": the snow is made, not measured. The order of section 8 "by how much they distort
+  the world" has no measure and is now called a judgment. "Three tools print every number in this
+  section" was not so. Two rows of section 8's table are not printed by the tool the table named.
+  "Every column shows … two to three times". "Was written before it was run". The twin's land "7 K
+  too cold (2.0 °C against 9.3 °C)" was of all cells, land and sea; and the cause given for the
+  weak seasons, "one constant that ties the land to the sea too tightly", does not fit what the
+  reviewer measured: the twin's winter is right and its summer 17 K too cold (section 8). "Narrower
+  than a cell" for the Red Sea and the Baltic. "Eleven of the twelve" listed ten. The tool for the
+  demand still called the budget "measured".
+* **The design's third pattern for Hydrology** ("River flow data is still to be chosen") was left
+  out of section 4.2. It is there now, as a question to you.
+
+**The record.**
+
+* **The departures of step 2 were not in the design document (high).** Section 7 said "Each is
+  recorded in the design document as well". The document held nine, all of step 1; items 3 and 9 to
+  21 of section 7 were not in it, and two of its rows were not in section 7. The document is updated: a second table under its first holds the missing departure of step 1 and those of step 2 (its rows 10 to 25), and beside it stand the results of step 2, where the world is wrong now, and the sources of step 2. Section 7 says how the two lists relate and has the two rows it lacked (its items 22 and 23).
+* **"Every refusal message is tested: Pass" (high).** The reviewer took twelve of the engine's
+  refusals out and reworded three, one at a time; all 300 engine tests passed each time. New:
+  `tests/test_refusals.py`, 65 cases, and `tools/refusal_audit.py`, which finds every refusal in the
+  code of `src/worldengine`, notes which tests reach it, writes other words in its place in a copy
+  of the folder and runs those tests. On commit d116240 the audit, run with every test, finds 249 refusals in the code, reaches all of them and finds each held: with other words written in its place, a test fails. [MEASURED: `handoff/logs/refusal_audit.log`, 847 s] What the audit cannot show is in the tool's description: a test that asks for one word of a sentence counts as holding it.
+* **The "why" answer of a cell wholly under a closed lake (medium).** The sentence I had written
+  to answer the fourth check gave, in every flooded cell along a drowned way, the same water as
+  "reaching the lake in this cell": 117 of 469 such answers on the standard world gave more than
+  the cells upstream carry. [MEASURED by the reviewer] The answer now counts water once, where the
+  rivers of the cells that drain into the cell bring it; a test holds that the lake's inflow is the
+  sum of those; the scan has a rule for it and a planted fault.
+* **What the check of the table of hollows cannot show (medium).** I had written "one thing"; there
+  are two: that the pass a hollow names is its lowest, and the level of a pass into the sea, which
+  the check bounds from below only. A level written 200 m too high is accepted, and the lake then
+  stands too high. [MEASURED by the reviewer] Not mended: the check is not handed the sea's
+  surface. Section 9, `data/tables.yaml` and the library's description say "two things".
+* **What holds the scan's own rules (medium).** "A test plants each fault" was not so: the scan can
+  report at 94 places and the test planted 28 faults; the reviewer took four rules out unnoticed.
+  Five more faults are planted, one for each of those four and one for the drowned cell; the
+  descriptions now say that most other rules of the scan have no planted fault. The test's
+  description says which cells it reads.
+* **Smaller, each corrected where it stood.** "From then on each new test was run to see it fail"
+  (the record after it has three rounds that found tests that could not fail). "Two machines with
+  different processors": no second machine was used by anyone; the last digits differ with numpy's
+  AVX-512 code switched off on the same machine. The suite's last run before the fourth commit was
+  on the working tree, two text files changed after it, and it had failed in four tests, not five.
+  The 75 changes on purpose were run on test files as they stood half an hour before the commit.
+  The four worlds were built one change before the commit. "Two of its fourteen rows hold more
+  runoff than the rain can supply" (one does). "Eight breakages" (nine). "48 ways" (49). The fourth
+  check's finding on labels had no entry. "Two failures outside the default setting" of the crust
+  trial (three, and four seeds in which the first condition cannot be measured). Three
+  cross-references and attributions. Hock's table (her 2.5 to 5.5 are for sites without glaciers).
+  One test's description claimed more than its assertions.
+* **Missing from section 6.** Eight things that were not done stood elsewhere or nowhere; they are
+  in section 6 now.
+
+**Found in the answer to the fifth check, by me.**
+
+* Under the water as it is now poured, the lake at the Black Sea's place stands at 32 m, and a test
+  that passed before (the seas that come back as lakes, with a bound of 30 m written with the first
+  version) fails. The bound was not moved: the test is an expected failure for the Black Sea, with
+  the cause measured (section 4.3).
+* The Amazon leaves the land 354 km from the place taken as its mouth, where it left it at 203 km:
+  one more expected failure among the mouths, and its reason says that the water poured decides it.
+* The Brahmaputra's gauge passes as built (it shares its cell with the Ganges's), and passes in 2
+  of 20 and 16 of 100 random settlements: no finding.
+
+**What was run on the code as committed** (commit d116240; `handoff/logs/`): the whole suite with the Earth data and without it; the refusal audit with every test, the Earth tests among them; the Earth tools (as built, 20 and 100 random settlements, twelve other valley shares, the planet file's water, a demand of 0.76, the trace of each of 24 rivers); the four worlds, their reports and the scan of their "why" answers. The logs of the Earth tools agree number for number with those of the snapshot on which the first sitting had rewritten the tests (`handoff/logs/before_rerun/`); two lines of the tools' wording had changed since. The Earth tools and the worlds ran on commit 8e5f588 and the suite and the audit on d116240; between the two only the README, the reasons of two tests and the hand-over files changed.
+
+**Not done in answer to the fifth check.** The check of the table of hollows still cannot bound a
+pass into the sea from above. Most rules of the scan of the "why" answers have no planted fault.
+The valley shares other than the tenth, and the counts of 100 settlements, are held by no test.
+The check of the viewer in a browser was not run again. Nothing was run on Windows. No sixth, independent check of this answer has been made: the texts of sections 4.2 to 4.5, 5.4 and 11 and the reasons rewritten in `tests/test_earth.py` are mine alone, and four rounds in a row an independent check found that my account claimed more than was measured.
 
 ## 6. What is not done, and why
 
@@ -1295,11 +1416,36 @@ difference is seen, not hidden.
 10. **Nothing was run on Windows.** The owner's machine is a Windows laptop. Paths, text encodings
     and line endings are handled for it and tested as far as Linux can show (section 5.3); the
     install by the lock file, the build, the viewer and the tools have not been run there.
-⟦NOT_DONE_REVIEW⟧
+11. **The same world on another processor.** With numpy's AVX-512 code switched off, on the same
+    machine, the default world comes out with other last digits: differences of at most 4 parts in a
+    million, no class changed. [MEASURED by a reviewer of step 2; the fourth check measured it again
+    on the preview mesh: 21 of 52 fields, at most 3.3 parts in a million, no class, index or
+    true-or-false value] That a processor without those instructions does the same is likely and was
+    not tried: no second machine was used. [INFERRED] The design's promise is the same world, bit for
+    bit, on one machine with the pinned versions, and that holds. [MEASURED: two fresh interpreters]
+    Across machines I know no way to make it hold short of giving up the fast mathematics library. A
+    world store carries its own fingerprints, so a difference is seen, not hidden.
+12. **Biomes' design test.** The design asks for agreement with the published map of climate
+    classes, cell by cell. Five shares of the land are tested instead; the map is not at hand
+    (section 4.3).
+13. **The crust trial's open ends** (section 3.2): three runs fail its second condition outside the
+    default setting, and three duties follow for step 3.
+14. **The viewer has no test in the suite** beyond the server's answers. The check in a browser is a
+    tool that needs a package the suite does not have (`tools/viewer_check.py`). It was not run on 2026-10-06; its last run was before the fourth check's fixes.
+15. **The contract test of imports and draws covers `processes/` only**, not the library.
+    [MEASURED by the fifth check: `tests/test_contract.py`]
+16. **The install by the README's three commands** (a virtual environment, the lock file, the
+    editable install) was run as written on Linux only. [MEASURED on 2026-10-06, in a fresh workspace: the lock file installed into a new virtual environment, and the engine so installed gave the running order, built the default preview world in 23 s and answered the README's example] Not on Windows (item 10).
+17. **Two limits of the checks on water** (section 5.4): the check of the table of hollows cannot
+    bound a pass into the sea from above, and most rules of the scan of the "why" answers have no
+    planted fault.
+18. **The design's river-flow data.** The design left them "still to be chosen". With the 21 gauges
+    I chose, 13 miss as built (sections 4.2 and 11).
+19. **The design document** was brought up to step 2 on 2026-10-06 in its section Build order and in its sources only. Its layers still describe the design as approved: where step 2 departs from a layer, the tables of departures say so and the layer does not. Its field dictionary does not list `snow_cover`.
 
 ## 7. Departures from the approved design
 
-Each is recorded in the design document as well. Items 1 to 8 are of step 1; 9 to 21 of step 2.
+Items 1 to 8, 22 and 23 are of step 1; items 9 to 21, 24 and 25 of step 2. All are recorded in the design document as well, under its own numbers, since 2026-10-06. Until then the document held nine, all of step 1, and this section said that it held all (section 5.4).
 
 1. **The rain rule.** The design named the UVic model's rule: rain where humidity exceeds 85 %.
    With that rule no rain fell anywhere in the trade-wind belts: yearly rain between 10° and 40°
@@ -1362,7 +1508,7 @@ Each is recorded in the design document as well. Items 1 to 8 are of step 1; 9 t
     real one, so step 7 replaces one file and touches nothing else.
 12. **Snow.** One store, written by Hydrology: snowfall fills it and warmth empties it, 4 mm a day
     for each degree above freezing. [DOCUMENTED: Hock 2003, equation 1, for the rule; her Table 1
-    gives 2.5 to 5.5 for snow; 4 is my choice] The ground counts as covered in proportion until the
+    gives 2.5 to 5.5 for snow at sites without glaciers, as a page reader gave it; 4 is my choice] The ground counts as covered in proportion until the
     store holds 15 mm of water. [DOCUMENTED: Dutra et al. 2010, equation A2] `snow_cover`, the
     month's mean of that, is a field outside the design's list of 74; the Cryosphere of step 6 should
     take it over. Where more snow falls in a year than the year can melt, the store is held to one
@@ -1378,27 +1524,30 @@ Each is recorded in the design document as well. Items 1 to 8 are of step 1; 9 t
     does not give it. Hydrology therefore uses the two radiation formulas of the paper it takes the
     rule's constants from. [DOCUMENTED: Davis et al. 2017, equations 10 to 13] They ask for the share of
     the possible hours of sunshine, cell by cell and month by month. The engine has no clouds, so one
-    share, 0.62, stands for every cell and month. [INFERRED] With it the formulas return the means of
-    Earth's whole surface: 161 W/m² of sunlight absorbed and 63 W/m² of heat lost. [DOCUMENTED for
-    Earth: Trenberth, Fasullo and Kiehl 2009, Table 2b] Over land alone they do not:
+    share, 0.62, stands for every cell and month. [INFERRED] With it the formulas come near the means of
+    Earth's whole surface: 0.465 of the sunlight at the top of the air absorbed at the surface, which
+    is 158.7 of 341.3 W/m², and 64.0 W/m² of heat lost at 15 °C, where Earth has 161.2 and 63.
+    [MEASURED for the formulas: the comment in `data/models.yaml`; DOCUMENTED for Earth: Trenberth,
+    Fasullo and Kiehl 2009, Table 2b] Over land alone they do not:
 
     | Over land, W/m² | The engine's formulas under Earth's measured temperatures | The published budget of the land |
     |---|---|---|
-    | Sunlight that reaches the ground | 185.6 | 184.7 |
-    | Sunlight that the ground absorbs | 154.0 | 145.1 |
+    | Sunlight that reaches the ground | 185.7 | 184.7 |
+    | Sunlight that the ground absorbs | 154.1 | 145.1 |
     | Heat that the ground radiates away | 68.3 | 79.6 |
-    | Left to warm the air and evaporate water | 85.7 | 65.5 |
-    | Of that, taken by evaporation | 45.1 (Hydrology under Earth's measured rain) | 38.5 |
+    | Left to warm the air and evaporate water | 85.8 | 65.5 |
+    | Of that, taken by evaporation | 45.1 (Hydrology under the rain data) | 38.5 |
 
     [MEASURED: `python tools/earth_demand.py`, and a test that holds every number; DOCUMENTED for the
     right-hand column: the same table's row for land, "This paper": net solar 145.1, solar reflected
     39.6, net longwave 79.6, evaporation 38.5, sensible heat 27. It is a published synthesis for 2000
     to 2004, not a measurement of one kind] The land is left 1.31 times the energy of the budget, and
-    gives the air 1.17 times the water. The excess of 20.2 W/m² taken apart: 0.7 from the sunlight
-    that reaches the ground, 8.2 from the ground reflecting 0.17 of it where the budget has 0.21, and
-    11.3 from the formula for the heat radiated away. The share of sunshine sets the first of these,
-    and the first is right: the share that would return the budget's sunlight at the ground is 0.61.
-    The formula for the heat loss would want a share of 0.76; no single share mends both.
+    gives the air 1.17 times the water, on rain that is not the budget's (section 4.4, point 7).
+    The excess of 20.3 W/m² taken apart: 0.8 from the sunlight that reaches the ground,
+    8.2 from the ground reflecting 0.17 of it where the budget has 0.21, and 11.3 from the
+    formula for the heat radiated away. The share of sunshine enters both formulas: the share that
+    would return the budget's sunlight at the ground is 0.61, the one that would return its loss
+    of heat is 0.76, and no single share mends both.
 
     What this does and does not show. It shows where the formulas depart from one published budget
     of all land, on the land's mean. It does not show where on the land the energy is too much: the
@@ -1413,12 +1562,12 @@ Each is recorded in the design document as well. Items 1 to 8 are of step 1; 9 t
     dew. [DOCUMENTED: its equations 14, 16, 18, 24 and 25, read through a page reader, twice] The
     engine takes the net radiation of the whole day. This began as my misreading of the paper, which
     I had labelled as documented; the third check found it. Over Earth's land the engine's demand is
-    1,003 mm a year. The paper's form gives 1,246 mm from the same numbers and gives 194 mm back as
+    1,004 mm a year. The paper's form gives 1,247 mm from the same numbers and gives 195 mm back as
     dew: 1,052 mm net. [MEASURED: `tools/earth_demand.py`] So the engine's field
     `potential_evapotranspiration` is a fifth below the quantity the paper calls by that name, and
-    its net taking of water is 5 % below the paper's. I kept it and said so: the error of the one
-    share of sunshine is six times as large and of the other sign, and 194 mm of dew a year over all
-    land is more than I can hold against anything measured. [UNVERIFIED: that real dew is far less]
+    its net taking of water is 5 % below the paper's. I kept it and said so: the energy that the two radiation
+    formulas leave the land is 31 % above the published budget's, six times as much and of the other
+    sign, and 195 mm of dew a year over all land is more than I can hold against anything measured. [UNVERIFIED: that real dew is far less]
 15. **Lakes.** The published method moves water until no hollow holds more than its volume. A climate
     that repeats has no filling: a lake has stopped growing when a year's inflow equals a year's loss
     from its surface. So a hollow's room is a yearly loss, not a volume; the order of filling,
@@ -1472,10 +1621,22 @@ Each is recorded in the design document as well. Items 1 to 8 are of step 1; 9 t
     across its lakes the same way; both processes take the rule from one function of the library.
 21. **`potential_evapotranspiration` is not the paper's quantity of that name** (item 14): it is the
     demand over the whole day, on the ground that is free of snow.
+22. **The frozen-region example caps the temperature at −15 °C**, not at the design's −5 °C (section
+    3.4). It is of step 1; these notes had it in section 3.4 only.
+23. **Snapshots of the history, the rerun of the climate inside the history, the weather clock and
+    the clock that steps through dates are refused on loading** until their build steps (section 6,
+    item 6). Of step 1; these notes had it in section 6 only.
+24. **River-flow data.** The design left them to be chosen. I chose the last gauging stations of 21
+    great rivers [DOCUMENTED: Dai and Trenberth, Table 2] and a factor of two (sections 4.2 and 4.4).
+25. **The water poured on Earth's relief.** The design's test of SeaLevel names the volume measured
+    from the relief at full detail. Until the fifth check the Earth tests poured the planet file's
+    volume instead, 0.19 % less, and that departure was recorded nowhere. They follow the design now
+    (section 4.5). The Earth twin pours the planet file's volume.
 
 ## 8. What the world looks like now, and where it is wrong
 
-Default world, seed 20261004. [MEASURED unless marked: `python tools/world_report.py STORE`]
+Default world, seed 20261004. [MEASURED unless marked: `python tools/world_report.py STORE`; two rows that
+the tool does not print say where they come from]
 
 | | Standard mesh | Preview mesh | Earth |
 |---|---|---|---|
@@ -1494,45 +1655,51 @@ Default world, seed 20261004. [MEASURED unless marked: `python tools/world_repor
 | Land that drains into a closed hollow | 48 % | 47 % | |
 | Land whose water never reaches the sea, as the water runs | 18 % | 19 % | |
 | Land under lakes | 8.3 % | 8.9 % | 3.7 % of the ice-free land [DOCUMENTED at second hand: Verpoorter et al. 2014] |
-| Largest lake | 5.9 million km² | 7.6 million km² | 0.37 million km², the Caspian [UNVERIFIED] |
+| Largest lake | 5.9 million km² | 7.6 million km² | 0.37 million km², the Caspian [DOCUMENTED at second hand: Wikipedia] |
 | Climate groups, share of land: tropical / dry / temperate / cold / polar | 10 / 36 / 17 / 4 / 33 % | 11 / 37 / 17 / 3 / 32 % | 19 / 30 / 13 / 25 / 13 % [DOCUMENTED: Peel et al. 2007] |
 | Wettest land cell | 13.5 m a year | 4.3 m | |
 
-In order of how much they distort the world:
+In the order in which I judge them to distort the world. The order is a judgment; nothing measures it.
 
 * **The seasons on land are too weak, and too much land is white all year.** This is the largest
   known error, and step 2 did not touch it. On Earth's own relief the engine's land between 40° and
   60° north is 13.6 K warmer in July than in January, where Earth's is 30.9 K; the cold climates
   with warm summers take 2 % of the land for Earth's 25 %, and the polar climate 46 % for 13 %
-  (section 4.6). In ten other seeds 11 to 47 % of the land is white all year. [MEASURED] The cause,
-  as I read it, is the one spreading constant of EnergyBalance, which ties land to the sea too
-  tightly. Run alone, EnergyBalance gives the centre of a continent 60° of longitude wide a swing
-  of 10.7 K either side of its mean at 50° north, and one 140° wide a swing of 20 K. [MEASURED for
-  the two swings; INFERRED that the constant is the cause: no mend has been tried] Later models of
-  this family let the spreading vary with latitude and surface. [DOCUMENTED: Ziegler and Rehfeld
-  2021] With weak summers the snow of land poleward of about 50° never melts; the white ground then
-  gives the air no water, and the north is dry as well. [INFERRED: the chain is my reading]
+  (section 4.6). In ten other seeds 11 to 47 % of the land is white all year. [MEASURED] The cause is
+  not established. What is measured, on the Earth twin: over the land between 40° and 60° north the
+  coldest month is as cold as Earth's and the warmest is 17 K too cold, and 52 % of that land lies
+  under snow in every month (section 4.6). Two candidates are not told apart by anything measured: a
+  seasonal forcing that is too weak, and snow that never melts and keeps the summer cold. Each
+  would feed the other. [INFERRED: both] I had named the one spreading constant of EnergyBalance as
+  the cause, "which ties land to the sea too tightly"; a land tied to the sea would have winters
+  too warm, and the twin's winter is right. What was measured with EnergyBalance alone, in step 1:
+  the centre of a continent 60° of longitude wide swings 10.7 K either side of its mean at 50°
+  north, and one 140° wide 20 K; with a smaller constant (0.35 for 0.649) the same two swing 15.9
+  and 27.6 K. [MEASURED in step 1; not run again] Later models of this family let the spreading
+  vary with latitude and surface. [DOCUMENTED: Ziegler and Rehfeld 2021] With weak summers the snow
+  of land poleward of about 50° never melts; the white ground then gives the air no water, and the
+  north is dry as well. [INFERRED: the chain is my reading]
 * **The engine has no clouds.** Albedo gives every sky the same share of cloud, and Hydrology gives
   every month the same share of sunshine. The first costs the cloud decks of cool seas and the
   cloud bands of the tropics. [INFERRED: not measured against Earth] What the second costs is not
-  known: on the mean of Earth's land the one share gives the right sunlight at the ground (section
-  7, item 14), and nothing at hand measures sunshine by region.
+  known: on the mean of Earth's land the one share gives the right sunlight at the ground and too
+  small a loss of heat (section 7, item 14), and nothing at hand measures sunshine by region.
 * **Half the land drains into closed hollows, and a twelfth of it lies under lakes.** Two of the
   lakes are inland seas of 5.9 and 3.6 million km², in basins below sea level that the ocean does not
   reach. The seeded relief has had no rivers to cut it. FluvialErosion (step 3) cuts valleys on the
   mesh itself. [INFERRED: that this removes most of the excess; it is tested there] Earth's measured
   relief says nothing either way about this: its hollows are in the data (section 4.4).
-* **The land gives the air too much water and the rivers too little.** Under Earth's own rain and
-  warmth the land gives the air 1.17 times what a published budget gives it, the land of fourteen
-  great basins sheds 0.68 of the depth measured (0.64 without the Amazon), and 31.7 thousand km³ a
-  year reach the sea where Earth's rivers carry 40. The cause is not established (section 4.4). The
-  error is not even: the land sheds least in the Indus, the Yangtze and the Brahmaputra (0.13, 0.21
-  and 0.23, the last on rain data that hold less than the river carries) and too much in four snowy
-  basins of the north (the St Lawrence 1.45). Dry land sheds nothing at all, where on Earth it sheds
+* **The land gives the air too much water and the rivers too little.** Under the rain and warmth
+  of Earth's data sets the land gives back 0.738 of the rain where a published budget has 0.65, the
+  land of 15 great basins sheds 0.69 of the depth measured (0.66 without the Amazon), and 30.7
+  thousand km³ a year reach the sea where that budget has 40, on 117.2 thousand km³ of rain for its
+  114. The cause is not established (section 4.4). The error is not even: the land sheds least in the
+  Indus, the Yangtze and the Brahmaputra (0.13, 0.22 and 0.23; the Brahmaputra on rain data that hold
+  less than the river carries) and more than measured in 5 basins (the St Lawrence 1.45). Dry land sheds nothing at all, where on Earth it sheds
   its rare cloudbursts: a bucket fed with a month's mean rain knows no storm. Frozen ground is not in
   the model. [MEASURED for the numbers; INFERRED for the storm and the frozen ground]
 * **Rivers have no travel time and lakes do not even out the seasons.** A month's runoff is at the
-  sea in the same month. On the mesh's Volga 319 of the year's 342 mm are shed in April, where the
+  sea in the same month. On the mesh's Volga 322 of the year's 345 mm are shed in April, where the
   real river carries about half its water in the spring flood. [MEASURED; DOCUMENTED for the river:
   Kalugin 2022]
 * **Land warms a month late.** Land lags the sun by 41 to 62 days, and northern land is warmest
@@ -1568,12 +1735,14 @@ others. For these two the scheduler checks the fields; four things it cannot che
    the field `elevation`, and none is missing or infinite where a rule asks for one; a hollow with no
    way out has no level; a hollow inside no other overflows into the sea or into ground whose own
    hollow overflows no higher. A Drainage that writes another kind of table must come with a
-   Hydrology that reads it. [MEASURED: 48 ways of breaking the table, each refused in the words of
-   its rule, and a test that ties each written rule to the refusals that enforce it] One thing the
-   check cannot show: that the pass a hollow names is its lowest. A table that keeps every rule and
-   names a higher pass is accepted, and the lake then stands too high. [MEASURED by the fourth
+   Hydrology that reads it. [MEASURED: 49 ways of breaking the table, each refused in the words of
+   its rule, and a test that ties each written rule to the refusals that enforce it] Two things the
+   check cannot show. One: that the pass a hollow names is its lowest. A table that keeps every rule
+   and names a higher pass is accepted, and the lake then stands too high. [MEASURED by the fourth
    check: 894 m for 530 m on a ground built for it] To show it Hydrology would have to find the
-   hollows again.
+   hollows again. Two: the level of a pass into the sea, which the check bounds from below only,
+   because it is not handed the sea's surface. A level written 200 m too high is accepted, Hydrology
+   runs without a notice, and the lake stands too high. [MEASURED by the fifth check]
 2. **`flow_receiver` is −1 for a sea cell and for the bottom of a hollow.** `basin_id` and
    `drainage_area` describe the land with every hollow full, whatever the climate.
 3. **The sentence patterns name drivers.** A replacement records the drivers that
@@ -1592,13 +1761,15 @@ A model that reads it must know that. Biomes does not read it yet.
 
 ## 10. Sources opened during the build
 
+One source below was opened by a reviewer and not by me, and its row says so.
+
 | Source | Used for | How I checked it |
 |---|---|---|
 | North, Cahalan, Coakley 1981 (in the design) | Co-albedo 0.681 − 0.202 P2, ice co-albedo 0.38, heat capacities, ice at the −10 °C yearly mean | Opened; a reviewer matched the constants and the quote on page 102 |
 | [Bretherton, Peters, Back 2004](https://www.aos.wisc.edu/~lback/wvpprecip.pdf), J. Climate 17, 1517 | The rain law and its two numbers | Opened as an author's copy; equation 2 read |
 | Peel, Finlayson, McMahon 2007, Hydrol. Earth Syst. Sci. 11, 1633 | Every rule of the climate classes; Earth's share of each class | Opened |
 | Beck et al. 2018 (in the design) | Arid classes take precedence; a climate dry in summer and in winter | Opened |
-| [Hock 2003](https://www.oocities.org/haniskywalker/hock2003.pdf), J. Hydrology 282, 104 | The degree-day rule of melt and its factors for snow | Opened as a copy on a personal site |
+| [Hock 2003](https://www.oocities.org/haniskywalker/hock2003.pdf), J. Hydrology 282, 104 | The degree-day rule of melt and its factors for snow | Opened as a copy on a personal site. The fifth check read its Table 1 through a page reader: 2.5 to 5.5 at sites without glaciers, and larger factors at glacier sites, which the reader gave unreliably |
 | [Dutra et al. 2010](https://www.fs.usda.gov/rm/pubs_other/rmrs_2010_dutra_e001.pdf), J. Hydrometeor. 11, 899 | Snow cover from the snow store, equation A2 | Opened |
 | Juárez et al. 2012, a chapter on mass-consistent wind models | The idea behind turning held-back air aside; it cites Sasaki 1958 and Sherman 1978 | Opened; the two papers it cites were not |
 | [Ziegler and Rehfeld 2021](https://gmd.copernicus.org/articles/14/2843/2021/gmd-14-2843-2021.pdf), Geosci. Model Dev. 14, 2843 | Later two-dimensional energy balance models let the spreading vary | Opened |
@@ -1618,10 +1789,11 @@ A model that reads it must know that. Biomes does not read it yet.
 | [Verpoorter et al. 2014, "A global inventory of lakes based on high-resolution satellite imagery"](https://agupubs.onlinelibrary.wiley.com/doi/10.1002/2014GL060641), Geophys. Res. Lett. 41, 6396 | Lakes cover 3.7 % of Earth's ice-free land | At second hand: a page that reports the paper. The paper would not open, again on 2026-10-05 (the publisher refuses the reader) |
 | [NCAR/GeoCAT-datafiles](https://github.com/NCAR/GeoCAT-datafiles) | The four data files of section 4.3 | Fetched; the files' own attributes read for what they hold and who made them |
 | ["Investigation of Caspian Sea Level Fluctuations ..."](https://www.ijcoe.org/article_149296_f5ae89f43cbcf8f98aa838f382fb2416.pdf), Int. J. Coastal and Offshore Eng. | The Caspian: the Volga brings 237 km³ a year, about 80 % of the inflow; a catchment of about 3 million km²; "about 436000 km2" of sea | Read out by a page reader. Its own evaporation and rain do not balance its inflow, so I use only the inflow and the catchment |
-| [Wikipedia, "Caspian Sea"](https://en.wikipedia.org/wiki/Caspian_Sea) | The Caspian: 371,000 km² without the Garabogazköl lagoon, 28 m below the ocean | Read out by a page reader. It disagrees with the paper above on the area; both are given in section 4.4 |
-| [Kalugin 2022, "Hydrological and Meteorological Variability in the Volga River Basin under Global Warming by 1.5 and 2 Degrees"](https://www.mdpi.com/2225-1154/10/7/107), Climate 10(7), 107 | The Volga's basin: 1,360,000 km², 585 mm of precipitation and 262 km³ of runoff a year, "based on the author's calculations for current climatic conditions (since the late 1980s)"; and in the same paragraph "The runoff coefficient of the Volga River is 0.38", which does not agree with the 262 km³; 30 % of the precipitation as snow; 53 % of the runoff in the spring flood | Found by the third reviewer; then read out to me by a page reader, three times in all, with the sentences quoted. The fourth check found the second figure, which my first two readings had not asked for |
+| [Wikipedia, "Caspian Sea"](https://en.wikipedia.org/wiki/Caspian_Sea) | The Caspian: 371,000 km² without the Garabogazköl lagoon, 28 m below the ocean; a catchment of 3,626,000 km² | Read out by a page reader, the catchment on 2026-10-06. It disagrees with the paper above on the area; both are given in section 4.4 |
+| [Kalugin 2022, "Hydrological and Meteorological Variability in the Volga River Basin under Global Warming by 1.5 and 2 Degrees"](https://www.mdpi.com/2225-1154/10/7/107), Climate 10(7), 107 | The Volga's basin: 1,360,000 km², 585 mm of precipitation and 262 km³ of runoff a year, "based on the author's calculations for current climatic conditions (since the late 1980s)"; and in the same paragraph "The runoff coefficient of the Volga River is 0.38", which does not agree with the 262 km³; a "water content" of 250 km³ a year, a third figure; 30 % of the precipitation as snow; 53 % of the runoff in the spring flood | Found by the third reviewer; then read out to me by a page reader, three times in all, with the sentences quoted. The fourth check found the second figure, which my first two readings had not asked for |
 | [Barnes, Callaghan and Wickert 2020, "Computing water flow through complex landscapes – Part 2: Finding hierarchies in depressions and morphological segmentations"](https://esurf.copernicus.org/articles/8/431/2020/), Earth Surf. Dynam. 8, 431 | The sentence Drainage quotes for a pass: "The higher of the two is the outlet cell, and its elevation is the depression's spill elevation" | Opened again on 2026-10-05; the sentence read out by a page reader |
 | [FAO Irrigation and Drainage Paper 56, Chapter 3](https://www.fao.org/4/x0490e/x0490e07.htm) | "a single value of 2.45 MJ kg-1 ... This is the latent heat for an air temperature of about 20°C" | Opened on 2026-10-05, beside Annex 3 above |
+| [GPCP Version 2 documentation](https://iridl.ldeo.columbia.edu/SOURCES/.NASA/.GPCP/.V2/.dataset_documentation.html), 2002 | Whether the rain data raise gauge readings for what gauges miss: "corrected for climatological estimates of systematic error due to wind effects, side-wetting, evaporation, etc., following Legates (1987)". It is of version 2, not of the 2.2 used here, and does not say which precipitation is right over the Volga | Opened by a reviewer of the fifth check, through a page reader; not by me |
 | [The Python documentation, `sys.stdout`](https://docs.python.org/3/library/sys.html), read as its source for Python 3.13, `Doc/library/sys.rst` | "On Windows, UTF-8 is used for the console device. Non-character devices such as disk files and pipes use the system locale encoding (i.e. the ANSI codepage)": why printed text could end a run on Windows, and what `worldengine/console.py` does about it | Fetched from the CPython repository on GitHub and read |
 
 ## 11. Next
@@ -1629,42 +1801,45 @@ A model that reads it must know that. Biomes does not read it yet.
 Step 2 is built. By the design's "done when", read strictly, it is not done: the closed Caspian
 fails as built (sections 4.2 and 4.5). Its largest known error is that the land gives the air too
 much water and the rivers too little, by a size that is measured and for a cause that is not
-(section 4.4). I count the step closed with both stated. What to mend first is yours to rank.
+(section 4.4). I count the step closed with both stated. Build step 3 is not started, and I will not
+start it before you answer.
 
-1. **The seasons of the land** (EnergyBalance: the spreading of heat, and how snow and ice feed
-   back). It is the largest known error of the whole engine, and step 2 did not touch it. Its cause
-   is my reading, not a measurement (section 8). On Earth's relief the engine's northern land is
-   13.6 K warmer in July than in January where Earth's is 31 K, the polar climate takes 46 %
-   of the land for Earth's 13 %, and a third of the land is white all year. [MEASURED: section 4.6]
-   The Earth twin gives four tests to judge a mend by, all of them expected failures today: 31 K
-   between July and January on northern land, a fifth of the land in the cold climates, the dry
-   belt as the driest band of the north, and Earth's rain on the land between 40° and 60° north.
-2. **The water that the land gives back.** I proposed "clouds" here before the fourth check. What
-   is measured does not point to clouds: the sunlight at the ground is right on the land's mean,
-   and the excess of energy lies in the ground's reflection and in the formula for the heat
-   radiated away (section 7, item 14). Three things could be tried, each a change of constants or
-   of one formula inside Hydrology, and none needs a design decision: the ground's reflection over
-   land, the heat-loss formula, and the one number by which the Priestley-Taylor rule divides the
-   energy between evaporation and warming the air. What would judge a mend is at hand: the
-   published budget of the land (`tools/earth_demand.py`), the water of all the land, and the
-   like-for-like depths basin by basin (`tools/earth_rivers.py --demands`). What is not at hand is
-   anything that would say which of the three is wrong, or whether the fault is elsewhere: no
-   measured radiation, sunshine or daily rain by region. A mend chosen now would be a fit to one
-   published budget and fourteen basins. [INFERRED]
+**Four questions for you.**
 
-My proposal is the first, then step 3 (the plates). The first will not mend the second: the tests
-that measure the land's water hand Hydrology Earth's own rain and warmth, so nothing that
-EnergyBalance does can change them. I would leave the second until data by region are at hand. The
-other choice is yours to make: to set the land's constants now so that the land's budget and the
-water of all the land come out as published, and to label them as fitted. It would bring the
-world's rivers nearer to Earth's in size and prove nothing about the cause. A process that makes
-clouds stays a question for the design of step 5 (the upgrade of Circulation and Moisture), where
-rising air and moisture are remade anyway; nothing measured here argues for it or against it.
+1. **What to mend first.** My candidate is the cold northern summers of the climate. It is the
+   largest known error of the whole engine, and step 2 did not touch it. On Earth's relief the
+   engine's land between 40° and 60° north is 13.6 K warmer in July than in January where Earth's is
+   30.9 K; its coldest month is right and its warmest 17 K too cold (on the preview mesh); the polar climate takes 46 % of the land
+   for Earth's 13 %, and 35 % of the land is white all year. [MEASURED: section 4.6] The cause is not
+   established: a seasonal forcing that is too weak and snow that never melts are not told apart
+   (section 8). So the first piece of work would be to tell them apart, by runs of EnergyBalance
+   and Albedo alone, before any constant is changed. The Earth twin gives four tests to judge a mend
+   by, all expected failures today. They pass at three quarters of Earth's 31 K between July and
+   January on northern land, at 15 % of the land in the cold climates with warm summers, with the
+   driest land band of the north between 15° and 40°, and at three quarters of Earth's rain on the
+   land between 40° and 60° north. The other candidate is the water that the land gives back
+   (section 4.4, point 7); nothing at hand says which formula or constant is wrong there, so a mend
+   chosen now would be a fit to one published budget and 15 basins. I would leave it until data
+   by region are at hand.
+2. **Do the 21 gauges belong to the "done when" of Hydrology?** The design's row says "River flow
+   data is still to be chosen". I chose the last gauging stations of 21 great rivers and asked for
+   the measured flow within a factor of two. As built 8 pass and 13 miss, and section 4.4 shows
+   that the gauges test the relief data and the precipitation handed in at least as much as they
+   test Hydrology. If they belong to the "done when", step 2 is further from done than the one
+   failed design condition says.
+3. **Does a Caspian whose overflow ends in a neighbouring closed lake "stay a closed lake"?** As
+   built the lake at the Caspian's place overflows by 17.9 km³ a year, of 590 that rivers and
+   shores bring it, and that water ends in a second, closed lake 4 cells away; none reaches the sea,
+   as built or in any of 100 random settlements. No water of the Caspian's basin leaves for the
+   ocean, which may be what the design's sentence meant; the lake itself is not closed, which is what
+   it says. The test reads it as written and fails. Either answer leaves the larger miss standing:
+   the lake is two and a half to three times the real sea's size.
+4. **Relief with its rivers cut in, fetched on your machine?** The mouths and the gauges test the
+   relief data, their ties, the valley rule and the water poured more than they test Drainage
+   (section 4.4). Tuning the harness moves single rivers and not the counts (section 4.5). Relief
+   made for hydrology would make those tests mean something about Drainage. It is not among the
+   data the build environment reaches; on your machine it could be fetched. [UNVERIFIED: that a
+   data set of this kind is free to fetch; I recall several and opened none]
 
-Two things outside the engine would make its tests on Earth mean more:
-
-* **Relief with its rivers cut in.** The mouths and the gauges test the relief data, their ties
-  and the valley rule more than they test Drainage (section 4.4). Such relief is not among the
-  data the build environment reaches. On your machine it could be fetched. [UNVERIFIED: that a
-  data set of this kind is free to fetch; I recall several and opened none]
-* **A first run on Windows.** Nothing was run there (section 6).
+One thing more that only your machine can show: a first run on Windows. Nothing was run there
+(section 6).
