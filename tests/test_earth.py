@@ -1536,10 +1536,13 @@ def test_the_twin_says_where_its_relief_comes_from(twin):
 @missed("13.4 K against Earth's 31.1 K [MEASURED]. Over that land the twin's coldest month is as cold as Earth's (-12.6 C "
         "against -12.7 C) and its warmest is 17 K too cold (1.4 C against 18.4 C); the year is 9.3 K too cold (-5.8 C against "
         "3.5 C), and 52 % of that land lies under snow in every month [MEASURED: handoff/pass2/twin_seasons.log; the test of "
-        "the twin's expected failures, below]. The cause is not established. Two candidates are not told apart by anything "
-        "measured here: a seasonal forcing that is too weak, and snow that never melts and keeps the summer cold [INFERRED: "
-        "both]. An earlier version of this reason named \"one constant that ties the land to the sea too tightly\" as the "
-        "cause; a land tied to the sea would have winters too warm, and the twin's winter is right.")
+        "the twin's expected failures, below]. Two causes were measured afterwards, on twins built with one "
+        "constant changed (python handoff/pass3/seasons_apart.py, seasons_sea.py; their logs beside them; no test holds "
+        "those runs): with no snow counted on the ground the warmest month is 9.1 C and the coldest -7.3 C, and with a sea "
+        "that warms three times faster the swing is 20.5 K. The sea of the twin hardly has seasons, and the land is tied "
+        "to it; snow that never melts cools summer and winter alike, which hides in winter that the land is tied to the "
+        "sea. No single heat capacity of the sea returns both the northern and the southern seas, so nothing is mended "
+        "(docs/BUILD_NOTES.md, section 4.9).")
 def test_northern_land_is_far_warmer_in_july_than_in_january_as_on_earth(twin):
     """Between 40 and 60 degrees north Earth's land is 31 K warmer in July than in January [MEASURED from the
     temperature data]. The condition: the twin's land reaches three quarters of that."""

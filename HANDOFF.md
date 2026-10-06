@@ -7,8 +7,11 @@ Read `docs/BUILD_NOTES.md` first: its head, section 1, section 5.4 (what the fif
 
 - The brief is in `handoff/brief.md`, verbatim. The design is approved; the design document is a Claude doc:
   https://claude.ai/code/artifact/0ad5d499-95b9-4211-8e8c-74651f03652b . Its section "Build order" and its sources
-  were brought up to step 2 on 2026-10-06 (revision 471); its layers still describe the design as approved.
-- Do NOT start build step 3 before Minh answers the four questions of `docs/BUILD_NOTES.md`, section 11.
+  were brought up to step 2 on 2026-10-06 (revision 474); its layers still describe the design as approved.
+- On 2026-10-06 Minh left the four questions of the notes to Claude ("you can decide whatever makes sense").
+  The decisions are in `docs/BUILD_NOTES.md`, section 11: the seasons were diagnosed and nothing mended (section
+  4.9); the 21 gauges do not belong to the "done when"; the Caspian's condition is kept as written and fails; relief
+  with rivers cut in is not fetched. **Next is build step 3, as the design orders it. It is not started.**
 - Never loosen a design condition to make a test pass. Every number comes from a measurement or a log; every
   claim carries [MEASURED], [DOCUMENTED], [INFERRED] or [UNVERIFIED].
 - Answers to Minh: complete sentences, no undefined jargon, tables for comparison.
@@ -28,15 +31,16 @@ Read `docs/BUILD_NOTES.md` first: its head, section 1, section 5.4 (what the fif
    then `python handoff/notes_tools/build_notes.py handoff/logs handoff/notes_tools/values.json > docs/BUILD_NOTES.md`.
 5. README counts; the design document; the project note `claude/world-engine-design.md`.
 6. A sixth, diff-scoped check (`handoff/reviews/report_sixth.md`); its nine findings are answered (notes 5.5).
+7. The diagnosis of the cold northern summers: `handoff/pass3/` (scripts and logs), notes section 4.9. No check
+   by anyone else, and no test holds its numbers.
 
 ## Not done
 
-- The branch is not merged into `main`, and no archive was packaged or delivered. `worlds/first.zarr` (not under
+- No archive was packaged or delivered (`main` holds the branch since 2026-10-06). `worlds/first.zarr` (not under
   version control) must be built before packaging: `python -m worldengine build --profile preview --out worlds/first.zarr`.
 - After the sixth check's answers only `tests/test_earth.py` was run again, not the whole suite (the other test
   files did not change).
 - The browser check of the viewer (`tools/viewer_check.py`) was not run again. Nothing was run on Windows.
-- Minh's four questions are open (notes, section 11).
 
 ## Environment
 

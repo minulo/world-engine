@@ -96,56 +96,43 @@ test, preview mesh] {x['worlds_same']}
 
 def sec11(x, o):
     ls, w = o["ls"], o["w"]
-    t20, t100 = o["t20"], o["t100"]
-    return f"""## 11. Next
+    return f"""## 11. The four questions, as decided, and what comes next
 
 Step 2 is built. By the design's "done when", read strictly, it is not done: the closed Caspian
 fails as built (sections 4.2 and 4.5). Its largest known error is that the land gives the air too
 much water and the rivers too little, by a size that is measured and for a cause that is not
-(section 4.4). I count the step closed with both stated. Build step 3 is not started, and I will not
-start it before you answer.
+(section 4.4).
 
-**Four questions for you.**
+I put four questions to you on 2026-10-06. You answered that I should decide whatever makes sense.
+These are my decisions; each is yours to overrule.
 
-1. **What to mend first.** My candidate is the cold northern summers of the climate. It is the
-   largest known error of the whole engine, and step 2 did not touch it. On Earth's relief the
-   engine's land between 40° and 60° north is {x['twin']['swing']} K warmer in July than in January where Earth's is
-   {x['twin']['swing_earth']} K; its coldest month is right and its warmest 17 K too cold (on the preview mesh); the polar climate takes {x['twin']['E']} % of the land
-   for Earth's 13 %, and {x['twin']['white']} % of the land is white all year. [MEASURED: section 4.6] The cause is not
-   established: a seasonal forcing that is too weak and snow that never melts are not told apart
-   (section 8). So the first piece of work would be to tell them apart, by runs of EnergyBalance
-   and Albedo alone, before any constant is changed. The Earth twin gives four tests to judge a mend
-   by, all expected failures today. They pass at three quarters of Earth's 31 K between July and
-   January on northern land, at 15 % of the land in the cold climates with warm summers, with the
-   driest land band of the north between 15° and 40°, and at three quarters of Earth's rain on the
-   land between 40° and 60° north. The other candidate is the water that the land gives back
-   (section 4.4, point 7); nothing at hand says which formula or constant is wrong there, so a mend
-   chosen now would be a fit to one published budget and {ls['alike']} basins. I would leave it until data
-   by region are at hand.
-2. **Do the 21 gauges belong to the "done when" of Hydrology?** The design's row says "River flow
-   data is still to be chosen". I chose the last gauging stations of 21 great rivers and asked for
-   the measured flow within a factor of two. As built {o['gauges_n']} pass and {21 - o['gauges_n']} miss. Section 4.4 shows
-   that a gauge's flow depends on the relief data and on the precipitation handed in as well as on
-   Hydrology; how much on each is not measured. If they belong to the "done when", step 2 is further from done than the one
-   failed design condition says.
-3. **Does a Caspian whose overflow ends in a neighbouring closed lake "stay a closed lake"?** As
-   built the lake at the Caspian's place overflows by {o['c']['overflow']:.1f} km³ a year, of {o['c']['brought']} that rivers and
-   shores bring it, and that water ends in a second, closed lake {o['c']['cells']} cells away; none reaches the sea,
-   as built or in any of the {o['t100']['caspian']['overflowing']} of 100 random settlements that overflow. At the valley share I
-   built with, then, no water of the Caspian's basin leaves for the ocean, which may be what the
-   design's sentence meant; the lake itself is not closed, which is what it says. The test reads it
-   as written and fails. This is a fact of one valley share: at 0.07 the overflow reaches the sea in
-   2 of the 3 random settlements that overflow, and at 0.5 in all 20 (section 4.5). Either answer leaves the larger miss standing:
-   the lake is two and a half to three times the real sea's size.
-4. **Relief with its rivers cut in, fetched on your machine?** The mouths and the gauges test the
-   relief data, their ties, the valley rule and the water poured more than they test Drainage
-   (section 4.4). Tuning the harness moves single rivers and not the counts (section 4.5). Relief
-   made for hydrology would make those tests mean something about Drainage. It is not among the
-   data the build environment reaches; on your machine it could be fetched. [UNVERIFIED: that a
-   data set of this kind is free to fetch; I recall several and opened none]
+1. **What to mend first.** I took the cold northern summers, and began by measuring their causes
+   (section 4.9). Two are told apart: a sea that hardly has seasons, to which the land is tied, and
+   snow that never melts. No single constant mends the first without spoiling the southern seas, so
+   I changed nothing. The mend belongs to the ocean's build step, where the depth to which the sea
+   is stirred can follow from a cause. The water that the land gives back (section 4.4, point 7)
+   also stays as it is: nothing at hand says which formula or constant is wrong, and a mend chosen
+   now would be a fit to one published budget and {ls['alike']} basins.
+2. **The 21 gauges do not belong to the "done when" of Hydrology.** The design left river-flow data
+   to be chosen and named two patterns for Hydrology; I chose the gauges afterwards, and section 4.4
+   shows that a gauge's flow depends on the relief data and on the precipitation handed in as well
+   as on Hydrology. They stay in the suite as they are: {o['gauges_n']} pass, {21 - o['gauges_n']} are expected failures with
+   their numbers, and none is counted for or against the step.
+3. **A Caspian whose overflow ends in a neighbouring closed lake does not meet "stays a closed
+   lake".** I keep the condition as the design wrote it, and it fails: the lake overflows by
+   {o['c']['overflow']:.1f} km³ a year. Reading it as "no water leaves for the ocean" would pass at the valley share
+   I built with and would be a loosening made after the result was known; and at two other shares
+   the overflow reaches the sea in some settlements (section 4.5). Step 2 is closed with this one
+   design condition failed and stated.
+4. **Relief with its rivers cut in is not fetched.** The build environment does not reach it, and
+   I did not ask you to fetch it: no decision of step 3 waits for it. It stays the one thing that
+   would make the tests of mouths and gauges say something about Drainage (section 4.4), and it is
+   worth fetching when the rivers of the engine's own worlds have been cut by erosion and want a
+   yardstick. [UNVERIFIED: that a data set of this kind is free to fetch; I recall several and
+   opened none]
 
-One thing more that only your machine can show: a first run on Windows. Nothing was run there
-(section 6).
+**Next: build step 3**, as the design orders it. It is not started. Two things that only your machine
+can show stay open: a first run on Windows (section 6), and the times on the laptop.
 """
 
 
@@ -186,8 +173,8 @@ month is as cold as Earth's (−12.6 °C for −12.7 °C) and the warmest is 17 
 every month. [MEASURED: `handoff/pass2/twin_seasons.log`; a test holds these numbers] That the four
 failures share one cause is my reading: summers too weak, so that snow which should melt stays, the
 polar climate takes the place of the cold one, cold air carries little vapour and white ground
-gives none back. [INFERRED: the chain was not measured link by link] Which cause makes the summers
-weak is not established (section 8)."""),
+gives none back. [INFERRED: the chain was not measured link by link] What makes the summers weak
+was measured afterwards: section 4.9."""),
         ("""is 7 K too warm, and more land lies under lakes than under Earth's measured climate on the same
 relief (8.5 % for 6.0 %): a hollow under snow that never melts loses nothing to the air, and fills.
 [MEASURED; the cause of the last INFERRED]""",
@@ -388,20 +375,21 @@ def r8(x, o, d):
   this family let the spreading vary with latitude and surface. [DOCUMENTED: Ziegler and Rehfeld
   2021] With weak summers the snow of land poleward of about 50° never melts; the white ground then
   gives the air no water, and the north is dry as well. [INFERRED: the chain is my reading]""",
-         """[MEASURED] The cause is
-  not established. What is measured, on the Earth twin: over the land between 40° and 60° north the
-  coldest month is as cold as Earth's and the warmest is 17 K too cold, and 52 % of that land lies
-  under snow in every month (section 4.6). Two candidates are not told apart by anything measured: a
-  seasonal forcing that is too weak, and snow that never melts and keeps the summer cold. Each
-  would feed the other. [INFERRED: both] I had named the one spreading constant of EnergyBalance as
-  the cause, "which ties land to the sea too tightly"; a land tied to the sea would have winters
-  too warm, and the twin's winter is right. What was measured with EnergyBalance alone, in step 1:
-  the centre of a continent 60° of longitude wide swings 10.7 K either side of its mean at 50°
-  north, and one 140° wide 20 K; with a smaller constant (0.35 for 0.649) the same two swing 15.9
-  and 27.6 K. [MEASURED in step 1; not run again] Later models of this family let the spreading
-  vary with latitude and surface. [DOCUMENTED: Ziegler and Rehfeld 2021] With weak summers the snow
-  of land poleward of about 50° never melts; the white ground then gives the air no water, and the
-  north is dry as well. [INFERRED: the chain is my reading]"""),
+         """[MEASURED] Two causes
+  are measured and told apart (section 4.9). The larger is the sea: the engine's sea hardly has
+  seasons (2.7 K between July and January beside the land of 40° to 60° north, where the data have
+  10.2 K), and the land is tied to it by the spreading of heat. The other is snow that never melts,
+  which takes 7.7 K off the warmest month of that land. The two cancel in winter, which is why the
+  twin's coldest month is as cold as Earth's, and add in summer. Neither is mended: no single heat
+  capacity of the sea returns both the northern and the southern seas. I had first named the one
+  spreading constant of EnergyBalance as the cause and then, after the fifth check, called the cause
+  not established; the measurement bears out a part of each. What was measured with EnergyBalance
+  alone in step 1: the centre of a continent 60° of longitude wide swings 10.7 K either side of its
+  mean at 50° north, and one 140° wide 20 K. Later models of this family let the spreading vary with
+  latitude and surface [DOCUMENTED: Ziegler and Rehfeld 2021]; solved with their spreading, the land
+  between 40° and 60° north gains 2.7 K of swing. [MEASURED: `handoff/pass3/eb_varying.log`] With
+  weak summers the snow of land poleward of about 50° never melts; the white ground then gives the
+  air no water, and the north is dry as well. [INFERRED: the chain is my reading]"""),
         ("""on the mean of Earth's land the one share gives the right sunlight at the ground (section
   7, item 14), and nothing at hand measures sunshine by region.""",
          """on the mean of Earth's land the one share gives the right sunlight at the ground and too

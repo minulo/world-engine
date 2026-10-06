@@ -16,6 +16,7 @@ import sec4            # noqa: E402
 import sec4_text       # noqa: E402
 import sec5_text       # noqa: E402
 import other_text      # noqa: E402
+import sec49_text      # noqa: E402
 
 ROOT = Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
 OLD = subprocess.check_output(["git", "show", "c8c8448:docs/BUILD_NOTES.md"], text=True, cwd=ROOT)
@@ -54,6 +55,8 @@ def main(logs, values):
             parts += [sec4.sec42(d) + "\n", sec4_text.sec43(d, o, x["biomes"]) + "\n", sec4_text.sec44(d, o) + "\n", sec4_text.sec45(d, o) + "\n"]
         if name == "4.6":
             parts.append(other_text.sec47(x) + "\n")
+        if name == "4.8":
+            parts.append(sec49_text.SEC49 + "\n")
         if name == "5":
             parts.append(sec5_text.sec54(x["fifth"]) + "\n" + sec5_text.sec55(x) + "\n")
     parts.append(other_text.sec11(x, o))
