@@ -9,6 +9,11 @@ on land, the biomes) is the engine's own. The comparison prints the twin's numbe
 the Climatic Research Unit's means of 1961 to 1990, rain from GPCP 1979 to 2010, both read off at the cell centres.
 It needs the reference data (tools/fetch_reference_data.py).
 
+The water poured on the twin is the planet file's volume (data/planet.yaml, surface_water_volume_m3: 1.335e18 m3),
+because the volume of sea water is a parameter of the planet and the twin is the engine as it stands. The Earth
+harness of the other Earth tools (earth_rivers, earth_relief, earth_demand) pours by default what the ocean of the
+relief data holds, 0.19 % more, as the design's test of SeaLevel asks; so the twin's sea level is not the harness's.
+
 A twin is not a test that passes or fails. It shows where the engine's climate departs from the one planet whose
 climate is known, on relief it did not make. tests/test_earth.py states the departures that matter as tests.
 """

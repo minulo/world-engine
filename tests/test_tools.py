@@ -18,7 +18,7 @@ from worldengine.engine import Engine
 # every script, with the arguments it cannot do without
 TOOLS = {"earth_rivers": [], "earth_relief": [], "earth_demand": [], "earth_twin": [], "fetch_reference_data": [],
          "world_report": ["no_such.zarr"], "why_scan": ["no_such.zarr"], "make_biomes_yaml": ["no_such_folder"],
-         "viewer_check": ["no_such.zarr", "out"]}
+         "viewer_check": ["no_such.zarr", "out"], "refusal_audit": []}
 TRIALS = {"climate_round_cost": [], "crust_points_trial": []}
 
 
@@ -73,6 +73,10 @@ def _trial(name):
     ("earth_rivers", ["--level", "seven"], "'seven' is not a whole number"),
     ("earth_relief", ["--level", "12"], "12 is outside 3 to 8"),
     ("earth_twin", ["--profile", "no_such"], "invalid choice: 'no_such'"),
+    ("earth_rivers", ["--sea-water", "lake"], "invalid choice: 'lake'"),
+    ("earth_relief", ["--sea-water", "lake"], "invalid choice: 'lake'"),
+    ("earth_demand", ["--sea-water", "lake"], "invalid choice: 'lake'"),
+    ("refusal_audit", ["--most", "0"], "0 is below 1"),
     ("why_scan", ["no_such.zarr", "--every", "0"], "0 is below 1"),
     ("climate_round_cost", ["no_such_profile"], "invalid choice: 'no_such_profile'"),
 ])
