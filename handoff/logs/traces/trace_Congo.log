@@ -1,0 +1,35 @@
+The Congo on the mesh with every hollow full, from 0.5, 25.2; its real mouth: -6.0, 12.4
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0    0.5    25.0         396 m        402 m  lake        457 m         1575   396 m, 457 m
+   1    0.5    24.4         396 m        396 m  lake        457 m         1520   396 m, 457 m
+   2    0.0    24.2         366 m        392 m  lake        457 m         1469   366 m, 457 m
+   3   -0.4    23.9         366 m        385 m  lake        457 m         1418   366 m, 457 m
+   4   -0.4    23.3         396 m        416 m  lake        457 m         1362   419 m, 457 m
+   5   -0.4    22.8         366 m        377 m  lake        457 m         1307   366 m, 457 m
+   6   -0.8    22.5         366 m        397 m  lake        457 m         1255   396 m, 457 m
+   7   -0.8    21.9         366 m        381 m  lake        457 m         1200   366 m, 457 m
+   8   -0.8    21.3         366 m        366 m  lake        457 m         1145   366 m, 457 m
+   9   -0.8    20.8         366 m        366 m  lake        457 m         1092   366 m, 457 m
+  10   -0.8    20.2         366 m        366 m  lake        457 m         1039   366 m, 457 m
+  11   -0.8    19.6         335 m        340 m  lake        457 m          988   335 m, 457 m
+  12   -0.8    19.1         335 m        335 m  lake        457 m          937   335 m, 457 m
+  13   -0.8    18.5         335 m        334 m  lake        457 m          889   335 m, 457 m
+  14   -0.9    18.0         335 m        346 m  lake        457 m          840   350 m, 457 m
+  15   -1.0    17.5         320 m        331 m  lake        457 m          793   335 m, 457 m
+  16   -1.0    16.9         281 m        303 m  lake        457 m          749   305 m, 457 m
+  17   -1.0    16.4         274 m        295 m  lake        457 m          709   289 m, 457 m
+  18   -1.0    15.8         305 m        341 m  lake        457 m          672   335 m, 457 m
+  19   -1.0    15.2         381 m        402 m  lake        457 m          639   366 m, 457 m
+  20   -1.0    14.7         427 m        485 m  lake        457 m          610   457 m, 457 m
+  21   -1.0    14.1         457 m        526 m  down                       587   518 m, 518 m
+  22   -1.0    13.6         335 m        451 m  down                       570   488 m, 488 m
+  23   -1.0    13.0         274 m        335 m  down                       559   274 m, 305 m
+  24   -1.0    12.4         251 m        341 m  down                       555   305 m, 305 m
+  25   -1.0    11.9         183 m        307 m  lake        213 m          558   350 m, 350 m
+  26   -1.0    11.3         213 m        448 m  down                       568   564 m, 564 m
+  27   -1.0    10.7          91 m        290 m  down                       585   396 m, 396 m
+  28   -1.0    10.2          30 m        102 m  down                       608   92 m, 92 m
+  29   -1.0     9.6          15 m         26 m  level                      635   30 m, 30 m
+  30   -1.5     9.4          15 m         11 m  down                       603   15 m, 15 m
+  31   -1.5     8.8        -164 m       -164 m  sea                        641   -80 m, ocean
+31 land cells: 8 steps down to lower ground, 1 over level ground, 22 across full hollows; nearest to its real mouth: 555 km; leaves the land 603 km from it

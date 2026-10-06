@@ -36,10 +36,12 @@ that comes and goes with the seasons, the difference between snow and ice, and t
 of old snow and of snow under trees.
 Wrong where: the cloud decks of cool subtropical seas and the cloud bands of the tropics.
 Clouds are the largest known gap in the climate stage. Too much land is white all year: a
-fifth of the default world's land, and a third of the land of the Earth twin, where a tenth
-of Earth's land lies under ice [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8]. The fault
-is taken to lie not in this table but in EnergyBalance, which gives the land summers too weak
-to melt the snow [INFERRED from runs of EnergyBalance alone: the same sections]. A
+fifth of the default world's land, and a third of the land of the Earth twin [MEASURED:
+docs/BUILD_NOTES.md, sections 4.6 and 8], where a tenth of Earth's land lies under ice
+[DOCUMENTED: National Snow and Ice Data Center, Glacier Quick Facts]. Two things feed each
+other here and have not been told apart: EnergyBalance gives the land summers too weak to
+melt the snow, and snow that outlasts the summer reflects the next summer's sunlight
+[INFERRED; docs/BUILD_NOTES.md, section 8, gives what is measured]. A
 planet can still freeze over: with ice on most of its surface
 it reflects more sunlight than it needs to stay frozen, and models of this kind tip that way
 more easily than fuller ones [UNVERIFIED: my recollection of the literature on energy balance

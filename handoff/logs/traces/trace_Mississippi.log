@@ -1,0 +1,16 @@
+The Mississippi on the mesh with every hollow full, from 35.1, -90.0; its real mouth: 29.2, -89.3
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   35.3   -90.2          62 m         76 m  down                       684   82 m, 82 m
+   1   34.9   -90.7          57 m         63 m  down                       646   56 m, 58 m
+   2   34.5   -91.2          45 m         51 m  down                       611   49 m, 49 m
+   3   34.0   -91.0          39 m         43 m  down                       554   46 m, 46 m
+   4   33.5   -90.9          31 m         34 m  down                       498   34 m, 34 m
+   5   33.0   -90.7          24 m         35 m  down                       441   30 m, 30 m
+   6   32.5   -91.2          22 m         27 m  down                       413   28 m, 28 m
+   7   32.1   -91.6          16 m         19 m  down                       394   16 m, 16 m
+   8   31.7   -92.1          12 m         29 m  level                      384   11 m, 16 m
+   9   31.2   -91.9          12 m         15 m  down                       337   16 m, 16 m
+  10   30.7   -91.8           7 m          9 m  down                       293   8 m, 8 m
+  11   30.2   -92.1           6 m          8 m  down                       295   7 m, 7 m
+  12   29.7   -91.8          -2 m         -2 m  sea                        252   -2 m, ocean
+12 land cells: 11 steps down to lower ground, 1 over level ground, 0 across full hollows; nearest to its real mouth: 293 km; leaves the land 295 km from it

@@ -35,8 +35,8 @@ def run(*args, **env):
 
 @pytest.mark.parametrize("name", [*TOOLS, *TRIALS])
 def test_a_script_explains_itself_when_asked_and_does_nothing_else(name, tmp_path):
-    """--help prints the script's own description and ends with 0, as a process of its own: nothing is built,
-    fetched or written, whatever else the script would do without arguments."""
+    """--help prints the script's own description and ends with 0, as a process of its own, and no world is built
+    (the folder worlds/ holds what it held), whatever else the script would do without arguments."""
     before = sorted(p.name for p in (ROOT / "worlds").glob("*")) if (ROOT / "worlds").exists() else []
     code, out, err = run(script(name), "--help")
     assert code == 0, (name, err)

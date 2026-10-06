@@ -1,0 +1,39 @@
+The Yangtze on the mesh with every hollow full, from 29.6, 106.5; its real mouth: 31.4, 121.8
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   29.8   106.6         366 m        446 m  lake        716 m         1461   457 m, 823 m
+   1   29.8   107.3         457 m        662 m  lake        716 m         1396   610 m, 823 m
+   2   29.3   107.7         580 m        649 m  lake        716 m         1375   610 m, 823 m
+   3   28.8   108.0         701 m        789 m  lake        716 m         1356   853 m, 853 m
+   4   28.8   108.7         716 m        894 m  down                      1293   990 m, 990 m
+   5   28.8   109.3         572 m        684 m  down                      1230   701 m, 701 m
+   6   28.4   109.7         381 m        499 m  down                      1216   533 m, 533 m
+   7   27.9   110.0         305 m        435 m  lake        366 m         1205   457 m, 457 m
+   8   27.9   110.7         366 m        657 m  lake        366 m         1144   732 m, 732 m
+   9   27.4   111.0         305 m        462 m  down                      1138   472 m, 472 m
+  10   26.9   111.3         152 m        248 m  lake        167 m         1135   252 m, 252 m
+  11   26.9   111.9         167 m        219 m  lake        167 m         1087   198 m, 213 m
+  12   26.9   112.4         107 m        176 m  lake        152 m         1041   183 m, 183 m
+  13   27.3   112.7         152 m        243 m  down                       994   274 m, 274 m
+  14   27.8   112.9          76 m        130 m  down                       947   107 m, 107 m
+  15   28.3   113.2          61 m        149 m  lake         61 m          902   137 m, 137 m
+  16   28.8   112.9          30 m         87 m  lake         61 m          909   92 m, 92 m
+  17   29.2   113.1          30 m        115 m  lake         61 m          869   61 m, 76 m
+  18   29.7   113.4          30 m        118 m  lake         61 m          830   76 m, 76 m
+  19   30.2   113.6          30 m         35 m  lake         61 m          793   30 m, 76 m
+  20   30.1   114.2          61 m         81 m  lake         61 m          740   61 m, 76 m
+  21   30.1   114.8          61 m        164 m  lake         61 m          688   168 m, 168 m
+  22   30.1   115.3          61 m        113 m  lake         61 m          635   84 m, 84 m
+  23   30.0   115.9          45 m         74 m  lake         61 m          583   30 m, 61 m
+  24   30.0   116.5          53 m        134 m  lake         61 m          532   107 m, 107 m
+  25   30.5   116.7          61 m         83 m  lake         61 m          493   61 m, 61 m
+  26   30.9   117.0          61 m         75 m  lake         61 m          458   84 m, 84 m
+  27   31.4   117.3          61 m         64 m  lake         61 m          427   61 m, 61 m
+  28   31.3   117.9          61 m         83 m  level                      372   61 m, 61 m
+  29   31.3   118.5          61 m         66 m  level                      318   61 m, 61 m
+  30   31.2   119.0          61 m         86 m  level                      264   92 m, 92 m
+  31   31.2   119.6          61 m        137 m  down                       210   457 m, 457 m
+  32   31.6   120.0          30 m         41 m  down                       170   30 m, 30 m
+  33   31.6   120.6          15 m         23 m  level                      115   15 m, 15 m
+  34   31.5   121.2          15 m         12 m  down                        60   31 m, 31 m
+  35   31.5   121.8          -6 m         -6 m  sea                          8   -10 m, ocean
+35 land cells: 9 steps down to lower ground, 4 over level ground, 22 across full hollows; nearest to its real mouth: 60 km; leaves the land 60 km from it

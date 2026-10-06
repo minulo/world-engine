@@ -19,7 +19,8 @@ tables:
   hollows:
     description: "One row per closed hollow of the land, and how the hollows nest. Row 0 stands for the sea. The next rows are the hollows with one bottom each (Drainage writes them in the order of their bottom cells; no reader relies on that order); later rows are larger hollows, each made of two that fill to the pass between them. parent, sibling, first_child and second_child are rows of this table (-1 for none). spill_m is the level at which the hollow overflows, spill_from_cell the cell on its own side of that pass, spill_into_cell the cell beyond it, and spill_into_hollow the hollow which that cell drains into (0 for the sea). The last two columns describe the lake that fills the hollow to its pass."
     # The rules a writer of this table must keep. Hydrology checks them on reading and refuses a table that breaks one
-    # (library/lakes.py, check_table). One thing the check cannot show: that the pass a hollow names is its lowest.
+    # (library/lakes.py, check_table). Two things the check cannot show: that the pass a hollow names is its lowest, and
+    # that the level of a pass into the sea is not too high (it is bounded from below only).
     rules:
       - "Row 0 is the sea: no parent, no parts."
       - "Rows 1 to H are the hollows with one bottom, one for every land cell without a receiver: that cell is the row's bottom_cell. Down its receivers the water of every cell ends in the sea or at one of these bottoms, and the field depression_id holds the row of that bottom (0 for the sea)."

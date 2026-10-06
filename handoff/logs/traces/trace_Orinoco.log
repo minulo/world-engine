@@ -1,0 +1,9 @@
+The Orinoco on the mesh with every hollow full, from 8.1, -63.5; its real mouth: 8.6, -61.0
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0    8.0   -63.6          60 m        174 m  down                       289   152 m, 152 m
+   1    8.4   -63.3          20 m         55 m  down                       249   40 m, 40 m
+   2    8.9   -63.0          15 m         25 m  level                      217   25 m, 25 m
+   3    9.3   -62.7          15 m         20 m  level                      197   15 m, 15 m
+   4    9.7   -62.9          15 m         24 m  down                       244   20 m, 20 m
+   5   10.1   -62.6           1 m          1 m  sea                        245   -10 m, ocean
+5 land cells: 3 steps down to lower ground, 2 over level ground, 0 across full hollows; nearest to its real mouth: 197 km; leaves the land 244 km from it

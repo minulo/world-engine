@@ -19,11 +19,16 @@ The rules are the ones that the checks of build step 2 found broken or found unt
 the fourth check found broken (a cell at the brim of a lake said to lie in it and to be reached by no lake; water
 said to "arrive" that was the arriving water times the dry share of the cell; a largest source that sheds nothing;
 a lake's answer that went on to another hollow's level as if it were the lake's; snow said to lie "for part of the
-year" where it lies all year); and the ones the fourth check found that no test would notice if they broke (the
+year" where it lies all year); the ones the fourth check found that no test would notice if they broke (the
 sentence patterns of sea and land, of the loops, of what limits plants, of level ground; the units and signs of
-numbers; places). A world that passes has answers that are true of its numbers in these respects. It says nothing
-about whether the numbers are right, nor about faults of a kind nobody has found yet.
-tests/test_world.py plants each fault in an answer and asks that the scan report it.
+numbers; places); and one that the fifth check found broken (in a cell under a closed lake, water said to arrive
+that had entered the lake further up). A world that passes has answers that are true of its numbers in these
+respects. It says nothing about whether the numbers are right, nor about faults of a kind nobody has found yet.
+
+What holds the scan itself: tests/test_world.py plants 33 faults in true answers, one for each kind of fault that a
+check found and for some of the other rules, and asks that the scan report each and nothing else. Most of the
+rules below have no planted fault of their own: the fifth check took four of them out, one at a time, and no test
+noticed (those four have one now).
 """
 import re
 import sys
@@ -96,11 +101,14 @@ def scan(view, cells=None, fields=FIELDS) -> list:
     in_lake, brim, closed, drowned = (place == code for code in (IN_A_LAKE, AT_THE_BRIM, CLOSED_LAKE, UNDER_A_CLOSED_LAKE))
     snowy = "snow_water" in have
     ice = np.asarray(view.driver("snow_water", "left_as_ice")).astype(np.float64).sum(axis=0) > 0 if snowy else None
-    brought = np.zeros(n)                                    # what the cells that drain into each cell carry, by the stored field
-    if rivers and "flow_receiver" in f:
+    lakes = view.table("lakes") if "lake_fraction" in f else None
+    brought = np.zeros(n)                                    # what the cells that drain into each cell carry, by the stored field:
+    if rivers and "flow_receiver" in f:                      # down the receivers, and from a lake that overflows into the cell
         to = f["flow_receiver"].astype(np.int64)
         np.add.at(brought, to[to >= 0], year("river_discharge")[to >= 0])
-    lakes = view.table("lakes") if "lake_fraction" in f else None
+        if lakes is not None:
+            runs = np.asarray(lakes["overflows"]).astype(bool)
+            np.add.at(brought, np.asarray(lakes["spills_into_cell"])[runs], year("river_discharge")[np.asarray(lakes["outlet_cell"])[runs]])
     lake_of = np.asarray(view.driver("lake_fraction", "lake")) if "lake_fraction" in f else None
     # the sea, worked out from the fields themselves: the cells of the main sea are the wet cells joined to its lowest cell
     main_sea, sea_level, surface, nbr = None, None, None, np.asarray(view.mesh_array("nbr"))
@@ -199,9 +207,18 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                 must("No river runs through this cell", dry and value == 0)
                 must("The river here carries", dry and value > 0)
                 must_not("the cell's own runoff gives", runoff[cell] == 0)
-                arrives = re.search(r"(?:: |; )([\d.]+) m³/s arrive from upstream", first)
-                if closed[cell] and arrives and float(arrives.group(1)) < 0.99 * brought[cell] - 1.0:
-                    wrong(f"says that {arrives.group(1)} m³/s arrive from upstream, where the cells that drain into this one carry {brought[cell]:.0f}")
+                # in a cell of a closed lake the water said to arrive is the river of the cells that drain into it, counted once
+                arrives = re.search(rf"(?:: |; )({NUMBER}) m³/s arrive from upstream", first)
+                if closed[cell] and arrives and not close(number(arrives.group(1)), brought[cell]):
+                    wrong(f"says that {arrives.group(1)} m³/s arrive from upstream, where the cells that drain into this one carry {brought[cell]:.4g}")
+                if closed[cell] and ":" in first:                 # ... and with the cell's own runoff and what the lake takes it adds up to the river
+                    parts = [number(x) for x in re.findall(rf"({NUMBER}) m³/s", re.sub(r"\([^)]*\)", "", first.split(":", 1)[1]))]
+                    if not parts or abs(sum(parts) - value) > 0.012 * sum(abs(x) for x in parts) + 0.02:
+                        wrong(f"gives parts that add up to {sum(parts):.4g} m³/s, where the field holds {value:.4g}")
+                if drowned[cell]:
+                    said = read(rf"bring the lake ({NUMBER}) m³/s here on the year's average", "water that the rivers bring the lake here")
+                    if said and not close(said[0], brought[cell]):
+                        wrong(f"says that the rivers bring the lake {said[0]:g} m³/s here, where the cells that drain into this one carry {brought[cell]:.4g}")
                 named = re.search(r"where the largest single source is cell (\d+),", first)
                 if "arrive from upstream" in first:
                     if not named or int(named.group(1)) == cell:

@@ -1,0 +1,51 @@
+Q1 Danube gauge cell 90408 at 44.4, 27.4; km from station 138; lake row 515; lake fraction 1.00; ground 18 mean 39.1
+   lake there: 612693 km2 at 32 m; overflows True
+   gauge row: {"measured": 202.0, "station_area": 807.0, "measured_depth": 250.31, "cell": 90408, "flow": 66.08, "basin": 650.12, "no_river": false, "reaches": 650.12, "sheds": 292.9, "lost_in_lakes": 124.35, "kept_here": 0.0, "unbalanced": 0.0, "rain": 902.0, "demand": 759.66}
+   river books keys: ['demand', 'flow', 'kept_here', 'lost', 'rain', 'reaches', 'shed', 'unbalanced']
+   Lena         gauge cell at 70.4, 123.8 (140 km from the station); lake row 13 fraction 0.00; lake 150490 km2 at 122 m, overflows True
+   Indus        gauge cell at 24.2, 68.2 (137 km from the station); lake row -1 fraction 0.00
+   Niger        gauge cell at 12.7, 3.0 (111 km from the station); lake row -1 fraction 0.00
+   Zambezi      gauge cell at -16.9, 34.2 (105 km from the station); lake row -1 fraction 0.00
+   Mekong       gauge cell at 14.2, 105.0 (134 km from the station); lake row 41 fraction 1.00; lake 7387 km2 at 45 m, overflows True
+   Yenisei      gauge cell at 66.4, 87.7 (125 km from the station); lake row 121 fraction 0.00; lake 17774 km2 at 61 m, overflows True
+   Congo        gauge cell at -4.0, 14.3 (116 km from the station); lake row -1 fraction 0.00
+   Amur         gauge cell at 49.6, 136.6 (106 km from the station); lake row 527 fraction 1.00; lake 180651 km2 at 107 m, overflows True
+   Yangtze      gauge cell at 31.2, 119.0 (145 km from the station); lake row -1 fraction 0.00
+   Mackenzie    gauge cell at 68.6, -134.8 (130 km from the station); lake row -1 fraction 0.00
+   St Lawrence  gauge cell at 44.3, -73.3 (135 km from the station); lake row 526 fraction 1.00; lake 109370 km2 at 102 m, overflows True
+   Orinoco      gauge cell at 8.9, -63.0 (109 km from the station); lake row -1 fraction 0.00
+   Brahmaputra  gauge cell at 24.1, 89.4 (129 km from the station); lake row -1 fraction 0.00
+   Ganges       gauge cell at 24.1, 89.4 (138 km from the station); lake row -1 fraction 0.00
+Q2 Black Sea    {"row": 515, "area_km2": 612693.295, "level_m": 32.0, "overflows": true, "outlet_cell": 153024, "outflow_km3": 351.229, "brought_km3": 422.733, "loses_mm": 921.813, "rain_mm": 805.108, "catchment_km2": 2498171.422, "outside_km2": 1885478.127, "depth_mm": 224.205, "holds_voronezh": false} {'ends': 'sea', 'lat': 40.44704363706555, 'lon': 25.997421851944562, 'cells': 1, 'area_km2': None}
+    outlet cell 153024 at 40.5, 27.3: ocean share 0.78, mean -5.6, handed 32, wet False
+Q2 Baltic       {"row": 514, "area_km2": 265947.355, "level_m": 8.0, "overflows": true, "outlet_cell": 64404, "outflow_km3": 780.805, "brought_km3": 730.708, "loses_mm": 612.467, "rain_mm": 800.839, "catchment_km2": 2191809.048, "outside_km2": 1925861.693, "depth_mm": 379.419, "holds_voronezh": false} {'ends': 'sea', 'lat': 55.701469901780115, 'lon': 11.099325233575183, 'cells': 3, 'area_km2': None}
+    outlet cell 64404 at 54.6, 13.3: ocean share 0.87, mean -9.1, handed 8, wet False
+Q2 Great Lakes  {"row": 536, "area_km2": 298119.499, "level_m": 179.0, "overflows": true, "outlet_cell": 5434, "outflow_km3": 256.69, "brought_km3": 182.51, "loses_mm": 744.377, "rain_mm": 993.205, "catchment_km2": 768833.008, "outside_km2": 470713.509, "depth_mm": 387.731, "holds_voronezh": false} {'ends': 'sea', 'lat': 40.423945869138876, 'lon': -73.86607065001024, 'cells': 24, 'area_km2': None}
+    outlet cell 5434 at 42.9, -82.4: ocean share 0.00, mean 192.2, handed 179, wet False
+Q2 Caspian      {"row": 523, "area_km2": 1089603.476, "level_m": 61.0, "overflows": true, "outlet_cell": 101155, "outflow_km3": 17.879, "brought_km3": 589.885, "loses_mm": 932.887, "rain_mm": 407.921, "catchment_km2": 4053447.752, "outside_km2": 2963844.276, "depth_mm": 199.027, "holds_voronezh": true} {'ends': 'closed lake', 'lat': 42.15827793364441, 'lon': 57.07932870814529, 'cells': 4, 'area_km2': 19938.896473905406}
+    outlet cell 101155 at 40.2, 56.9: ocean share 0.00, mean 88.7, handed 61, wet False
+Q2 Congo        {"row": 549, "area_km2": 880225.819, "level_m": 457.0, "overflows": true, "outlet_cell": 115824, "outflow_km3": 238.911, "brought_km3": 416.693, "loses_mm": 1958.109, "rain_mm": 1756.136, "catchment_km2": 3137275.489, "outside_km2": 2257049.67, "depth_mm": 184.618, "holds_voronezh": false} {'ends': 'sea', 'lat': -1.5107726887770971, 'lon': 8.781804159399377, 'cells': 10, 'area_km2': None}
+    outlet cell 115824 at -1.0, 14.7: ocean share 0.00, mean 485.3, handed 427, wet False
+   Black Sea outlet: every-point height -61.0
+Q3 level drawn: differing cells 914; all on level ground under both: True True; given.level shape (163842,); equal to Drainage's field: True
+   Hydrology handed level: True; equal: True; own earth ties level: None
+   level cells (tie_counts): 4578
+Q6 Caspian: hollow 471, top hollow 945, spill of the top 62 m; own hollow spill -29 m; parent 908
+   Volga way: steps [(47.6, 39.9, 'down', 62.0), (40.5, 26.7, 'down', 21.0)]
+Q7 Yenisei way keys ['cell', 'ground_m', 'km_to_mouth', 'lake_level_m', 'lat', 'lon', 'mean_m', 'step']
+   cells whose centre is ocean in the data: 4 of 41
+   nearest to its mouth 324 km; last land cell at 71.7, 72.0
+Q7 Ob way keys ['cell', 'ground_m', 'km_to_mouth', 'lake_level_m', 'lat', 'lon', 'mean_m', 'step']
+   cells whose centre is ocean in the data: 0 of 44
+   nearest to its mouth 71 km; last land cell at 71.7, 72.0
+Q7 Danube way keys ['cell', 'ground_m', 'km_to_mouth', 'lake_level_m', 'lat', 'lon', 'mean_m', 'step']
+   cells whose centre is ocean in the data: 3 of 30
+   nearest to its mouth 203 km; last land cell at 40.5, 26.7
+Q7 Amazon way keys ['cell', 'ground_m', 'km_to_mouth', 'lake_level_m', 'lat', 'lon', 'mean_m', 'step']
+   cells whose centre is ocean in the data: 0 of 15
+   nearest to its mouth 354 km; last land cell at -1.7, -53.0
+Q9 Amazon end: [(-1.8, -53.5, 'down', 30.0, 44.3, 411), (-1.7, -53.0, 'down', 15.0, 8.0, 354), (-1.7, -52.4, 'sea', -2.0837275981903076, -2.1, 297)]
+Q4 tally keys: ['back_to_air', 'caspian_area_km2', 'caspian_closed', 'caspian_level_m', 'caspian_overflow_km3', 'caspian_to_sea', 'gauges', 'gauges_passing', 'lakes_share', 'like_all', 'mouths', 'mouths_passing', 'runs', 'to_sea']
+   caspian_closed 1 caspian_to_sea 0
+   summary caspian keys: ['area_km2', 'level_m', 'outflow_km3', 'overflow_ends', 'overflows']
+   engine caspian: {'area_km2': 1089603.4756501813, 'level_m': 61.0, 'overflows': True, 'outflow_km3': 17.879079078495362, 'overflow_ends': 'closed lake'}

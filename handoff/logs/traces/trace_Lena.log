@@ -1,0 +1,29 @@
+The Lena on the mesh with every hollow full, from 62.0, 129.7; its real mouth: 72.5, 127.0
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   62.2   129.5         106 m        157 m  lake        122 m         1152   152 m, 152 m
+   1   62.7   129.3          91 m        173 m  lake        122 m         1097   182 m, 182 m
+   2   63.2   129.0          91 m        149 m  lake        122 m         1042   183 m, 183 m
+   3   63.6   128.8          91 m        128 m  lake        122 m          987   91 m, 152 m
+   4   63.8   127.6          91 m        111 m  lake        122 m          966   91 m, 152 m
+   5   64.0   126.3          91 m         94 m  lake        122 m          947   91 m, 152 m
+   6   64.5   126.0          91 m        172 m  lake        122 m          895   107 m, 152 m
+   7   64.9   125.7          91 m        216 m  lake        122 m          842   145 m, 152 m
+   8   65.4   125.3          91 m        157 m  lake        122 m          790   153 m, 153 m
+   9   65.9   125.0          91 m        136 m  lake        122 m          738   137 m, 152 m
+  10   66.4   124.6          91 m        138 m  lake        122 m          687   122 m, 152 m
+  11   66.9   124.2          91 m        123 m  lake        122 m          637   91 m, 152 m
+  12   67.3   123.8          91 m        105 m  lake        122 m          588   91 m, 152 m
+  13   67.8   123.4          91 m         93 m  lake        122 m          540   91 m, 152 m
+  14   68.3   122.9          91 m         95 m  lake        122 m          494   106 m, 152 m
+  15   68.7   122.5          91 m        107 m  lake        122 m          449   107 m, 152 m
+  16   69.2   122.0          91 m        142 m  lake        122 m          408   137 m, 152 m
+  17   69.6   123.1          91 m        110 m  lake        122 m          356   91 m, 152 m
+  18   70.0   122.6          91 m        148 m  lake        122 m          316   152 m, 152 m
+  19   70.5   122.1         122 m        164 m  lake        122 m          281   122 m, 152 m
+  20   71.0   121.5          91 m        145 m  level                      254   168 m, 168 m
+  21   71.5   120.9          91 m         93 m  down                       238   91 m, 91 m
+  22   72.0   120.3          61 m         84 m  down                       235   91 m, 91 m
+  23   72.4   119.6          30 m         52 m  level                      246   45 m, 45 m
+  24   72.8   120.9          30 m         58 m  down                       206   30 m, 30 m
+  25   73.3   120.2          -4 m         -4 m  sea                        238   -10 m, ocean
+25 land cells: 3 steps down to lower ground, 2 over level ground, 20 across full hollows; nearest to its real mouth: 206 km; leaves the land 206 km from it

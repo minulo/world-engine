@@ -537,8 +537,8 @@ def test_the_why_answers_for_water_on_land_lead_from_a_river_to_the_rain_behind_
 def test_no_why_answer_for_water_on_land_says_what_its_numbers_contradict(plain):
     """The second review of build step 2 found answers that the stored numbers contradicted: a river whose "largest
     source upstream" was the cell itself, runoff explained under a lake, sea cells described as land. The scan of
-    tools/why_scan.py holds every answer against the fields of its cell; here it reads every seventh cell and
-    every cell under a lake."""
+    tools/why_scan.py holds every answer against the fields of its cell; here it reads every seventh cell, every
+    third cell under a lake, and every cell in a closed lake or at the brim of a lake that overflows."""
     e, w = plain
     view = store.MemoryView(w, e)
     under_lake = np.flatnonzero(w.fields["lake_fraction"] > 0)
@@ -553,7 +553,9 @@ def test_no_why_answer_for_water_on_land_says_what_its_numbers_contradict(plain)
 def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(plain, monkeypatch):
     """The claim that no answer contradicts its numbers rests on tools/why_scan.py. Here one answer after another is
     rewritten to say what an earlier version of the engine said wrongly, and the scan must report each: a scan that
-    reports nothing would pass the test above as well."""
+    reports nothing would pass the test above as well. 33 faults are planted: one for each kind that a check of build
+    step 2 found, and one for each of four rules that the fifth check took out of the scan without any test noticing.
+    Most of the scan's other rules have no planted fault of their own, and could be taken out the same way."""
     e, w = plain
     view = store.MemoryView(w, e)
     scan = tool("why_scan")
@@ -648,9 +650,28 @@ def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(pla
             lambda chain: [dict(step, text=re.sub(r"^At ([\d.]+)° ([NS])", lambda m: f"At {m.group(1)}° {'S' if m.group(2) == 'N' else 'N'}", step["text"])) for step in chain],
             "gives another place than that of the cell the step is about"),
     })
+    # ... and what the fifth check found: in a cell wholly under a closed lake the water said to reach the lake there was
+    # the water routed on beneath the lake, which had entered it further up; and four rules of the scan that could be
+    # taken out with no test noticing
+    arrives = d["from_upstream"].mean(axis=0)
+    drowned_shore = pick((place == 5) & (arrives > 1.0))
+    lake_cells = [pick(place == 4), pick(share >= 1.0), pick((share > 0) & (np.arange(w.n) != pick(share >= 1.0)))]
+    third_lake_cell = pick((share > 0) & ~np.isin(np.arange(w.n), lake_cells))
+    through_dry_land = pick(~sea & (place == 0) & (yearly_runoff == 0) & (arrives > 0) & ~np.isin(np.arange(w.n), [dry_river, far_source]))
+    planted.update({
+        (drowned_shore, "river_discharge"): (lambda chain: [dict(chain[0], text=re.sub(r"bring the lake \S+ m³/s here", "bring the lake 99999 m³/s here", chain[0]["text"]))] + chain[1:],
+                                             "says that the rivers bring the lake 99999 m³/s here"),
+        (pick((share >= 1.0) & (np.arange(w.n) != drowned_shore)), "runoff"): (swap("wholly under a lake", "partly under a lake"), "does not say 'wholly under a lake'"),
+        (through_dry_land, "river_discharge"): (lambda chain: [dict(chain[0], text=chain[0]["text"].replace(": ", ": the cell's own runoff gives 1.00 m³/s; ", 1))] + chain[1:],
+                                                "own runoff gives"),
+        (pick(sea), "river_discharge"): (first("No river runs through this cell: no water runs off it, and none reaches it from higher ground."),
+                                         "does not say 'This cell is sea'"),
+        (third_lake_cell, "lake_fraction"): (lambda chain: [dict(chain[0], text=re.sub(r"and stands at (\S+) m \(row", lambda m: f"and stands at {float(m.group(1).replace(',', '')) + 7.0:.1f} m (row",
+                                                                                      chain[0]["text"]))] + chain[1:], "for the lake's level"),
+    })
     turned = (pick(~sea & away & (place == 0) & (yearly("river_discharge") == 0)), "drainage_area")       # an answer whose heading is turned east for west
     cells, fields = sorted({cell for cell, _ in planted} | {turned[0]}), sorted({field for _, field in planted} | {turned[1]})
-    assert len(planted) == 27 and turned not in planted                          # no two faults were planted in one answer
+    assert len(planted) == 32 and turned not in planted                          # no two faults were planted in one answer
     assert not scan.scan(view, cells, fields)                                    # as the engine wrote them, these answers pass
     real = scan.explain
 

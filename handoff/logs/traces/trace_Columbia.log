@@ -1,0 +1,9 @@
+The Columbia on the mesh with every hollow full, from 45.6, -121.2; its real mouth: 46.2, -124.0
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   45.4  -121.3         323 m        607 m  lake        323 m          227   651 m, 651 m
+   1   45.9  -121.8         300 m        662 m  down                       174   649 m, 649 m
+   2   45.8  -122.5          58 m        293 m  down                       121   361 m, 361 m
+   3   45.3  -122.7          49 m        202 m  down                       141   90 m, 93 m
+   4   45.2  -123.4          40 m        221 m  down                       115   160 m, 160 m
+   5   45.2  -124.2         -19 m        -19 m  sea                        114   -98 m, ocean
+5 land cells: 4 steps down to lower ground, 0 over level ground, 1 across full hollows; nearest to its real mouth: 115 km; leaves the land 115 km from it

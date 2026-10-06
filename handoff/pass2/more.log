@@ -1,0 +1,46 @@
+Yenisei      way nearest its station: 166 km, at 66.3, 84.0, flow there 293 km3; gauge cell on the way: False (flow 77, 125 km from station); largest flow on the way 1157 at 71.7, 72.0
+Lena         way nearest its station: 194 km, at 70.0, 122.6, flow there 148 km3; gauge cell on the way: False (flow 4, 140 km from station); largest flow on the way 157 at 72.8, 120.9
+Mekong       way nearest its station: 134 km, at 14.2, 105.0, flow there 143 km3; gauge cell on the way: True (flow 143, 134 km from station); largest flow on the way 232 at 12.2, 105.0
+Amur         way nearest its station: 265 km, at 48.4, 135.3, flow there 43 km3; gauge cell on the way: False (flow 26, 106 km from station); largest flow on the way 136 at 43.3, 131.5
+St Lawrence  way nearest its station: 110 km, at 45.3, -73.4, flow there 64 km3; gauge cell on the way: True (flow 470, 135 km from station); largest flow on the way 501 at 40.9, -73.9
+Danube       way nearest its station: 138 km, at 44.4, 27.4, flow there 66 km3; gauge cell on the way: True (flow 66, 138 km from station); largest flow on the way 353 at 40.5, 26.7
+Congo        way nearest its station: 366 km, at -1.0, 15.2, flow there 188 km3; gauge cell on the way: False (flow 8, 116 km from station); largest flow on the way 314 at -1.5, 9.4
+Yangtze      way nearest its station: 57 km, at 30.9, 117.0, flow there 120 km3; gauge cell on the way: True (flow 128, 145 km from station); largest flow on the way 135 at 31.5, 121.2
+Mackenzie    way nearest its station: 38 km, at 67.8, -133.8, flow there 115 km3; gauge cell on the way: True (flow 116, 130 km from station); largest flow on the way 116 at 69.1, -134.6
+Orinoco      way nearest its station: 10 km, at 8.0, -63.6, flow there 343 km3; gauge cell on the way: True (flow 356, 109 km from station); largest flow on the way 357 at 9.7, -62.9
+Niger        way nearest its station: 6 km, at 11.9, 3.6, flow there 4 km3; gauge cell on the way: True (flow 5, 111 km from station); largest flow on the way 19 at 5.5, 5.5
+Zambezi      way nearest its station: 6 km, at -16.0, 33.6, flow there 9 km3; gauge cell on the way: True (flow 11, 105 km from station); largest flow on the way 21 at -18.1, 35.7
+Indus        way nearest its station: 31 km, at 25.1, 68.3, flow there 0 km3; gauge cell on the way: True (flow 0, 137 km from station); largest flow on the way 13 at 27.9, 68.8
+Ganges       way nearest its station: 44 km, at 24.4, 88.5, flow there 212 km3; gauge cell on the way: False (flow 348, 138 km from station); largest flow on the way 215 at 24.0, 88.8
+Ob           way nearest its station: 37 km, at 66.9, 67.1, flow there 587 km3; gauge cell on the way: True (flow 598, 149 km from station); largest flow on the way 1157 at 71.7, 72.0
+Amazon       way nearest its station: 8 km, at -2.0, -55.6, flow there 4307 km3; gauge cell on the way: True (flow 4519, 112 km from station); largest flow on the way 4559 at -1.7, -53.0
+Mississippi  way nearest its station: 39 km, at 32.5, -91.2, flow there 416 km3; gauge cell on the way: True (flow 482, 130 km from station); largest flow on the way 488 at 30.2, -92.1
+Parana       way nearest its station: 38 km, at -32.6, -60.3, flow there 472 km3; gauge cell on the way: True (flow 480, 147 km from station); largest flow on the way 536 at -34.3, -58.0
+Columbia     way nearest its station: 20 km, at 45.4, -121.3, flow there 102 km3; gauge cell on the way: True (flow 117, 123 km from station); largest flow on the way 145 at 45.2, -123.4
+Rhine        way nearest its station: 53 km, at 51.6, 5.4, flow there 82 km3; gauge cell on the way: True (flow 82, 53 km from station); largest flow on the way 82 at 51.6, 5.4
+Ob beyond 67 N: [(67.1, 68.3, 'lake', 30.0), (67.3, 69.5, 'lake', 30.0), (67.8, 69.5, 'lake', 30.0), (68.0, 70.7, 'lake', 30.0), (68.2, 72.0, 'lake', 30.0), (68.7, 72.0, 'lake', 30.0), (69.2, 72.0, 'lake', 30.0), (69.7, 72.0, 'lake', 30.0), (70.2, 72.0, 'lake', 30.0), (70.7, 72.0, 'lake', 30.0), (71.2, 72.0, 'level', None), (71.7, 72.0, 'down', None)]
+Huang He: northmost 53.6 at lon 124.3; last land cell 43.3, 131.5
+Amur: last land cell 43.3, 131.5
+Yangtze between 108 and 112.5 E: lats [28.8, 28.8, 28.4, 27.9, 27.9, 27.4, 26.9, 26.9, 26.9]
+Lena north of 70: lons [122.6, 122.1, 121.5, 120.9, 120.3, 119.6, 120.9]
+lake above the Iron Gate: row 531, 250841 km2 at 208 m, loss to air 71.7 km3, inflow 169.6, outflow 97.9
+lakes table keys: ['area_m2', 'bottom_cell', 'evaporation_m3_per_year', 'hollow', 'inflow_m3_per_year', 'left_over_m3_per_year', 'level_m', 'loss_to_air_m3_per_year', 'outflow_m3_per_year', 'outlet_cell', 'overflows', 'rain_on_lake_m3_per_year', 'spills_into_cell', 'volume_m3']
+
+DIAGNOSIS: ocean points counted at the sea's level (1.91 m)
+   land cells handed in otherwise: 4086 of 47962; at the sea's level: 3448 (as built 437 at or below it)
+   as built                 mouths 15 of 24; gauges 8 of 21; like 0.690; back to air 0.7385; to sea 30.66; lakes 6.28 % of land; Caspian {'area_km2': 1089603.4756501813, 'level_m': 61.0, 'overflows': True, 'outflow_km3': 17.879079078495362, 'overflow_ends': 'closed lake'}
+      mouths: {'Amazon': 354, 'Nile': 270, 'Mississippi': 295, 'Congo': 603, 'Yangtze': 60, 'Ob': 586, 'Mackenzie': 26, 'Danube': 579, 'Ganges': 253, 'Parana': 20, 'Niger': 142, 'Lena': 206, 'Yenisei': 398, 'Indus': 75, 'Murray': 33, 'Volga': 1865, 'Zambezi': 101, 'Orinoco': 244, 'St Lawrence': 1090, 'Columbia': 115, 'Rhine': 99, 'Mekong': 292, 'Amur': 1290, 'Huang He': 1215}
+      flows: {'Amazon': 4519, 'Congo': 8, 'Orinoco': 356, 'Yangtze': 128, 'Brahmaputra': 348, 'Mississippi': 482, 'Yenisei': 77, 'Parana': 480, 'Lena': 4, 'Mekong': 143, 'Ob': 598, 'Ganges': 348, 'St Lawrence': 470, 'Amur': 26, 'Mackenzie': 116, 'Columbia': 117, 'Danube': 66, 'Niger': 5, 'Zambezi': 11, 'Indus': 0, 'Rhine': 82}
+      Black Sea    (612693, 32.0, True, 'sea')
+      Baltic       (265947, 8.0, True, 'sea')
+      Great Lakes  (298119, 179.0, True, 'sea')
+      narrows: {'Congo': (518, 457), 'Danube': (208, 208), 'Lena': (137, 122), 'St Lawrence': (204, 102), 'Amur': (137, 107), 'Yangtze': (762, 396)}
+      under water if full 0.1051; closed hollow share 0.6239; land at or below the sea's level 437
+   sea points at sea level  mouths 16 of 24; gauges 8 of 21; like 0.689; back to air 0.7361; to sea 30.94; lakes 5.57 % of land; Caspian {'area_km2': 1089603.4756501813, 'level_m': 61.0, 'overflows': True, 'outflow_km3': 17.879079078495362, 'overflow_ends': 'closed lake'}
+      mouths: {'Amazon': 354, 'Nile': 270, 'Mississippi': 295, 'Congo': 603, 'Yangtze': 100, 'Ob': 581, 'Mackenzie': 32, 'Danube': 1212, 'Ganges': 253, 'Parana': 20, 'Niger': 142, 'Lena': 206, 'Yenisei': 343, 'Indus': 75, 'Murray': 74, 'Volga': 1865, 'Zambezi': 101, 'Orinoco': 192, 'St Lawrence': 232, 'Columbia': 115, 'Rhine': 99, 'Mekong': 292, 'Amur': 1274, 'Huang He': 1261}
+      flows: {'Amazon': 4519, 'Congo': 8, 'Orinoco': 354, 'Yangtze': 128, 'Brahmaputra': 271, 'Mississippi': 482, 'Yenisei': 77, 'Parana': 480, 'Lena': 3, 'Mekong': 143, 'Ob': 605, 'Ganges': 261, 'St Lawrence': 437, 'Amur': 26, 'Mackenzie': 115, 'Columbia': 117, 'Danube': 24, 'Niger': 5, 'Zambezi': 11, 'Indus': 0, 'Rhine': 82}
+      Black Sea    (335466, 1.9061189889907837, True, 'sea')
+      Baltic       None
+      Great Lakes  (298119, 179.0, True, 'sea')
+      narrows: {'Congo': (518, 457), 'Danube': (208, 177), 'Lena': (137, 122), 'St Lawrence': (84, None), 'Amur': (137, 107), 'Yangtze': (762, 396)}
+      under water if full 0.0945; closed hollow share 0.5716; land at or below the sea's level 271

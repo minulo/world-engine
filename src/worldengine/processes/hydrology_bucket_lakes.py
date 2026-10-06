@@ -253,18 +253,24 @@ class BucketHydrology(Process):
             # off at the lake what its open water loses beyond it. Said where the field itself holds nothing
             ctx.driver("runoff", "shed_as_if_dry", np.where(land, shed, 0.0))
             # a river: on dry ground the runoff of the cell and what arrives; in a lake that overflows, what goes on;
-            # in a cell of a closed lake, what arrives less the share of it that has reached the lake inside the cell
+            # in a cell of a closed lake, the rivers that the cells draining into it carry, less what of them the
+            # flooded part of the cell takes. "Arrives" is the river of the neighbouring cells as this field holds it,
+            # so that the answer of a cell can be held against the answers of the cells around it: water that entered
+            # the lake further up, and is routed on beneath it to the hollow's bottom, does not arrive a second time
             flow = discharge / month_seconds
             crosses = crossing >= 0
             brim = crosses & (share <= 0.0)
             closed_here = ~crosses & (share > 0.0)
-            arrives = np.maximum(flows["passing"] - volume, 0.0) / month_seconds     # from upstream, before a lake in the cell takes any
+            ways = flows["receivers"]
+            handed_on = np.flatnonzero(ways >= 0)
+            arrives = np.zeros_like(flow)
+            np.add.at(arrives, (slice(None), ways[handed_on]), flow[:, handed_on])       # the rivers of the cells that drain into each cell
             local = np.where(crosses, 0.0, (1.0 - share) * volume / month_seconds)
             through = np.where(crosses, flow, 0.0)
             ctx.driver("river_discharge", "local_runoff", local)
             ctx.driver("river_discharge", "through_lake", through)
             ctx.driver("river_discharge", "from_upstream", np.where(closed_here, arrives, flow - local - through))
-            ctx.driver("river_discharge", "into_the_lake", np.where(closed_here, -share * arrives, 0.0))
+            ctx.driver("river_discharge", "into_the_lake", np.where(closed_here, np.minimum(flow - local - arrives, 0.0), 0.0))
             source = dr.largest_upstream(flows["stack"], flows["receivers"], volume.sum(axis=0), ties.rank)
             ctx.driver("river_discharge", "largest_source", source.astype(np.int32))
             ctx.driver("river_discharge", "place", np.where(sea, RIVERS_END_AT_SEA, np.where(

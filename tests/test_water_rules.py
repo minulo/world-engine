@@ -959,6 +959,37 @@ def test_under_a_closed_lake_a_cell_counts_the_runoff_of_its_dry_part_only():
     assert np.allclose(local[:, part], (runoff * area / 1000.0 / month_s)[:, part], rtol=1e-5)
     whole = share == 1
     assert whole.sum() > 5 and not local[:, whole].any()
+    # "From upstream" in a cell of a closed lake is the river of the cells that drain into it, as the field holds it.
+    # Beneath the lake the routing carries the water on to the hollow's bottom, from one flooded cell to the next; that
+    # water entered the lake where it first met it and must not "arrive" again in every cell on the way. [Until the
+    # fifth check of build step 2 it did.]
+    recv = d.fields["flow_receiver"].astype(np.int64)
+    river = out.fields["river_discharge"].astype(np.float64).mean(axis=0)
+    arrives = out.drivers["river_discharge"]["from_upstream"].astype(np.float64).mean(axis=0)
+    into = out.drivers["river_discharge"]["into_the_lake"].astype(np.float64).mean(axis=0)
+    drains = np.flatnonzero(recv >= 0)
+    brought = np.zeros(m.n)
+    np.add.at(brought, recv[drains], river[drains])
+    flooded = share > 0
+    assert np.allclose(arrives[flooded], brought[flooded], rtol=1e-5, atol=1e-9 * river.max())
+    fed_by_whole = np.zeros(m.n, dtype=bool)
+    fed_by_whole[recv[np.flatnonzero(whole & (recv >= 0))]] = True
+    beneath = whole & fed_by_whole                                                # flooded cells that water passes beneath the lake
+    shed = out.drivers["runoff"]["shed_as_if_dry"].astype(np.float64).sum(axis=0)
+    passes_beneath = np.zeros(m.n)
+    np.add.at(passes_beneath, recv[drains], shed[drains])                         # what the cells draining into each cell would shed dry
+    only_whole_above = beneath & (brought == 0)
+    assert beneath.sum() >= 2 and (only_whole_above & (passes_beneath > 0)).sum() >= 1
+    assert not arrives[only_whole_above].any()                                    # water passes beneath, and none of it arrives again
+    shore = whole & (brought > 0)                                                 # flooded cells that a river reaches from dry or half-dry ground
+    assert shore.sum() >= 2 and np.allclose(arrives[shore], brought[shore], rtol=1e-5) and np.allclose((arrives + into)[whole], 0.0, atol=1e-9 * river.max())
+    # all the water that the lake receives arrives once: the rivers that end in it, and what its own ground would shed
+    lakes = out.tables["lakes"]
+    month_s = hh.params["planet"]["year_length_s"] / 12.0
+    volume = lambda v: float((v * area).sum()) / 1000.0                           # mm a year over cells, as m3 a year
+    rivers_in = float(-(into[flooded]).sum()) * 12.0 * month_s
+    own = volume(np.where(flooded, share * shed, 0.0))
+    assert abs(rivers_in + own - lakes["inflow_m3_per_year"].sum()) < 1e-4 * lakes["inflow_m3_per_year"].sum()
 
 
 def test_the_written_rules_of_the_table_of_hollows_are_the_ones_the_check_enforces():

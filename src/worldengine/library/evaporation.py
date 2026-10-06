@@ -22,6 +22,7 @@ The two parts of Rn follow the same paper. Of the sunlight at the top of the air
 of it. The heat the surface radiates away, less what the air radiates back, is
 (b + (1 - b) * sunshine) * (A - T), T in degrees C. "sunshine" is the share of the possible
 hours of sunshine: the paper takes it from measurements of cloud [DOCUMENTED: the same paper].
+It enters both parts: more sunshine lets more sunlight through and lets more heat away.
 
 Which radiation the rule is applied to is NOT the paper's. The paper follows the day: it
 applies the rule to the hours in which the ground gains energy (its equations 14, 24 and 25),
@@ -30,12 +31,12 @@ and gives the night's loss of heat back to the soil as condensation (its equatio
 day's gain less the night's loss, as the caller hands it over [INFERRED: mine. It began as a
 misreading of the paper, which the third check of build step 2 found; it is kept, and said].
 What it comes to over Earth's land [MEASURED: python tools/earth_demand.py]: the demand is
-1,003 mm a year; the paper's form gives 1,246 mm from the same numbers and gives 194 mm back
+1,004 mm a year; the paper's form gives 1,247 mm from the same numbers and gives 195 mm back
 as condensation, 1,052 mm net. The engine's demand is the paper's potential evapotranspiration
 less a fifth, and 5 % below the paper's net taking of water. It was not changed because the
-error of the one share of sunshine is six times that and has the other sign over land
-(docs/BUILD_NOTES.md, section 7), and because 194 mm of dew a year is more than I can check
-against anything measured.
+energy that the two radiation formulas leave the land is 31 % above a published budget's, six
+times as much and of the other sign (docs/BUILD_NOTES.md, section 7), and because 195 mm of
+dew a year is more than I can check against anything measured.
 
 Outside the ground the formulas were fitted to, each is held at a limit [INFERRED: the limits
 are mine; the paper does not treat these cases]. Ground below sea level gets the sunlight of

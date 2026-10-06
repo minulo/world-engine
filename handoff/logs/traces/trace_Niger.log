@@ -1,0 +1,27 @@
+The Niger on the mesh with every hollow full, from 13.5, 2.1; its real mouth: 4.3, 6.0
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   13.6     2.4         198 m        237 m  lake        244 m         1109   274 m, 274 m
+   1   13.2     2.7         213 m        218 m  lake        244 m         1053   213 m, 244 m
+   2   12.7     3.0         213 m        231 m  lake        244 m          997   244 m, 244 m
+   3   12.3     3.3         213 m        226 m  lake        244 m          941   244 m, 244 m
+   4   11.9     3.6         198 m        217 m  lake        244 m          885   228 m, 244 m
+   5   11.5     3.8         213 m        239 m  lake        244 m          830   236 m, 244 m
+   6   11.4     4.4         236 m        260 m  lake        244 m          813   259 m, 259 m
+   7   11.0     4.7         244 m        317 m  lake        244 m          759   244 m, 244 m
+   8   10.6     4.4         244 m        255 m  down                       720   244 m, 244 m
+   9   10.2     4.1         228 m        257 m  down                       684   259 m, 259 m
+  10    9.7     4.4         198 m        213 m  lake        198 m          629   213 m, 244 m
+  11    9.3     4.7         198 m        212 m  lake        198 m          574   213 m, 244 m
+  12    8.9     5.0         182 m        221 m  lake        198 m          520   213 m, 244 m
+  13    8.9     5.6         183 m        189 m  lake        198 m          509   183 m, 244 m
+  14    8.8     6.2         152 m        168 m  lake        198 m          506   152 m, 244 m
+  15    8.4     6.4         152 m        199 m  lake        198 m          462   152 m, 244 m
+  16    8.0     6.7         198 m        248 m  lake        198 m          420   244 m, 244 m
+  17    7.6     7.0         183 m        254 m  down                       382   282 m, 282 m
+  18    7.2     6.7         152 m        177 m  lake        175 m          329   152 m, 183 m
+  19    6.8     6.4         175 m        195 m  down                       277   183 m, 183 m
+  20    6.3     6.1         114 m        151 m  down                       226   183 m, 183 m
+  21    5.9     5.8          30 m         64 m  level                      180   61 m, 61 m
+  22    5.5     5.5          30 m         24 m  down                       142   -10 m, ocean
+  23    5.5     4.9         -59 m        -59 m  sea                        177   -36 m, ocean
+23 land cells: 6 steps down to lower ground, 1 over level ground, 16 across full hollows; nearest to its real mouth: 142 km; leaves the land 142 km from it

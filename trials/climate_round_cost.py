@@ -4,7 +4,7 @@ It builds a world and reports, for the climate stage, the time each process took
 of the first round (which includes preparing the solver of the energy balance and compiling the loops),
 and the totals. The result is printed; with --write it is also written to trials/results/, over the file that is
 kept there. The two files kept there are those of build step 1 (16 and 17 climate rounds), which the build notes
-quote for the decision they led to; the costs of the build as it stands are in docs/BUILD_NOTES.md, section 4.7.
+set beside the rounds of the build as it stands; its costs are in docs/BUILD_NOTES.md, section 4.7.
 
     python trials/climate_round_cost.py [profile] [--write]
 """

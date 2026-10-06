@@ -18,7 +18,7 @@ slots:
     standing: Established
     model: "Geometry of a sphere; the Coriolis parameter is twice the spin rate times the sine of latitude."
     ignores: "The flattening of a planet by its own spin."
-    wrong_where: "Fast-spinning planets, whose equators bulge."
+    wrong_where: "Fast-spinning planets, whose equators bulge [INFERRED: the model takes the planet for a sphere]."
     writes: [latitude, longitude, cell_area, coriolis_parameter]
 
   Tectonics:
@@ -26,7 +26,7 @@ slots:
     standing: Adapted
     model: "One snapshot of seeded plates, after the plate model of Cortial et al. 2019: rigid plates turning about axes through the planet's centre, with thicker crust where plates close."
     ignores: "Time: nothing has moved. The floor's age is read off the distance to the nearest spreading ridge. Island arcs, hot spots, shelves and rifts are absent."
-    wrong_where: "Wherever a history matters. The size and width of the thickening are tuned numbers. Build step 3 replaces this with the full plate history."
+    wrong_where: "Wherever a history matters. The size and width of the thickening are tuned numbers. Build step 3 replaces this with the full plate history. [INFERRED: a snapshot has no history; not measured against Earth]"
     writes: [plate_id, plate_velocity, crust_type, crust_thickness, ocean_crust_age, orogeny_age, boundary_kind,
              boundary_distance, convergence_rate, volcanism, "table:crust_points", "table:plates", "table:tectonic_events"]
     constants:
@@ -82,7 +82,7 @@ slots:
     standing: Assembled
     model: "Airy isostasy: crust floats on denser rock, so thicker crust stands higher. Ocean depth follows the age of the floor (Parsons and Sclater 1977)."
     ignores: "Ground held up or pulled down by flow deep below, differences in how stiff the plate is, the weight of sediment and of water. It makes no deep ocean trenches."
-    wrong_where: "Broad swells and high plateaus far from plate edges, basins beside mountain belts, trenches."
+    wrong_where: "Broad swells and high plateaus far from plate edges, basins beside mountain belts, trenches [INFERRED: from what the model ignores; not measured against Earth]."
     writes: [elevation]
     constants:
       crust_density_kg_m3: 2800.0              # [UNVERIFIED: textbook value]
@@ -113,7 +113,7 @@ slots:
     standing: Adapted
     model: "The planet's volume of water is poured in at the lowest point; it fills each hollow to its rim and spills into the next (Fill-Spill-Merge, Barnes et al. 2021). The sea level is the surface of the largest body."
     ignores: "Tides, the sinking of the sea floor under the weight of water, and water held as ice, in lakes, in the ground and in the air."
-    wrong_where: "Straits narrower than a cell open or close by accident. With little water it all collects in the deepest hollows and the climate is not consulted."
+    wrong_where: "A cell is sea only if its mean height lies below the sea, so a strait is closed wherever a cell that holds it has high shores: on Earth's relief the Red Sea and the Baltic are cut off by cells of which two thirds and three quarters are sea in the data, and whose mean heights are 16 m and 2 m [MEASURED: tests/test_earth.py]. With little water it all collects in the deepest hollows and the climate is not consulted [INFERRED: from the method]."
     writes: [ocean_mask, sea_depth, height_above_sea, coast_distance, "table:seas"]
     expected_range:
       surface_water_volume_m3: [0.5e+18, 3.0e+18]     # outside it the sea level lies far from the reference level [INFERRED]
@@ -131,7 +131,7 @@ slots:
     standing: Established
     model: "The astronomical formula for daily-mean sunlight from latitude, season, tilt and orbit (Rose, The Climate Laboratory)."
     ignores: "The air, the time of day, shading by terrain, and the ageing of the star."
-    wrong_where: "It is exact for what it claims. Planets whose day is a large part of their year fall outside it."
+    wrong_where: "It is exact for what it claims [MEASURED against the closed formulas: tests/test_processes.py]. Planets whose day is a large part of their year fall outside it [INFERRED]."
     writes: [insolation]
     constants:
       samples_per_month: 8                     # moments averaged for each monthly mean
@@ -141,7 +141,7 @@ slots:
     standing: Rule
     model: "A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection at low sun angles. Ice lies on the sea where the year's mean temperature is below -10 C (North, Cahalan and Coakley 1981). Snow lies on land where Hydrology's snow store held snow in the last round: land is white by the share of the ground under snow on the month's average."
     ignores: "Where clouds actually form, plant cover, dust, sea ice that comes and goes with the seasons, the darkening of old snow and of snow under trees."
-    wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics: every sky has the same share of cloud. Too much land is white all year: a fifth of the default world's, and a third of the Earth twin's, where a tenth of Earth's land lies under ice [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8]. The cause is taken to be EnergyBalance, which gives the land summers too weak to melt the snow [INFERRED from runs of EnergyBalance alone]. A planet can still freeze over, more easily than in fuller models [UNVERIFIED: recalled]; the process says so in a note when snow and ice cover more than a third of the surface."
+    wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics: every sky has the same share of cloud. Too much land is white all year: a fifth of the default world's, and a third of the Earth twin's [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8], where a tenth of Earth's land lies under ice [DOCUMENTED: National Snow and Ice Data Center, Glacier Quick Facts]. EnergyBalance gives the land summers too weak to melt the snow, and snow that outlasts a summer reflects the next one's sunlight; the two have not been told apart [INFERRED]. A planet can still freeze over, more easily than in fuller models [UNVERIFIED: recalled]; the process says so in a note when snow and ice cover more than a third of the surface."
     writes: [albedo]
     constants:
       cloud_share: 0.255                       # [INFERRED: set so that an ice-free planet with the table below reflects the 0.319 of North et al. 1981]
@@ -152,14 +152,16 @@ slots:
         ice: 0.658                             # [INFERRED: gives ice-covered cells the 0.62 of North et al. 1981]
       ice_ramp_k: 2.0                          # width of the change from open to ice-covered sea around the limit, so that the rounds settle [INFERRED]
       note_when_covered_above: 0.333           # a note is raised when snow and ice cover more than this share of the planet on the
-                                               # year's average [INFERRED: Earth today is near a tenth by my estimate; UNVERIFIED]
+                                               # year's average [INFERRED: Earth today is near a tenth by my estimate, of its whole
+                                               #  surface, sea ice and seasonal snow counted; UNVERIFIED. That is another quantity
+                                               #  than the tenth of Earth's LAND under ice, which is DOCUMENTED]
 
   EnergyBalance:
     implementation: worldengine.processes.energy_balance_spreading:SpreadingEnergyBalance
     standing: Adapted
     model: "The energy balance model of North, Cahalan and Coakley 1981: absorbed sunlight equals heat lost to space (A + B T) plus heat spread sideways, with land and sea differing in how slowly they warm. First version: spreading only."
     ignores: "The layers of the air, heat carried as water vapour, wind and ocean heat (folded into the spreading constant), sea ice as a lid on the sea, and the make-up of the air: every planet gets Earth's greenhouse effect."
-    wrong_where: "It spreads heat over about 3,500 km, so anything narrower is smoothed away. Coasts facing the wind are not milder. High plateaus are too cold. The seasons on land are too weak unless the continent is very large: on Earth's relief northern land is 13 K warmer in July than in January where Earth's is 31 K, and too much land poleward of about 50 degrees keeps its snow all year [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8]. The cause is taken to be the one spreading constant, which ties land to the sea too tightly [INFERRED from runs of this process alone]."
+    wrong_where: "It spreads heat over about 3,500 km, so anything narrower is smoothed away. Coasts facing the wind are not milder. High plateaus are too cold. The seasons on land are too weak unless the continent is very large: on Earth's relief northern land is 13 K warmer in July than in January where Earth's is 31 K, and too much land poleward of about 50 degrees keeps its snow all year. The whole of that miss lies in the summer: between 40 and 60 degrees north the twin's land is as cold as Earth's in its coldest month and 17 K colder in its warmest, and two thirds of it lie under snow in July [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8]. Two causes are likely and have not been told apart: the one spreading constant, which damps the seasons of land (run alone and without snow, this process gives the middle of a continent half the swing recalled for North America), and the snow that a weak summer leaves, which reflects the next summer's sunlight [INFERRED]."
     writes: [surface_temperature]
     constants:
       loss_at_zero_celsius_w_m2: 203.3         # A [DOCUMENTED: North, Cahalan and Coakley 1981]
@@ -179,7 +181,7 @@ slots:
     standing: Assembled
     model: "Pressure belts tied to the tropical overturning loop (edge from the scaling of Lu, Vecchi and Reichler 2007) and to the latitude of fastest storm growth; warm surfaces lower the pressure (Lindzen and Nigam 1987); surface wind from a balance of pressure, spin and drag; wind aloft from the thermal wind; storm growth from the Eady rate."
     ignores: "Single storms, including the ones that drive the westerlies; waves raised by mountain ranges; the turning aside of wind by high ground; how monsoons really work."
-    wrong_where: "The seasonal shift of the tropical rain belt, monsoons, storm paths downwind of great ranges, and near the equator, where the thermal wind relation fails. Planets with high tilt or a spin far from Earth's."
+    wrong_where: "The seasonal shift of the tropical rain belt, monsoons, storm paths downwind of great ranges, and near the equator, where the thermal wind relation fails. Planets with high tilt or a spin far from Earth's. [INFERRED: from what the model ignores; winds and pressure of Earth are not among the data at hand]"
     writes: [sea_level_pressure, wind, steering_wind, subsidence, baroclinicity]
     constants:
       band_deg: 2.0                            # width of the latitude bands used for means around the planet
@@ -294,7 +296,7 @@ slots:
     standing: Assembled
     model: "A snow store with degree-day melt (Hock 2003); the air's demand for water by the Priestley-Taylor rule on the net radiation of the whole day, with the radiation formulas of Davis et al. 2017 and one share of sunshine for every cell; soil water as Manabe's bucket; runoff summed down the flow paths into rivers and through the lakes; lakes that spread in closed hollows until their loss to the air matches the water arriving, or overflow at their pass (after Fill-Spill-Merge, Barnes, Callaghan and Wickert 2021)."
     ignores: "Groundwater; the time water takes along a river; wetlands; lakes that swell and shrink with the seasons, the time a lake takes to fill, and the currents in a lake; plants; frozen ground; snow lost straight to the air; wind and the dryness of the air in the demand for water; the course of the day (the paper the formulas come from counts the hours in which the ground gains energy and gives the night's loss back as dew); clouds: every cell and month gets the same share of sunshine."
-    wrong_where: "The timing of floods in very large basins, and below every lake, whose outflow keeps the seasons of its inflow. Like for like, the land of Earth's great river basins sheds two thirds of the water measured, and Earth's land gives the air 1.17 times what a published budget gives it [MEASURED: docs/BUILD_NOTES.md, section 4.4]. The cause is not established. The radiation formulas leave Earth's land 1.31 times the energy of that budget, by the ground's reflection and by the heat it radiates away, and the Priestley-Taylor rule's own factor fits the shortfall as well [MEASURED for the numbers; INFERRED: any cause named]. In deserts the real demand is higher than the rule gives, so closed lakes come out too large; under the cloud of the wet tropics it is lower [UNVERIFIED: from memory of how the rule is used]. A lake smaller than a cell has no shape, and a lake's level moves in steps of the cells' heights. A hollow under snow that never melts fills and shows as a lake. About half of the default world's land drains into closed hollows and so into lakes [MEASURED]; valleys cut by erosion should mend that [INFERRED: it is tested in build step 3]."
+    wrong_where: "The timing of floods in very large basins, and below every lake, whose outflow keeps the seasons of its inflow. Like for like, the land of Earth's great river basins sheds two thirds of the water measured, and of the rain handed to it Earth's land gives the air 0.74 where a published budget has 0.65 [MEASURED: docs/BUILD_NOTES.md, section 4.4; the rain handed in is 3 % more than the budget's]. The cause is not established. The radiation formulas leave Earth's land 1.31 times the energy of that budget; the share of sunshine enters both formulas and no one share returns both of the budget's numbers; and the Priestley-Taylor rule's own factor fits the shortfall as well [MEASURED for the numbers; INFERRED: any cause named]. The snowfall handed to the engine in these tests is made from monthly temperatures and not measured: over the Volga's basin it is 43 % of the precipitation where a published figure is 30 %, and what the land sheds there follows it [MEASURED: python tools/earth_rivers.py, part 2]. In deserts the real demand is higher than the rule gives, so closed lakes come out too large; under the cloud of the wet tropics it is lower [UNVERIFIED: from memory of how the rule is used]. A lake smaller than a cell has no shape, and a lake's level moves in steps of the cells' heights. A hollow under snow that never melts fills and shows as a lake. About half of the default world's land drains into closed hollows and so into lakes [MEASURED]; valleys cut by erosion should mend that [INFERRED: it is tested in build step 3]."
     writes: [potential_evapotranspiration, soil_moisture, snow_water, snow_cover, runoff, runoff_annual, river_discharge,
              lake_fraction, lake_level, evapotranspiration, "table:lakes"]
     constants:
@@ -326,13 +328,15 @@ slots:
                                                #  DOCUMENTED: Trenberth, Fasullo and Kiehl 2009, Table 2b, the row of the globe.
                                                #  The formulas are used on land. The same table's row of the land: 184.7 W/m2 of
                                                #  sunlight reach the ground, 145.1 are absorbed, and 79.6 are lost as heat.
-                                               #  MEASURED under Earth's measured land temperatures (python tools/earth_demand.py):
-                                               #  the formulas give 185.6, 154.0 and 68.3. The sunlight is right; the land reflects more than the paper's
-                                               #  0.17 (snow, ice and desert, of which the engine treats snow apart); and the loss
-                                               #  of heat is 14 % too small, which no single share mends: the sunlight wants about
-                                               #  0.6 and the loss of heat about 0.76. The energy left for evaporation over land
-                                               #  is therefore too large: 86 W/m2 against 65.5. The constant b below is the
-                                               #  paper's and is left as published]
+                                               #  MEASURED under Earth's land temperatures (python tools/earth_demand.py): the
+                                               #  formulas give 185.7, 154.1 and 68.3. The sunlight at the ground is the budget's;
+                                               #  the budget's land reflects 0.21 of it where the paper's ground reflects 0.17; and
+                                               #  the loss of heat is 14 % too small. The share enters both formulas and no single
+                                               #  share returns both numbers: the sunlight wants 0.61 and the loss of heat 0.76.
+                                               #  The energy left to the land is 85.8 W/m2 where the budget has 65.5. The budget is
+                                               #  a published synthesis, not a measurement, and one number for all land: it cannot
+                                               #  say which constant is at fault. The constant b below is the paper's and is left
+                                               #  as published]
         sunlight:                              # what reaches the ground = (c + d sunshine)(1 + 2.67e-5 height) of the sunlight at
           through_overcast: 0.25               # the top of the air, and the ground reflects 0.17 of it
           through_gain_with_sunshine: 0.50     # [DOCUMENTED: Davis et al. 2017, eqs. 10 to 12: c = 0.25, d = 0.50, albedo 0.17]
@@ -377,7 +381,7 @@ slots:
     standing: Rule
     model: "Every soil holds the same depth of water, the field capacity of Manabe's bucket. A stand-in until the Soils process of build step 7."
     ignores: "Everything that makes soils differ: rock, slope, climate, age, plants."
-    wrong_where: "Sand and bare rock, which hold far less; deep loams, which hold more. No other soil property is written yet."
+    wrong_where: "Sand and bare rock, which hold far less; deep loams, which hold more [UNVERIFIED: recalled]. No other soil property is written yet."
     writes: [soil_water_capacity]
     constants:
       capacity_mm: 150.0                       # [DOCUMENTED: the description of the GFDL model: "field capacity everywhere 0.15 m"]
@@ -387,7 +391,7 @@ slots:
     standing: Established
     model: "Whittaker's chart of mean yearly temperature against yearly precipitation, with the Köppen-Geiger climate class of Peel, Finlayson and McMahon 2007 computed alongside."
     ignores: "Seasons (the chart sees only yearly values), soils, fire, grazing, competition over time, and the level of carbon dioxide."
-    wrong_where: "The edges of savanna and grassland that fire sets, and climates with one very dry season. A climate off the chart takes the nearest biome on it."
+    wrong_where: "The edges of savanna and grassland that fire sets, and climates with one very dry season [INFERRED: the chart knows the year's mean temperature and the year's rain alone; not measured against a map of biomes]. A climate off the chart takes the nearest biome on it."
     writes: [climate_class, biome, vegetation_cover]
     constants:
       chart: {from_file: {file: biomes, key: biomes}}        # outlines of the chart, with each biome's plant cover

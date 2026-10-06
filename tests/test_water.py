@@ -170,6 +170,52 @@ def test_level_ground_drains_by_the_shortest_way_out_and_a_level_floor_to_one_of
         assert steps[recv[c]] == steps[c] - 1                                # each step is one ring closer: the shortest way
 
 
+def test_level_ground_can_be_drained_in_an_order_of_the_callers_own():
+    """library/drainage.Ties.level. The engine drains level ground toward its nearest way out; the Earth harness draws
+    the order instead, to see what that rule decides on relief given in whole metres. The plain and the pit of the
+    test above: with an order given, every cell of the plain still reaches the sea or the pit, no way holds a loop,
+    the cells that stand beside a way out drain as they did, and the ways are no longer the shortest. The same
+    order gives the same ways again, another order gives others, and without an order nothing changes."""
+    m = get_mesh(4)
+    away = angle_from(m, 0, 0)
+    floor = angle_from(m, 0, 180) < 15
+    sea = away < 30
+    surface = np.where(sea, 0.0, np.where(floor, 50.0, 100.0))
+    plain = ~sea & ~floor
+    ties = dr.mesh_ties(m)
+    assert ties.level is None                                                # the engine's own ties carry no such order
+    shortest = dr.receivers(surface, sea, m.nbr, None, ties)
+    order = np.random.default_rng(5).random(m.n)
+    drawn = dr.receivers(surface, sea, m.nbr, None, ties._replace(level=order))
+    end = dr.terminal(dr.flow_stack(drawn), drawn)                           # (flow_stack refuses receivers that hold a loop)
+    assert np.all(sea[end[plain]] | floor[end[plain]])
+    assert set(end[floor]) == set(dr.terminal(dr.flow_stack(shortest), shortest)[floor])       # the pit keeps its bottom
+    steps = np.where(sea | floor, 0, -1)                                     # rings outward from the lower ground, as above
+    ring = 0
+    while (steps < 0).any():
+        ring += 1
+        nxt = (steps < 0) & (np.where(m.nbr >= 0, steps[np.maximum(m.nbr, 0)] == ring - 1, False)).any(axis=1)
+        steps[nxt] = ring
+    beside = plain & (steps == 1)
+    assert beside.sum() > 20 and np.array_equal(drawn[beside], shortest[beside])
+    length = np.zeros(m.n, dtype=int)
+    for c in dr.flow_stack(drawn):                                           # a cell comes after the cell it drains to
+        if plain[c]:
+            length[c] = length[drawn[c]] + 1
+    assert np.all(length[plain] >= steps[plain]) and (length[plain] > steps[plain]).sum() > 100
+    assert (drawn[plain] != shortest[plain]).sum() > 100
+    assert np.array_equal(dr.receivers(surface, sea, m.nbr, None, ties._replace(level=order.copy())), drawn)
+    other = dr.receivers(surface, sea, m.nbr, None, ties._replace(level=np.random.default_rng(6).random(m.n)))
+    assert (other[plain] != drawn[plain]).sum() > 100
+    assert np.array_equal(dr.receivers(surface, sea, m.nbr, None, ties._replace(level=None)), shortest)
+    # ... and through the hollows: an order for level ground changes no rule of the table that Hydrology checks
+    area = m.area * R * R
+    for t in (ties, ties._replace(level=order)):
+        recv = dr.receivers(surface, sea, m.nbr, surface, t)
+        label, table = dr.hollows(surface, sea, recv, dr.flow_stack(recv), m.edge_cells, area, surface, t)
+        lk.check_table(table, label, recv, sea, surface, m.nbr)
+
+
 def test_sums_along_the_flow_paths_count_every_cell_once():
     m = get_mesh(4)
     ground = rough_ground(m, 7)
@@ -1556,6 +1602,19 @@ def test_water_in_equals_water_out_for_every_basin_on_rough_ground_with_lakes_an
     into = out.drivers["river_discharge"]["into_the_lake"].astype(np.float64)
     under_closed = np.isin(out.drivers["river_discharge"]["place"], (2, 5))       # partly or wholly under a closed lake
     assert np.all(into <= 0) and not into[:, ~under_closed].any() and (into[:, under_closed] < 0).any()
+    # In a cell of a closed lake, "from upstream" is the river of the cells that drain into it, as the field holds it.
+    # Water that entered the lake further up is routed on beneath it to the hollow's bottom and must not arrive a
+    # second time. [Until the fifth check of build step 2 it did: every cell along a drowned way said that the same
+    # water "reaches the lake" in it.]
+    yearly = f["river_discharge"].astype(np.float64).mean(axis=0)
+    brought = np.zeros(m.n)
+    drains = np.flatnonzero(recv >= 0)
+    np.add.at(brought, recv[drains], yearly[drains])
+    running = lakes["overflows"]
+    np.add.at(brought, lakes["spills_into_cell"][running], yearly[lakes["outlet_cell"][running]])    # a lake that overflows into the cell
+    arrives = out.drivers["river_discharge"]["from_upstream"].astype(np.float64).mean(axis=0)
+    assert np.allclose(arrives[under_closed], brought[under_closed], rtol=1e-4, atol=1e-7 * yearly.max())
+    assert (arrives[under_closed] > 0).sum() > 5                                  # (tests/test_water_rules.py holds the case of a drowned way)
     source = out.drivers["river_discharge"]["largest_source"]
     big = int(mouths[np.argmax(river[mouths])])
     assert basin[source[big]] == big                                              # the largest source of a river lies in its basin

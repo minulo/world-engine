@@ -1,0 +1,363 @@
+# ---------------------------------------------------------------------------------------------- Drainage
+def test_the_amazon_reaches_the_atlantic_and_the_nile_the_mediterranean(earth, outcomes):
+    """The design's: the Amazon reaches the Atlantic and the Nile the Mediterranean. Chosen when the test was written:
+    that it is asked from Manaus and from Khartoum, and that "reaches" means within 600 km of the river's mouth.
+    The bounds on the areas drained were written after the first run (found, then kept): the Amazon drains 5.85
+    million km2 [DOCUMENTED: Dai and Trenberth, Table 2, at the river mouth], the Nile about 3.3 million
+    [UNVERIFIED: from memory].
+    Both meet it as the engine settles ties, at 354 and 270 km, and in every one of 20 random settlements. [Under
+    the planet file's water, which these tests poured until the fifth check of build step 2, the Nile met it in 10
+    of 20.] The Nile meets it by distance alone: between 26 and 30 degrees north the mesh's Nile runs west of 28.5
+    east, where the real river runs east of 30.5, and it reaches the coast 270 km west of the delta [MEASURED:
+    python tools/earth_rivers.py --trace Nile, and the last assertion; UNVERIFIED, from memory: where the real
+    river runs]."""
+    basin = earth.drainage.fields["basin_id"]
+    amazon, nile = int(basin[earth.cell(-3.1, -60.0)]), int(basin[earth.cell(15.6, 32.5)])
+    assert earth.km(amazon, -0.5, -50.0) < 600.0 and earth.km(nile, 31.5, 31.0) < 600.0
+    assert abs(earth.km(amazon, -0.5, -50.0) - 354.0) < 5.0 and abs(earth.km(nile, 31.5, 31.0) - 270.0) < 5.0
+    area = earth.drainage.fields["drainage_area"]
+    assert 4.5e12 < area[amazon] < 8.0e12 and 2.5e12 < area[nile] < 4.5e12        # m2
+    assert sum(r["mouth_km"]["Amazon"] < 600.0 for r in drawn(outcomes)) == SETTLEMENTS
+    assert sum(r["mouth_km"]["Nile"] < 600.0 for r in drawn(outcomes)) == SETTLEMENTS
+    desert = [c for c in ref.way_of(earth, "Nile") if 26.0 < c["lat"] < 30.0]
+    assert desert and all(c["lon"] < 28.5 for c in desert)                        # the real river runs east of 30.5 E there
+
+
+def test_central_asia_and_the_great_basin_are_closed_hollows(earth):
+    """The design's: central Asia and the Great Basin are found as closed hollows. Chosen when the test was written:
+    the two places asked. Found, then kept: the Tarim's water collects within 400 km of Lop Nur, at 600 to 900 m."""
+    f, t = earth.drainage.fields, earth.drainage.tables["hollows"]
+    tarim, great_basin = earth.cell(39.0, 83.0), earth.cell(40.0, -116.5)
+    assert f["depression_id"][tarim] > 0 and f["depression_id"][great_basin] > 0
+    bottom = int(t["bottom_cell"][f["depression_id"][tarim]])
+    assert earth.km(bottom, 40.2, 90.5) < 400.0 and 600.0 < t["bottom_m"][f["depression_id"][tarim]] < 900.0
+
+
+# The rivers that do not leave the land within 300 km of their real mouths when the ties are settled as the engine
+# settles them. Every number is measured: the distances by tools/earth_rivers.py (parts 3 and 7), the heights on the
+# data's own grid by tools/earth_relief.py (part 3), the heights on the mesh by tools/earth_rivers.py (part 6), and what
+# is said of a river's way by tools/earth_rivers.py --trace. The tests below keep them true: MOUTHS, NARROWS_ON_THE_MESH
+# and NARROWS_IN_THE_DATA. "In none of 20" and the like are counts of 20 random settlements of the ties.
+MISLED = {
+    "Amazon": "354 km, as the engine settles ties and in every one of 20 random settlements. The mesh's river runs east from "
+              "Manaus between 3 and 1.7 degrees south and meets the mesh's sea at 53 degrees west: the sea cell there has a "
+              "mean height of -2 m, below the mesh's sea at +1.9 m, and lies 297 km from the place taken as the mouth. Under "
+              "the planet file's water, 0.19 % less, the sea stood 7 m lower and the river left the land 203 km from that "
+              "place. The water poured decides this one; and the condition measures how far the mesh's sea reaches up the "
+              "estuary as much as it measures the river's way [INFERRED from the two runs].",
+    "Congo": "603 km as the engine settles ties, 603 to 668 km in 20 random settlements, within 300 km in none. The data close "
+             "the river's valley themselves: on their own grid the valley from Bolobo to Kinshasa rises to 610 m, where the "
+             "river above it stands at 274 m, and the basin is joined to the ocean at 457 m by another way. On the mesh the "
+             "basin fills as a lake of 880,226 km2 to 457 m and overflows westward, to the sea at 1.5 degrees south.",
+    "Ob": "586 km as the engine settles ties, 581 to 631 km in 20 random settlements, within 300 km in none. The mesh's river "
+          "comes within 71 km of its real mouth, at the head of its estuary, and runs on: from there to the sea its way "
+          "crosses a hollow that is full to 30 m. The Gulf of Ob is ocean in the data, 3 to 13 m deep; of seven cells along "
+          "it none is sea on the mesh. Their mean heights run from -7 to 8 m: three stand above the mesh's sea at +1.9 m, "
+          "and the sea does not reach the four that lie below it.",
+    "Danube": "579 km as the engine settles ties and in every one of 20 random settlements. The mesh's river passes the Iron "
+              "Gate, where the valley rises to 208 m, the level of the lake that stands above it, and enters the lake that "
+              "fills the hollow of the Black Sea to 32 m, 203 km from its real mouth at the nearest. With every hollow full "
+              "the water goes on across that lake and leaves the land at the Dardanelles. The relief data cut the Black Sea "
+              "off from the ocean themselves (STRAITS), so the river of a sea that is a lake on the mesh is asked where the "
+              "lake's water leaves the land: it cannot meet the condition as it was written [INFERRED]. [Under the planet "
+              "file's water the plain above the Iron Gate overflowed to the Adriatic instead, 1,212 km from the mouth.]",
+    "Yenisei": "398 km as the engine settles ties; 294 to 398 km in 20 random settlements, within 300 km in 1: the ties "
+               "decide, and mostly against the river. Near 66 degrees north the mesh's river turns west, across a hollow "
+               "that is full to 30 m, and passes four cells whose centres are ocean in the data and which are not sea on "
+               "the mesh (see the Ob): it leaves the land with the Ob.",
+    "Volga": "1,865 km, however the ties are settled. Not a fault of the relief or of the mesh. The Volga ends in the Caspian, "
+             "a closed sea, and this condition follows the water on as if every hollow were full: over the rim of the "
+             "Caspian's hollow at 62 m, across the lake that fills the hollow of the Black Sea and out at the Dardanelles. "
+             "A river of a closed sea cannot meet the condition as it was written. Where the mesh's Volga ends is tested "
+             "with the Caspian, below.",
+    "St Lawrence": "1,090 km in every one of 20 random settlements. In the data the estuary below Quebec is open to the sea. It "
+                   "is closed by the way the relief is put on the mesh: two of the cells that hold the estuary are land on "
+                   "the mesh by their mean heights though 62 % and 32 % of their points are ocean in the data, and the valley "
+                   "rule gives a land cell the height of its land points alone, 162 and 204 m. The river above fills a lake "
+                   "to 102 m, which overflows southward and leaves the land at 41 degrees north. With the ocean points of "
+                   "each cell counted as well, at the level of the sea, the valley is open and the river leaves the land 232 "
+                   "km from its mouth; that reading sends the Danube to the Adriatic and is no mend (the test of the "
+                   "estuary, below).",
+    "Amur": "1,290 km as the engine settles ties and in every one of 20 random settlements. The data close the lower river "
+            "themselves: on their own grid the valley below Komsomolsk rises to 213 m, where the river stands at 76 m, and the "
+            "lowland above it is joined to the ocean at 122 m by a way south. On the mesh the valley rises to 137 m; the "
+            "lowland fills as a lake of 180,651 km2 to 107 m and its water leaves south, to the Sea of Japan.",
+    "Huang He": "1,215 km as the engine settles ties, and within 300 km in 13 of 20 random settlements (203 km at the "
+                "nearest): the ties decide, and the engine's way of settling them gives the rarer outcome. As the engine "
+                "settles ties, the river's way to the sea crosses 48 cells under the water of full hollows and 4 of level "
+                "ground, runs north-east as far as 53.6 degrees north, and leaves the land where the mesh's Amur does."}
+
+# For every great river: how far from its real mouth it leaves the land when the ties are settled as the engine settles
+# them (km), and in how many of the SETTLEMENTS random settlements it does so within 300 km.
+MOUTHS = {"Amazon": (354, 0), "Nile": (270, 20), "Mississippi": (295, 20), "Congo": (603, 0), "Yangtze": (60, 12), "Ob": (586, 0),
+          "Mackenzie": (26, 20), "Danube": (579, 0), "Ganges": (253, 20), "Parana": (20, 20), "Niger": (142, 20), "Lena": (206, 13),
+          "Yenisei": (398, 1), "Indus": (75, 20), "Murray": (33, 20), "Volga": (1865, 0), "Zambezi": (101, 20), "Orinoco": (244, 20),
+          "St Lawrence": (1090, 0), "Columbia": (115, 20), "Rhine": (99, 20), "Mekong": (292, 20), "Amur": (1290, 0), "Huang He": (1215, 13)}
+
+# Six narrows of great rivers. On the mesh: the height to which the valley's floor rises, and the level of the lake that
+# stands above it. In the data, on their own grid of 5 minutes of arc: the height of the river above the narrows, the
+# height to which its valley rises, and the level at which the place is joined to the ocean by any way (None: the place
+# is open to the sea). Metres.
+NARROWS_ON_THE_MESH = {"Congo": (518, 457), "Danube": (208, 208), "Lena": (137, 122), "St Lawrence": (204, 102), "Amur": (137, 107),
+                       "Yangtze": (762, 396)}
+NARROWS_IN_THE_DATA = {"Congo": (274, 610, 457), "Danube": (98, 317, 317), "Lena": (91, 152, 152), "St Lawrence": None,
+                       "Amur": (76, 213, 122), "Yangtze": (404, 945, 823)}
+
+
+@pytest.mark.parametrize("river", [pytest.param(name, marks=missed(MISLED[name])) if name in MISLED else name for name in ref.GREAT_RIVERS])
+def test_a_great_river_reaches_the_sea_where_it_does_on_earth(earth, river):
+    """Each of 24 great rivers, with every hollow on its way full, leaves the land within 300 km of its real mouth.
+    Found, then kept: the test came into the repository together with its first results, under the name
+    test_two_thirds_of_the_great_rivers_reach_the_sea_where_they_do_on_earth, and no record shows the list of
+    rivers or the 300 km set before a run. Neither has been changed since. The ties are settled as the engine
+    settles them: 15 of the 24 pass, and each of the other 9 is an expected failure of its own, with its distance
+    and what was measured about its cause. Four of the 24 are decided by the ties, two of them among the 15 that
+    pass (the Yangtze and the Lena) and two among the 9 that fail (the Yenisei and the Huang He): for those four
+    neither the pass nor the failure is a finding (MOUTHS, and the test after the next). The water poured decides
+    one more, the Amazon. The condition asks where the water leaves the land and not by which way: the Yangtze,
+    the Lena and the Nile meet it by ways that are not their valleys (python tools/earth_rivers.py --trace; the
+    test after the next holds where those ways run)."""
+    place, mouth = ref.GREAT_RIVERS[river]
+    km = earth.km(int(earth.drainage.fields["basin_id"][earth.cell(*place)]), *mouth)
+    assert km < ref.MOUTH_WITHIN_KM, f"{river}: {km:.0f} km from its mouth"
+
+
+def test_a_settlement_of_the_ties_reaches_drainage_and_hydrology_alike(earth):
+    """Earth.settled(seed) must hand its ties to both processes: Hydrology settles the ways across its lakes, and if
+    it kept the mesh's own ties while Drainage took the drawn ones, the two would disagree about where a lake's water
+    goes and every "in 20 random settlements" of these tests would mean less than it says. And it must draw all four
+    things that the texts say it draws: the last, the order in which level ground is drained, was added by the
+    fifth check of build step 2, and is held here by what it changes."""
+    from worldengine.library import drainage as dr
+    other = earth.settled(3)
+    given = other._ties()
+    surface, full = other.full_ways()
+    assert np.array_equal(other.drainage.fields["flow_receiver"], dr.receivers(surface, earth.wet, earth.mesh.nbr, earth.ground, given))
+    assert (other.drainage.fields["flow_receiver"] != earth.drainage.fields["flow_receiver"]).sum() > 1000      # the case: the draw changes many ways
+    handed = other.books()["ties"]
+    assert np.array_equal(handed.rank, given.rank) and np.array_equal(handed.edge, given.edge) and np.array_equal(handed.way, given.way)
+    assert given.passes is not None and np.array_equal(handed.passes, given.passes)
+    assert given.level is not None and given.level.shape == (earth.mesh.n,) and np.array_equal(handed.level, given.level)
+    own = earth.books()["ties"]
+    mesh = dr.mesh_ties(earth.mesh)
+    assert np.array_equal(own.rank, mesh.rank) and np.array_equal(own.edge, mesh.edge) and own.passes is None and own.level is None
+    assert not np.array_equal(handed.edge, mesh.edge)
+    # level ground: the same draw without its fourth part gives other ways, and on level ground alone
+    without = dr.receivers(surface, earth.wet, earth.mesh.nbr, earth.ground, given._replace(level=None))
+    drained = other.drainage.fields["flow_receiver"]
+    moved = np.flatnonzero(drained != without)
+    assert moved.size > 500 and (surface[without[moved]] == surface[moved]).all() and (surface[drained[moved]] == surface[moved]).all()
+    # so the ways Hydrology takes across its lakes are Drainage's, wherever the lake fills its whole hollow
+    ways = other.books()["flows"]["receivers"]
+    lakes = other.hydrology().tables["lakes"]
+    table = other.drainage.tables["hollows"]
+    label = other.drainage.fields["depression_id"].astype(np.int64)
+    top = dr.top_hollows(table)[label]
+    brim = {int(k) for k, spills in zip(lakes["hollow"], lakes["overflows"]) if spills and table["parent"][int(k)] < 0}
+    assert len(brim) > 50
+    under = np.isin(top, sorted(brim)) & (surface <= table["spill_m"][top])
+    assert under.sum() > 500 and np.array_equal(ways[under], full[under])
+
+
+def test_what_the_ties_decide_about_the_mouths(earth, outcomes, flood):
+    """Found, then kept: it keeps MOUTHS, the reasons in MISLED and docs/BUILD_NOTES.md true. A change to Drainage, or
+    to the way Earth's relief is put on the mesh, that moves a mouth by more than 5 km, or changes in how many random
+    settlements a river passes, fails here, and the records must then be measured again.
+    In a random settlement 13 to 16 rivers pass. Thirteen pass in all 20 and seven in none; four are decided by the
+    ties: the Yangtze (12 of 20), the Lena (13), the Yenisei (1) and the Huang He (13). The Yangtze and the Lena pass
+    as the engine settles ties, the Yenisei and the Huang He fail: none of the four is a finding. Two more pass by
+    less than 10 km in every settlement: the Mississippi at 295 km and the Mekong at 292.
+    [Twice these counts claimed more than was drawn. Until the fourth check of build step 2 a random settlement
+    left the choice among passes of one height as the engine makes it; until the fifth, the order in which level
+    ground is drained.]"""
+    assert set(MOUTHS) == set(ref.GREAT_RIVERS)
+    near = lambda r, river: r["mouth_km"][river] < ref.MOUTH_WITHIN_KM
+    got = {river: (round(outcomes["engine"]["mouth_km"][river]), sum(near(r, river) for r in drawn(outcomes))) for river in MOUTHS}
+    off = {river: got[river] for river in MOUTHS if abs(got[river][0] - MOUTHS[river][0]) > 5 or got[river][1] != MOUTHS[river][1]}
+    assert not off, off
+    counts = [sum(near(r, river) for river in MOUTHS) for r in drawn(outcomes)]
+    assert (min(counts), max(counts)) == (13, 16) and sum(near(outcomes["engine"], river) for river in MOUTHS) == 15
+    assert {river for river, (_, k) in MOUTHS.items() if 0 < k < SETTLEMENTS} == {"Yangtze", "Lena", "Yenisei", "Huang He"}
+    assert {river for river, (_, k) in MOUTHS.items() if k == 0} == set(MISLED) - {"Huang He", "Yenisei"}
+    assert sum(k == SETTLEMENTS for _, k in MOUTHS.values()) == 13 and sum(k == 0 for _, k in MOUTHS.values()) == 7
+    spread = lambda river: (min(r["mouth_km"][river] for r in drawn(outcomes)), max(r["mouth_km"][river] for r in drawn(outcomes)))
+    for river, (low, high) in {"Amazon": (354, 354), "Congo": (603, 668), "Ob": (581, 631), "Danube": (579, 579), "Amur": (1290, 1290),
+                               "St Lawrence": (1090, 1090), "Volga": (1865, 1865), "Huang He": (203, 1215), "Yenisei": (294, 398),
+                               "Mississippi": (295, 295), "Mekong": (292, 292), "Yangtze": (60, 787), "Lena": (206, 302),
+                               "Nile": (121, 270)}.items():                           # what the reasons and the texts quote
+        assert abs(spread(river)[0] - low) < 5 and abs(spread(river)[1] - high) < 5, (river, spread(river))
+    land_way = lambda river: [c for c in ref.way_of(earth, river) if c["step"] != "sea"]
+    # what the reasons say of the Amazon's way: east between 3 and 1.7 south to 53 west, where a cell of the mesh's sea lies 297 km from the mouth
+    way = ref.way_of(earth, "Amazon")
+    assert all(-3.2 < c["lat"] < -1.6 for c in way) and all(a["lon"] < b["lon"] for a, b in zip(way, way[1:]))
+    assert abs(way[-2]["lon"] + 53.0) < 0.1 and way[-1]["step"] == "sea" and abs(way[-1]["mean_m"] + 2.1) < 0.1 and abs(way[-1]["km_to_mouth"] - 297.0) < 3.0
+    # ... of the Ob's: it reaches the head of its estuary, which the data have as ocean and the mesh has not, and crosses a full hollow from there
+    way = land_way("Ob")
+    assert abs(min(c["km_to_mouth"] for c in way) - 71.0) < 5.0
+    beyond = [c for c in way if c["lat"] > 67.0]
+    assert [c["step"] for c in beyond] == ["lake"] * 10 + ["level", "down"] and all(c["lake_level_m"] == 30.0 for c in beyond[:10])
+    gulf = [(lat, 73.3) for lat in (67.5, 68.0, 69.0, 69.5, 70.0, 70.5, 71.0)]
+    assert all(ref.raw_at(flood, *place)["ocean"] and -13.0 <= ref.raw_at(flood, *place)["height"] <= -3.0 for place in gulf)
+    assert not any(earth.wet[earth.cell(*place)] for place in gulf)
+    means = [earth.mean[earth.cell(*place)] for place in gulf]
+    assert all(-7.5 < mean < 8.5 for mean in means) and abs(earth.sea_level - SEA_LEVEL_M) < 0.05
+    assert (sum(mean > earth.sea_level for mean in means), sum(mean < earth.sea_level for mean in means)) == (3, 4)
+    # ... of the Yenisei's: westward near 66 north across a hollow full to 30 m, over four cells that are ocean in the data, to the Ob's end
+    yenisei = land_way("Yenisei")
+    west = [c for c in yenisei if 66.2 < c["lat"] < 67.2]
+    assert len(west) == 4 and all(c["step"] == "lake" and c["lake_level_m"] == 30.0 for c in west) and all(a["lon"] > b["lon"] for a, b in zip(west, west[1:]))
+    assert sum(ref.raw_at(flood, c["lat"], c["lon"])["ocean"] for c in yenisei) == 4 and yenisei[-1]["cell"] == way[-1]["cell"]
+    # ... of the Huang He's
+    way = land_way("Huang He")
+    assert (sum(c["step"] == "lake" for c in way), sum(c["step"] == "level" for c in way)) == (48, 4)
+    assert abs(max(c["lat"] for c in way) - 53.6) < 0.1 and way[-1]["cell"] == land_way("Amur")[-1]["cell"]
+    # ... of the Danube's and the Volga's: into the lake at the Black Sea's place, and out at the Dardanelles
+    danube, volga = land_way("Danube"), land_way("Volga")
+    assert abs(min(c["km_to_mouth"] for c in danube) - 203.0) < 5.0 and danube[-1]["cell"] == volga[-1]["cell"]
+    assert abs(danube[-1]["lat"] - 40.5) < 0.1 and abs(danube[-1]["lon"] - 26.7) < 0.1
+    assert sum(c["lake_level_m"] == 32.0 for c in danube) >= 10 and sum(c["lake_level_m"] == 32.0 for c in volga) >= 20
+    assert [c["ground_m"] for c in volga if c["step"] == "down"] == [62.0, 21.0]         # over the Caspian's rim, and out of the lake
+    # ... and the three that meet the condition by ways that are not their valleys (the Nile's: the test of the Nile, above)
+    assert all(c["lat"] < 29.0 for c in land_way("Yangtze") if 108.0 < c["lon"] < 112.5)      # the real river runs north of 29.5 there [UNVERIFIED]
+    assert all(c["lon"] < 123.0 for c in land_way("Lena") if c["lat"] > 70.0) and ref.GAUGES["Lena"][1] == 127.4   # its last gauge stands at 127.4 east
+
+
+def test_the_narrows_are_closed_in_the_data_before_the_mesh_closes_them(earth, flood):
+    """Found, then kept: it keeps true what the reasons say about narrows. In five of six valleys the mesh's ground
+    rises above the level of the lake that stands above the narrows; four of those lakes overflow by another way,
+    and the fifth, in the Sichuan basin above the Three Gorges, keeps its water. In the sixth, the Danube's Iron
+    Gate, the valley rises to 208 m and the lake above it stands at 208 m: the plain fills until its water runs
+    through the gate. Five of the six are closed in the relief data themselves, on their own grid of 9 km, where
+    the valley rises far above the river. Only the estuary of the St Lawrence is open in the data and closed on
+    the mesh, and what closes it there is the valley rule of the harness, not the width of a cell (the test after
+    this one).
+    [The third check of build step 2 found the first. I had laid all six to the mesh. The fourth found the second:
+    I had laid the St Lawrence to the mesh's spacing.]"""
+    found = ref.narrows(earth)
+    assert set(found) == set(NARROWS_ON_THE_MESH)
+    for river, (barrier, lake) in NARROWS_ON_THE_MESH.items():
+        r = found[river]
+        assert abs(r["barrier_m"] - barrier) <= 1.0 and abs(r["lake_level_m"] - lake) <= 1.0, (river, r)
+        assert (r["barrier_m"] > r["lake_level_m"]) == (river != "Danube") and r["lake_overflows"] == (river != "Yangtze")
+    raw = ref.raw_narrows(flood)
+    for river, heights in NARROWS_IN_THE_DATA.items():
+        r = raw[river]
+        if heights is None:
+            assert r["start_m"] < 0.0 and np.isnan(r["to_ocean_m"]), (river, r)   # the place itself is ocean in the data
+        else:
+            assert (r["start_m"], r["barrier_m"], r["to_ocean_m"]) == heights, (river, r)
+            assert r["barrier_m"] > r["start_m"] + 50.0                           # closed, and by far more than a step of 100 feet
+    # the Danube's water passes the gate and leaves the land at the Dardanelles
+    danube = found["Danube"]
+    assert danube["barrier_m"] == danube["lake_level_m"] == 208.0 and abs(danube["leaves_at"][0] - 40.5) < 0.1 and abs(danube["leaves_at"][1] - 26.7) < 0.1
+
+
+def test_the_estuary_of_the_st_lawrence_is_closed_by_the_valley_rule_and_not_by_the_width_of_a_cell(earth, flood):
+    """Found, then kept: it keeps the St Lawrence's reason in MISLED and docs/BUILD_NOTES.md, section 4.4, true.
+    A cell is sea on the mesh if the poured water covers its mean height. A cell that holds an arm of the sea
+    between high shores is therefore land, and the valley rule hands it to Drainage at the height below which a
+    tenth of its points ABOVE the sea lie: the water in it is left out. Two such cells stand in the St Lawrence's
+    way. Of the 3,418 land cells of which a tenth or more is ocean in the data, 2,956 are handed in above 10 m and
+    1,125 above 100 m.
+    The other reading, as a diagnosis (earth_reference.other_valley_reading): the ocean points of a cell counted
+    as well, at the level of the mesh's sea. It opens the estuary, and the river then leaves the land 232 km from
+    its mouth. It is no mend. It hands in 3,448 land cells at the sea's own level, a range on a coast among them:
+    the Danube's water then leaves for the Adriatic, 1,212 km from its mouth, over a cell whose mean height is
+    544 m. Sixteen of the 24 great rivers then meet their condition where fifteen do as built, eight of the 21
+    gauges under either reading, and lakes cover 5.6 % of the land where they cover 6.3 %. The tests stay on the
+    rule as it was first chosen: the other was looked at with the results of the first in view.
+    [Until the fifth check of build step 2 the diagnosis counted every point of a cell with its depth below the
+    sea, which floods the coasts; it was said to be "no better rule" on that ground.]"""
+    held = ref.data_points_of_cells(earth, flood)
+    share, land = held["ocean_share"], earth.land
+    assert share.min() >= 0.0 and share.max() <= 1.0 and share[earth.cell(*ref.OPEN_OCEAN)] == 1.0 and share[earth.cell(33.0, 88.0)] == 0.0
+    closing = [earth.cell(47.3, -70.6), earth.cell(47.4, -69.9)]                  # two cells on the estuary below Quebec
+    assert [(bool(land[c]), round(float(earth.ground[c])), round(100 * float(share[c]))) for c in closing] == [(True, 162, 62), (True, 204, 32)]
+    assert all(earth.mean[c] > 150.0 for c in closing)                           # land by their mean heights, with half their points in the sea
+    built = ref.narrows(earth)["St Lawrence"]
+    assert built["barrier_m"] == 204.0 and built["lake_level_m"] == 102.0 and abs(built["barrier_at"][0] - 47.4) < 0.1
+    assert abs(built["leaves_at"][0] - 40.9) < 0.1 and abs(built["leaves_at"][1] + 73.9) < 0.1
+    much = land & (share >= 0.1)
+    assert (int(much.sum()), int((much & (earth.ground > 10.0)).sum()), int((much & (earth.ground > 100.0)).sum())) == (3418, 2956, 1125)
+    ground_before, drainage_before = earth.ground.copy(), earth.drainage
+    o = ref.other_valley_reading(earth, flood)
+    other = o["earth"]
+    assert np.array_equal(earth.ground, ground_before) and earth.drainage is drainage_before      # the Earth of the tests is left as it was
+    at_sea = float(np.float32(earth.sea_level))
+    assert [float(other.ground[c]) for c in closing] == [at_sea, at_sea]
+    assert (o["changed"], o["at_sea"]) == (4086, 3448) and int((land & (share >= 0.2) & (other.ground != at_sea)).sum()) == 0
+    assert int((land & (share == 0.0) & (other.ground != earth.ground)).sum()) == 0      # a cell with no ocean in it is handed in as before
+    opened = ref.narrows(other)["St Lawrence"]
+    assert opened["barrier_m"] == 84.0 and opened["lake_level_m"] is None       # the valley rises no higher than the place the river starts from
+    moved = {river: (round(a), round(b)) for river, (a, b) in o["moved"].items()}
+    assert moved == {"Yangtze": (60, 100), "Ob": (586, 581), "Mackenzie": (26, 32), "Danube": (579, 1212), "Yenisei": (398, 343), "Murray": (33, 74),
+                     "Orinoco": (244, 192), "St Lawrence": (1090, 232), "Amur": (1290, 1274), "Huang He": (1215, 1261)}, moved
+    assert (o["built"]["mouths"], o["other"]["mouths"], o["built"]["gauges"], o["other"]["gauges"]) == (15, 16, 8, 8)
+    assert abs(o["built"]["lakes_share"] - 0.0628) < 0.0003 and abs(o["other"]["lakes_share"] - 0.0557) < 0.0003
+    danube = ref.narrows(other)["Danube"]
+    assert abs(danube["leaves_at"][1] - 14.2) < 0.5 and abs(danube["over_mean_m"] - 544.0) < 2.0 and danube["handed_m"] == at_sea
+
+
+def test_how_coarse_the_relief_is_and_what_settles_its_ties(earth):
+    """Found, then kept: it keeps true what this file and docs/BUILD_NOTES.md say about the relief data and about
+    ties. ETOPO5 is in whole metres, 48 % of its land in steps of 100 feet. On the mesh 34.4 % of the land cells
+    have a land neighbour at exactly their own height. Of the land cells that have a lower neighbour, 22.6 % have
+    several equally low: the bed settles a third of those (cells with several neighbours in the sea), the wider
+    way two thirds, and the cell numbers 51 cells. With the wider way left out, as it was before the third check,
+    the water of 14.9 % of the land reached the sea in another cell; with the order of the cells turned round, as
+    things stand, of 0.04 %. Another 4,578 land cells lie on level ground.
+    On coasts: 248 of 4,800 coastal land cells are handed in no more than 5 m above the mesh's sea, 10 of them
+    with a mean height above 300 m (cells that hold a shore and a range); and 437 land cells are handed in at or
+    below the level of that sea, dry ground that the sea does not reach."""
+    s = ref.relief_steps(earth)
+    assert s["whole_metres"] and 0.45 < s["hundred_feet_share"] < 0.50
+    assert (s["land_cells"], s["tied_cells"]) == (47962, 16510)
+    assert [height for height, _ in s["commonest"][:2]] == [91.0, 61.0]
+    assert (s["coast_cells"], s["coast_low"], s["coast_low_but_high"], s["at_or_below_sea"]) == (4800, 248, 10, 437) and ref.COAST_LOW_M == 5.0
+    t = ref.tie_counts(earth)
+    assert (t["choose"], t["tied"], t["by_bed"], t["by_width"], t["by_number"], t["level"]) == (42657, 9641, 3341, 6249, 51, 4578)
+    assert 0.0002 < t["mouth_moved_by_numbers"] < 0.0006 and 0.14 < t["mouth_moved_by_width"] < 0.16     # (a measure that measured nothing would give 0)
+
+
+def test_the_data_hold_most_of_the_great_lakes_that_the_mesh_shows(earth, flood):
+    """Found, then kept. Of all that is not ocean in the data, 13.3 % lies under water when every hollow of the data
+    is full, on the data's own grid; on the mesh, with the valley rule, 10.5 %. Eleven of the mesh's twelve lakes
+    larger than 100,000 km2 lie in hollows that the data hold as well; the twelfth is the Baltic, which the data
+    join to the ocean. Five of the eleven have their lowest points where Earth has a sea or a great lake, though
+    not one of their size: the Caspian, the Black Sea, the upper Great Lakes, Lake Ontario and Great Slave Lake.
+    Six stand where Earth has no such water: in the basins of the Congo, the Amazon and the Danube, on the West
+    Siberian plain and in the lowlands of the Amur and the Lena [UNVERIFIED, from memory: which waters Earth has
+    at those places]."""
+    r = ref.raw_hollows(flood)
+    assert abs(r["not_ocean"] - 0.133) < 0.002 and abs(r["land"] - 0.126) < 0.002 and abs(r["ocean_share_of_planet"] - 0.711) < 0.002
+    from worldengine.library import drainage as dr
+    label, table = earth.drainage.fields["depression_id"].astype(np.int64), earth.drainage.tables["hollows"]
+    full = table["spill_m"][dr.top_hollows(table)[label]]
+    under = earth.land & (label > 0) & (earth.ground < np.where(np.isnan(full), np.inf, full))
+    assert abs(earth.area[under].sum() / earth.area[earth.land].sum() - 0.105) < 0.002
+    # the same from the harness, which the tools print: "under water" is ground below the level, as in the data's own count
+    # (level > height). Ground exactly at the level is another 3.7 % of the land on this relief of whole metres, and is not counted
+    h = ref.mesh_hollows(earth)
+    assert np.array_equal(h["under"], under) and int(under.sum()) == 4948
+    level_with = earth.land & (label > 0) & (earth.ground == np.where(np.isnan(full), np.inf, full))
+    assert int(level_with.sum()) == LEVEL_WITH_THE_WATER and abs(h["under_share"] - 0.1051) < 0.0005 and abs(h["under_share_60"] - 0.1190) < 0.0005
+    assert abs(h["not_sea_share"] - 0.2925) < 0.0005 and abs(h["closed_hollow_share"] - 0.6239) < 0.0005
+    lakes = earth.hydrology().tables["lakes"]
+    big = np.flatnonzero(lakes["area_m2"] > 1.0e11)
+    held, at = [], []
+    for i in big:
+        c = int(lakes["bottom_cell"][i])
+        x = ref.raw_at(flood, float(earth.mesh.lat[c]), float(earth.mesh.lon[c]))
+        held.append((not x["ocean"]) and x["level"] > x["height"])
+        at.append((float(earth.mesh.lat[c]), float(earth.mesh.lon[c])))
+    assert big.size == 12 and sum(held) == 11
+    # the twelve, by the lowest point of each (degrees north, east); the one that lies in no hollow of the data is the Baltic's
+    lowest = {"the Caspian": (38.7, 49.1), "the Black Sea": (43.3, 36.8), "the upper Great Lakes": (47.5, -86.9), "Lake Ontario": (43.6, -78.6),
+              "Great Slave Lake": (61.2, -115.2), "the Congo's basin": (-3.0, 16.5), "the Amazon's": (0.0, -63.0), "the Danube's": (44.7, 20.4),
+              "West Siberia": (58.2, 68.4), "the Amur's lowland": (50.1, 136.5), "the Lena's": (65.9, 125.0), "the Baltic": (57.3, 19.9)}
+    for name, (lat, lon) in lowest.items():
+        found = [k for k, (a, b) in enumerate(at) if abs(a - lat) < 0.1 and abs(b - lon) < 0.1]
+        assert len(found) == 1 and held[found[0]] == (name != "the Baltic"), name
+    for place, height, level in (((-3.0, 16.5), 274.0, 457.0), ((0.0, -63.0), 30.0, 61.0), ((58.2, 68.4), 61.0, 91.0)):
+        x = ref.raw_at(flood, *place)                                             # the Congo's basin, the Amazon's, West Siberia
+        assert (x["height"], x["level"]) == (height, level), (place, x)

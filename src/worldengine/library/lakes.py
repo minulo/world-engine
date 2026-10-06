@@ -65,10 +65,16 @@ def check_table(table, label: np.ndarray, recv: np.ndarray, sea: np.ndarray, gro
     nbr     per cell, its neighbours (-1 where a cell has fewer)
     Raises ValueError naming the first rule broken.
 
-    What it cannot show: that the pass a hollow names is its lowest. A table that names a higher pass, with the
-    right cells and the right height, keeps every rule here, and its lake then stands too high. To show otherwise
-    would be to find the hollows again [MEASURED by the fourth check of step 2: a pass at 894 m named for one at
-    530 m is accepted].
+    Two things it cannot show.
+      * That the pass a hollow names is its lowest. A table that names a higher pass, with the right cells and the
+        right height, keeps every rule here, and its lake then stands too high. To show otherwise would be to find
+        the hollows again [MEASURED by the fourth check of step 2: a pass at 894 m named for one at 530 m is
+        accepted].
+      * The level of a pass into the sea, which is bounded from below only: no lower than the cell on the hollow's
+        own side. Its true level is the higher of that cell and the sea's surface beside it, and this check is not
+        handed the sea's surface (Hydrology does not read it). A level written too high is accepted, and the lake
+        then stands too high [MEASURED by the fifth check of step 2: a pass into the sea written 200 m too high
+        was accepted, and Hydrology ran without a notice].
     """
     def refuse(what):
         raise ValueError(f"the table of hollows does not keep its rules: {what}")

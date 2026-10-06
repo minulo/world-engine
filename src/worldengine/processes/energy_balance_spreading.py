@@ -30,9 +30,10 @@ the middle of North America swings about 19 K [UNVERIFIED: recalled]; on a conti
 to inner Asia's [UNVERIFIED: recalled]. (The third check measured continents of other extents:
 10.9 and 19.3 K from 20 to 80 degrees north, 11.6 and 22.3 K from pole to pole.) With weak
 seasons the summers of land poleward of about 50 degrees stay below freezing, snow outlasts
-them, and the reflecting snow cools the land further: in ten seeded worlds 15 to 48 % of the
-land lies under snow all year [MEASURED], where Earth has 10 % under ice [DOCUMENTED: National
-Snow and Ice Data Center, Glacier Quick Facts]. Later two-dimensional models of this family
+them, and the reflecting snow cools the land further: in ten seeded worlds 11 to 47 % of the
+land lies under snow all year [MEASURED on the build of step 2; 15 to 48 % on that of step 1],
+where Earth has 10 % under ice [DOCUMENTED: National Snow and Ice Data Center, Glacier Quick
+Facts]. Later two-dimensional models of this family
 let the spreading weaken toward the poles and over land (North, Mengel and Short 1983; Zhuang,
 North and Stevens 2017; Ziegler and Rehfeld 2021) [of these I opened only the last]; with a
 spreading constant of 0.35 in place of 0.649 the same two continents swing 15.9 and 27.6 K

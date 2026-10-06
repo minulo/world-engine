@@ -10,10 +10,11 @@ a process multiplies by the planet radius where it needs metres.
 
 Two properties matter to the rest of the engine:
   * the build is whole-array arithmetic in a fixed order, so the same level gives the same
-    bits on one machine [MEASURED: two fresh interpreters]. On a processor with other vector
-    instructions the last bits of the latitudes, the longitudes and the boundary lengths
-    differ [MEASURED by the fourth check of build step 2, with numpy's AVX-512 code switched
-    off: differences of 1.4e-16 of the longest boundary];
+    bits on one machine [MEASURED: two fresh interpreters]. With numpy's AVX-512 code switched
+    off, on the same machine, the last bits of the latitudes, the longitudes and the boundary
+    lengths differ [MEASURED by the fourth check of build step 2: differences of 1.4e-16 of
+    the longest boundary]. That a processor without those instructions gives the same
+    differences is likely and was not tried [INFERRED: no second machine was used];
   * the cells of level k are the first cells of level k + 1, so meshes nest.
 """
 from __future__ import annotations

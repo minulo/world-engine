@@ -49,12 +49,16 @@ ties of the mesh (mesh_ties) a result depends on how the cells are numbered only
 are both equal: where the ground repeats itself exactly across a line of symmetry of the mesh, and in
 the choice of the bottom of a level floor.
 
-Ties.passes lets a caller put an order of its own before everything else among passes of one height. The
-engine does not use it. The Earth harness does (src/earth_reference), to draw at random every choice
+Ties.passes lets a caller put an order of its own before everything else among passes of one height, and
+Ties.level an order in which level ground is drained, in place of "toward its nearest way out". The
+engine uses neither. The Earth harness uses both (src/earth_reference), to draw at random the choices
 that the heights do not make, and so to see which of its results the relief decides and which the ties.
+What no caller can change: the water of a full hollow crosses its lake by the shortest way to the outlet
+cell, which decides the cells it passes and not where it leaves the lake.
 """
 from __future__ import annotations
 
+import heapq
 from typing import NamedTuple
 
 import numpy as np
@@ -73,6 +77,8 @@ class Ties(NamedTuple):
     rank: np.ndarray            # (cells): where even that is equal, or one cell of several must be named: the lower wins
     passes: np.ndarray | None = None    # (pairs of neighbouring cells), or none: among passes of one height the lower goes
                                         # first, before the lower cell, the bed and the width are looked at
+    level: np.ndarray | None = None     # (cells), or none: level ground is drained in this order, the lower first, each cell
+                                        # to a neighbour that drains already, in place of "toward its nearest way out"
 
 
 def boundary_families(mesh) -> np.ndarray:
@@ -202,6 +208,9 @@ def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.nda
     lines say why). Level ground (cells with a neighbour at their own height and none lower) drains toward its
     nearest way out, a cell at the same height that does drain. Level ground with no way out is the floor of a
     hollow: it drains to one of its cells, the first in the order of the cells, which is the hollow's bottom.
+    With an order of the caller's own for level ground (`ties.level`) the cells beside a way out drain as before,
+    and the rest is drained in that order: of the cells that touch ground which drains already, the first in the
+    order goes next, to one of those neighbours. Every cell still reaches a way out; the way need not be the nearest.
     """
     n = surface.size
     bed = surface if bed is None else np.asarray(bed, dtype=np.float64)
@@ -216,6 +225,7 @@ def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.nda
     if stuck.size == 0:
         return recv
     around_of, height, bed_of, rank_of = nbr.tolist(), surface.tolist(), bed.tolist(), rank.tolist()
+    drawn = None if ties is None or ties.level is None else np.asarray(ties.level, dtype=np.float64).tolist()
     is_stuck = np.zeros(n, dtype=bool)
     is_stuck[stuck] = True
     seen = np.zeros(n, dtype=bool)
@@ -246,6 +256,19 @@ def receivers(surface: np.ndarray, sea: np.ndarray, nbr: np.ndarray, bed: np.nda
                 steps[i] = 0
         if not steps:                                        # no way out: the floor of a hollow
             steps[min(ground, key=lambda i: rank_of[i])] = 0
+        if drawn is not None:                                # the caller's order: the cell that comes first among those
+            waiting = [(drawn[j], j) for i in steps for j in around_of[i] if j in inside and j not in steps]
+            heapq.heapify(waiting)                           # beside ground that drains already goes next
+            while waiting:
+                _, j = heapq.heappop(waiting)
+                if j in steps:
+                    continue
+                recv[j] = best(j, lambda i: i in steps)
+                steps[j] = 1
+                for i in around_of[j]:
+                    if i in inside and i not in steps:
+                        heapq.heappush(waiting, (drawn[i], i))
+            continue
         edge, d = list(steps), 0
         while edge:                                          # ring by ring inward: each cell to a neighbour one ring nearer
             d += 1

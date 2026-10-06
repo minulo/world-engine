@@ -1,0 +1,34 @@
+The Danube on the mesh with every hollow full, from 48.2, 16.4; its real mouth: 45.2, 29.7
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   48.1    16.6         145 m        173 m  lake        208 m         1051   159 m, 317 m
+   1   47.7    17.2         115 m        122 m  lake        208 m          999   115 m, 317 m
+   2   47.3    17.0         136 m        160 m  lake        208 m         1001   148 m, 317 m
+   3   46.9    17.6         119 m        189 m  lake        208 m          952   119 m, 317 m
+   4   46.4    18.2         144 m        182 m  lake        208 m          905   185 m, 317 m
+   5   46.0    18.7          89 m        112 m  lake        208 m          859   86 m, 317 m
+   6   45.6    19.3          84 m         91 m  lake        208 m          814   85 m, 317 m
+   7   45.2    19.8          82 m        118 m  lake        208 m          772   201 m, 317 m
+   8   44.7    20.4          75 m        139 m  lake        208 m          734   206 m, 317 m
+   9   44.3    20.9         120 m        186 m  lake        208 m          699   183 m, 317 m
+  10   43.9    21.5         157 m        424 m  lake        208 m          669   468 m, 468 m
+  11   43.9    22.2         208 m        352 m  down                       613   184 m, 216 m
+  12   44.0    22.8          31 m         92 m  lake         49 m          558   30 m, 79 m
+  13   44.1    23.5          49 m         91 m  lake         49 m          503   72 m, 79 m
+  14   43.6    24.0          45 m        123 m  down                       482   144 m, 144 m
+  15   43.7    24.7          38 m         73 m  lake         39 m          429   46 m, 54 m
+  16   43.7    25.4          39 m         89 m  down                       377   39 m, 39 m
+  17   43.8    26.2          26 m        162 m  lake         32 m          316   195 m, 195 m
+  18   44.3    26.5          26 m         49 m  lake         32 m          267   63 m, 63 m
+  19   44.4    27.4          18 m         39 m  lake         32 m          205   42 m, 42 m
+  20   44.0    27.8           4 m        113 m  lake         32 m          203   195 m, 195 m
+  21   43.5    28.3           2 m         -2 m  lake         32 m          220   3 m, 3 m
+  22   43.0    28.7        -632 m       -632 m  lake         32 m          252   -520 m, 2 m
+  23   42.6    29.2       -1907 m      -1907 m  lake         32 m          294   -1987 m, 2 m
+  24   42.1    28.9        -865 m       -865 m  lake         32 m          354   -986 m, 2 m
+  25   41.6    28.5           2 m        -33 m  lake         32 m          415   -36 m, 2 m
+  26   41.1    28.2           2 m       -195 m  lake         32 m          477   0 m, 0 m
+  27   40.6    28.0           5 m       -122 m  lake         32 m          534   -113 m, ocean
+  28   40.5    27.3          32 m         -6 m  lake         32 m          554   -2 m, ocean
+  29   40.5    26.7          21 m         59 m  down                       579   -37 m, ocean
+  30   40.4    26.0        -193 m       -193 m  sea                        609   -413 m, ocean
+30 land cells: 4 steps down to lower ground, 0 over level ground, 26 across full hollows; nearest to its real mouth: 203 km; leaves the land 579 km from it

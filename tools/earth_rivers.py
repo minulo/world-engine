@@ -1,12 +1,14 @@
 """Earth's great rivers and lakes as the engine's Drainage and Hydrology make them, beside the measured ones.
 
-    python tools/earth_rivers.py [--level 7] [--valley-share 0.1] [--demand-times 1.0] [--ties engine|mean|SEED]
-                                 [--settlements N] [--demands]
+    python tools/earth_rivers.py [--level 7] [--valley-share 0.1] [--sea-water relief|planet] [--demand-times 1.0]
+                                 [--ties engine|mean|SEED] [--settlements N] [--demands]
     python tools/earth_rivers.py --trace RIVER [--ties ...]
 
-Earth's relief (ETOPO5) is put on the mesh, SeaLevel pours Earth's water on it, Drainage finds the ways down, and
-Hydrology is handed Earth's measured rain (GPCP, 1979 to 2010) and warmth (CRU, 1961 to 1990). Nothing of the
-engine's own climate enters: what is printed is how these two processes do when their inputs are the truth.
+Earth's relief (ETOPO5) is put on the mesh, SeaLevel pours on it the water that the relief's own ocean holds,
+Drainage finds the ways down, and Hydrology is handed Earth's rain (GPCP, 1979 to 2010) and warmth (CRU, 1961 to
+1990). Nothing of the engine's own climate enters. The inputs are data sets, not the truth: the relief is in whole
+metres on a grid of 9 km, the rain on a grid of 2.5 degrees and the warmth on one of 5 degrees; and the snowfall is
+not measured at all, but made from each month's mean temperature (earth_reference.Earth.snow_handed_in).
 
 Read part 7 before any single river. The relief comes in whole metres, a third of the land cells tie exactly with a
 neighbour, and where heights tie the data cannot say which way a river runs (python tools/earth_relief.py). Parts 1
@@ -25,21 +27,27 @@ outcome comes. A count is of the draws made: an outcome that came in none of 20 
   2. Like for like: what the land of each basin sheds, on the mesh's own river at the gauge wherever its basin
      with every hollow full is within a factor of 1.5 of the real one's area. Part 1 mixes where the rivers run
      with what the land sheds; this part looks at the second alone. Its last lines are the Volga, the one basin
-     for which a published precipitation is at hand as well: under the rain data, and with the published
-     precipitation handed in instead, so that what the rain data add can be told from what the model does.
+     for which a published precipitation and a published share of snow are at hand as well: under the rain
+     data, and under three other precipitations over the same land, which show what the precipitation handed in
+     decides.
   3. Where each great river leaves the land on the mesh, against its real mouth.
-  4. The largest lakes, with the model's books of each.
+  4. The largest lakes, with the model's books of each; and the lake at the Caspian's place by itself, with the
+     land that feeds it and where its water goes if it runs over.
   5. The water of all the land.
   6. Narrows of six great rivers: how high the mesh's ground stands in the valley, against the level of the lake
      that the closed valley dams above it, and where the water goes instead.
   7. With --settlements N: the same outcomes with the ties settled at random N times (seeds 1 to N), and once by
-     the cells' mean heights. A random settlement draws everything that the heights leave open: the width of every
-     way, the order of the cells, and among passes of one height which is taken (earth_reference.Earth).
+     the cells' mean heights. A random settlement draws four things: the width of every way, the order of the
+     cells, which of several passes of one height is taken, and the order in which level ground is drained
+     (earth_reference.Earth says what is not drawn).
   8. With --demands: the land's water with the air's demand for water multiplied by 1, 0.794, 0.76 and 0.6. A
      diagnosis: it shows how much a smaller demand would mend, and that two cuts with different causes mend alike.
 
 --valley-share   the share of a cell's land points that lie below the height Drainage is handed (the Earth tests
                  use 0.1; see earth_reference.Earth). The outcomes depend on it, and this option shows how.
+--sea-water      the volume of water that SeaLevel pours: "relief" (the default, and the design's: what the ocean of
+                 the relief data holds) or "planet" (the planet file's 1.335e18 m3, 0.19 % less, which the Earth
+                 tests poured until the fifth check of build step 2). The outcomes depend on this as well.
 --demand-times   a diagnosis, not a setting of the engine: the air's demand for water multiplied by this factor.
 --ties           how exact ties are settled in parts 1 to 6: "engine" (the default: as the engine does, by the wider
                  way), "mean" (toward the cell with the lower mean height), or a number (at random, with that seed).
@@ -65,7 +73,7 @@ from worldengine import console                          # noqa: E402
 
 within = ref.within_a_factor_of_two
 DEMANDS = (1.0, 0.794, 0.76, 0.6)       # part 8: as built; the Priestley-Taylor rule without its extra (1 / 1.26); the factor that
-                                        # brings the land's energy to the measured (65.5 of 85.7 W/m2); and a larger cut
+                                        # brings the land's energy to a published budget's (65.5 of 85.8 W/m2); and a larger cut
 
 
 def ties_of(word):
@@ -80,15 +88,19 @@ def ties_of(word):
         raise argparse.ArgumentTypeError(f"{word!r} is not one of engine, mean, or a whole number (the seed of a random settlement)") from None
 
 
-def report(level=7, valley_share=ref.VALLEY_SHARE, demand_times=1.0, ties=None, settlements=0, say=print, earth=None, demands=False):
-    """The report. `earth` is an Earth built already (its level, valley share and ties then stand)."""
-    e = earth if earth is not None else ref.Earth(level, valley_share, ties)
+def report(level=7, valley_share=ref.VALLEY_SHARE, demand_times=1.0, ties=None, settlements=0, say=print, earth=None, demands=False,
+           sea_water=ref.SEA_WATER):
+    """The report. `earth` is an Earth built already (its level, valley share, ties and sea water then stand)."""
+    e = earth if earth is not None else ref.Earth(level, valley_share, ties, sea_water)
     valley_share, ties = e.valley_share, e.ties
     h = e.hydrology(ref.demand_times(e, demand_times) if demand_times != 1.0 else None)
     m = e.mesh
     say(f"Earth on {m.n} cells; valley floors at the lowest {valley_share:g} of each cell's land points; exact ties settled "
         + ("as the engine settles them" if ties is None else "by the cells' mean heights" if ties == "mean" else f"at random (seed {ties})")
         + ("" if demand_times == 1.0 else f"; the demand for water multiplied by {demand_times:g} (a diagnosis)"))
+    say(f"sea water poured: {e.sea_volume:.5e} m3, " + ("what the ocean of the relief data holds" if e.sea_water == "relief" else "the planet file's")
+        + f"; the sea of the mesh comes to rest at {e.sea_level:+.1f} m and covers {100 * e.area[e.wet].sum() / e.area.sum():.2f} % of the planet; "
+        f"{int(e.land.sum())} land cells")
 
     say("\n1. Great rivers at their last gauging stations (flows in km3 a year, areas in thousand km2, depths in mm a year)")
     say(f"{'':12s}{'flow':>19s}{'':11s} | {'land that drains to the gauge':>30s}   | {'what that land sheds':>20s}{'':14s} | lakes on the")
@@ -112,11 +124,13 @@ def report(level=7, valley_share=ref.VALLEY_SHARE, demand_times=1.0, ties=None, 
 
     say("\n2. Like for like: what the land of each basin sheds, on the mesh's own river at the gauge (areas in thousand km2, depths in mm a year)")
     say(f"{'':12s}{'basin: real':>12s}{'mesh':>8s}  {'alike':6s}{'sheds: measured':>16s}{'engine':>8s}{'engine / measured':>19s}{'rain':>7s}{'demand':>8s}"
-        f"{'measured / rain':>17s}")
+        f"{'measured / rain':>17s}{'snow / rain':>13s}")
     like = ref.like_for_like(e, h)
     for name, r in like.items():
         say(f"{name:12s}{r['station_area']:12.0f}{r['basin']:8.0f}  {'yes' if r['like'] else 'no':6s}{r['measured_depth']:16.0f}{r['sheds']:8.0f}"
-            f"{r['ratio']:19.2f}{r['rain']:7.0f}{r['demand']:8.0f}{r['measured_depth'] / max(r['rain'], 1e-9):17.2f}")
+            f"{r['ratio']:19.2f}{r['rain']:7.0f}{r['demand']:8.0f}{r['measured_depth'] / max(r['rain'], 1e-9):17.2f}{r['snow_share']:13.2f}")
+    say("(rain: all that falls, rain and snow together; snow / rain: the share of it handed to the engine as snow, which is made from the\n"
+        " month's mean temperature and not measured)")
     t = ref.like_together(like)
     if t["basins"]:
         ratios = sorted(like[name]["ratio"] for name in t["basins"])
@@ -132,20 +146,10 @@ def report(level=7, valley_share=ref.VALLEY_SHARE, demand_times=1.0, ties=None, 
                 "comparison tests the rain data or the basin more than what Hydrology does with rain: "
                 + ", ".join(f"the {name} (rain {like[name]['rain']:.0f}, measured runoff {like[name]['measured_depth']:.0f})" for name in short)
                 + f". Without them: {ref.like_together(like, short)['ratio']:.2f}")
-        say("(the engine's depth is taken before any lake loses water, the measured one after: that favours the engine)")
+        say(f"(the engine's depth is taken before any lake loses water, the measured one after: that favours the engine. Taken as the flow at the same\n"
+            f" cells, after closed hollows upstream have kept their water and lakes on the way have lost theirs: {t['after_lakes']:.2f})")
     if demand_times == 1.0:
-        v = ref.volga(e, h)
-        d, p, rain = v["data"], v["published_rain"], ref.VOLGA["precipitation_mm"]
-        say(f"The Volga at Volgograd, which ends in a closed sea and is not among the gauges: basin {d['station_area']:.0f} real, {d['basin']:.0f} on the mesh "
-            f"({'alike' if d['like'] else 'not alike'}). Published for the basin: rain {rain:.0f}, sheds {d['measured_depth']:.0f}, back to the air {rain - d['measured_depth']:.0f}")
-        other = ref.VOLGA["runoff_coefficient"] * rain
-        say(f"   (the same source gives a runoff coefficient of {ref.VOLGA['runoff_coefficient']:g}, which makes {other:.0f} mm of its {rain:.0f}: "
-            f"the two published figures differ, and both are set beside the engine's)")
-        say(f"   under the rain data:                rain {d['rain']:.0f}, sheds {d['sheds']:.0f} ({d['ratio']:.2f} of the {d['measured_depth']:.0f}, "
-            f"{d['sheds'] / other:.2f} of the {other:.0f}), back to the air {d['rain'] - d['sheds']:.0f}")
-        say(f"   handed the published rain instead:  rain {p['rain']:.0f}, sheds {p['sheds']:.0f} ({p['ratio']:.2f} of the {d['measured_depth']:.0f}, "
-            f"{p['sheds'] / other:.2f} of the {other:.0f}), back to the air {p['rain'] - p['sheds']:.0f}"
-            f"   (a diagnosis: the rain data over that land, scaled by one factor in every month)")
+        the_volga(e, h, say)
 
     say("\n3. Where each great river leaves the land with every hollow full, against its real mouth")
     basin = e.drainage.fields["basin_id"]
@@ -169,6 +173,7 @@ def report(level=7, valley_share=ref.VALLEY_SHARE, demand_times=1.0, ties=None, 
         " cells less what their ground would have given the air. What rivers and shores bring = runs on + evaporates - rain on it.)")
     big = lakes["area_m2"] > 1.0e11
     say(f"lakes larger than 100,000 km2: {int(big.sum())}, with {100 * lakes['area_m2'][big].sum() / max(lakes['area_m2'].sum(), 1e-30):.0f} % of all the land under lakes")
+    the_lake_at_the_caspians_place(e, h, say)
 
     say("\n5. The water of all the land (thousand km3 a year)")
     w = ref.land_water(e, h)
@@ -213,7 +218,7 @@ def what_a_smaller_demand_would_do(e, say=print, factors=DEMANDS):
         say(f"{factor:8g}{r['like_all']:15.2f}{r['like_median']:12.2f}{r['like_without_amazon']:20.2f}{r['like_lowest']:16.2f}{r['like_highest']:9.2f}"
             f"{r['like_within_15']:13d}{r['back_to_air']:17.3f}{r['to_air_mm']:11.0f}{r['to_sea']:12.1f}{r['gauges_within']:14d} of {len(ref.GAUGES)}")
     say("(Earth: like for like 1 by definition; 0.65 of the rain on land back to the air; 40 thousand km3 a year to the sea.\n"
-        " 0.794 is the Priestley-Taylor rule with its factor of 1.26 taken as 1.00; 0.76 is 65.5 over 85.7, the energy that a published budget\n"
+        " 0.794 is the Priestley-Taylor rule with its factor of 1.26 taken as 1.00; 0.76 is 65.5 over 85.8, the energy that a published budget\n"
         " leaves the land over what the engine's formulas leave it: python tools/earth_demand.py. The two cuts have different causes and mend\n"
         " the weighted figure alike. Neither mends the basins: one factor for all land leaves them spread from a third to 1.7 times the measured.)")
     return out
@@ -229,7 +234,8 @@ def what_the_ties_decide(e, settlements, say=print):
     t = ref.tally([runs[seed] for seed in range(1, n + 1)])
     one = {key: ref.tally([runs[key]]) for key in ("engine", "mean")}
     say(f"\n7. What the ties decide: the engine's way of settling them, the cells' mean heights, and {n} settlements at random")
-    say(f"   (a random settlement draws the width of every way, the order of the cells, and which of several passes of one height is taken)")
+    say("   (a random settlement draws the width of every way, the order of the cells, which of several passes of one height is taken,\n"
+        "    and the order in which level ground is drained)")
     say(f"\nRiver mouths within {ref.MOUTH_WITHIN_KM:.0f} km, of {len(ref.GREAT_RIVERS)}: engine {one['engine']['mouths_passing'][0]}; "
         f"mean heights {one['mean']['mouths_passing'][0]}; at random {t['mouths_passing'][0]} to {t['mouths_passing'][1]}")
     say(f"{'':12s}{'engine':>8s}{'mean':>8s}{'at random: from':>18s}{'to':>7s}   within {ref.MOUTH_WITHIN_KM:.0f} km in")
@@ -264,12 +270,59 @@ def what_the_ties_decide(e, settlements, say=print):
     say(f"The lake at the Caspian's place: engine: {words(runs['engine']['caspian'])}; mean heights: {words(runs['mean']['caspian'])}; at random: closed in "
         f"{t['caspian_closed']} of {n}" + ("" if over[1] is None else f", overflow up to {over[1]:.2f} km3 a year")
         + ("" if t["caspian_area_km2"][0] is None else f", {t['caspian_area_km2'][0] / 1e6:.2f} to {t['caspian_area_km2'][1] / 1e6:.2f} million km2 at "
-           f"{t['caspian_level_m'][0]:.0f} to {t['caspian_level_m'][1]:.0f} m"))
+           f"{t['caspian_level_m'][0]:.0f} to {t['caspian_level_m'][1]:.0f} m")
+        + f"; of the {n - t['caspian_closed']} that overflow, the water reaches the sea in {t['caspian_to_sea']}")
     return runs
 
 
-def trace(river, level=7, valley_share=ref.VALLEY_SHARE, ties=None, say=print, earth=None, flood=None):
-    e = earth if earth is not None else ref.Earth(level, valley_share, ties)
+def the_volga(e, h=None, say=print):
+    """The last lines of part 2. Returns earth_reference.volga's answer."""
+    v = ref.volga(e, h)
+    d, basin = v["data"], ref.VOLGA
+    rain, depth = basin["precipitation_mm"], d["measured_depth"]
+    figures = {"262 km3 of runoff": depth, f"a runoff coefficient of {basin['runoff_coefficient']:g}": basin["runoff_coefficient"] * rain,
+               "a water content of 250 km3": 1000.0 * basin["water_content_km3"] / d["station_area"]}
+    say(f"The Volga at Volgograd, which ends in a closed sea and is not among the gauges: basin {d['station_area']:.0f} real, {d['basin']:.0f} on the mesh "
+        f"({'alike' if d['like'] else 'not alike'})")
+    say(f"   published for the basin: precipitation {rain:.0f} mm a year, {100 * basin['snow_share']:.0f} % of it snow ({basin['snow_share'] * rain:.0f} mm); "
+        f"{100 * basin['spring_flood_share']:.0f} % of the runoff in the spring flood; and three figures for the runoff that do not agree: "
+        + "; ".join(f"{words}, {mm:.0f} mm" for words, mm in figures.items()))
+    say(f"   {'on the mesh, over the land that drains through the place':58s}{'precipitation':>14s}{'of it snow':>11s}{'sheds':>7s}{'in its largest month':>22s}"
+        + "".join(f"{f'over the {mm:.0f}':>15s}" for mm in figures.values()))
+    for key, words in (("data", "under the rain data"), ("published_rain", "the rain data scaled to the published total"),
+                       ("published_rain_and_snow", "the published total with the published share of snow"),
+                       ("data_rain_published_snow", "the rain data's total with the published share of snow")):
+        r = v[key]
+        say(f"   {words:58s}{r['rain']:14.0f}{r['snow']:11.0f}{r['sheds']:7.0f}{r['sheds_most']:13.0f} (month {r['sheds_most_month']:2d})"
+            + "".join(f"{r['sheds'] / mm:15.2f}" for mm in figures.values()))
+    say("   (the last three rows are diagnoses. Which precipitation is nearer the truth is not known here: if the published one, the excess of the\n"
+        "    first row comes with the rain data and with the snow made of them; if the rain data, it is the model's)")
+    return v
+
+
+def the_lake_at_the_caspians_place(e, h=None, say=print):
+    """The last lines of part 4. Returns earth_reference.lake_books' answer."""
+    c = ref.lake_books(e, ref.CASPIAN, h)
+    if c is None:
+        say("The lake at the Caspian's place: none stands there")
+        return c
+    over = c["overflow"]
+    say(f"The lake at the Caspian's place: {c['area_km2'] / 1e6:.2f} million km2 at {c['level_m']:.0f} m; "
+        + ("it keeps its water" if over is None else f"it overflows by {c['outflow_km3']:.2f} km3 a year"))
+    say(f"   rivers and shores bring it {c['brought_km3']:.0f} km3 a year; each square metre of it gives the air {c['loses_mm']:.0f} mm a year and gets "
+        f"{c['rain_mm']:.0f} mm of rain")
+    say(f"   the land whose water reaches it: {c['catchment_km2'] / 1e6:.2f} million km2 with the ground under the lake, {c['outside_km2'] / 1e6:.2f} without; "
+        f"over the land without the lake, the water brought is {c['depth_mm']:.0f} mm a year; it "
+        + ("holds" if c["holds_voronezh"] else "does not hold") + " the Don at Voronezh")
+    if over is not None:
+        say(f"   the water that runs over crosses {over['cells']} land cells and ends in "
+            + ("the sea" if over["ends"] == "sea" else f"a {over['ends']}" + ("" if over["area_km2"] is None else f" of {over['area_km2']:,.0f} km2"))
+            + f", at {over['lat']:.1f}, {over['lon']:.1f}")
+    return c
+
+
+def trace(river, level=7, valley_share=ref.VALLEY_SHARE, ties=None, say=print, earth=None, flood=None, sea_water=ref.SEA_WATER):
+    e = earth if earth is not None else ref.Earth(level, valley_share, ties, sea_water)
     flood = flood if flood is not None else ref.raw_flood()
     way = ref.way_of(e, river)
     place, mouth = ref.GREAT_RIVERS[river]
@@ -291,6 +344,7 @@ def parser():
     p = console.tool_parser(__doc__, "python tools/earth_rivers.py")
     p.add_argument("--level", type=console.whole_number(3, 8), default=7, metavar="LEVEL")
     p.add_argument("--valley-share", type=console.number_between(0.0, 1.0, open_low=True), default=ref.VALLEY_SHARE, metavar="SHARE")
+    p.add_argument("--sea-water", choices=("relief", "planet"), default=ref.SEA_WATER)
     p.add_argument("--demand-times", type=console.number_between(0.0, 10.0, open_low=True), default=1.0, metavar="FACTOR")
     p.add_argument("--ties", type=ties_of, default=None, metavar="engine|mean|SEED")
     p.add_argument("--settlements", type=console.whole_number(0), default=0, metavar="N")
@@ -306,9 +360,9 @@ def main(argv=None) -> int:
         print("the Earth reference data is not here: run python tools/fetch_reference_data.py", file=sys.stderr)
         return 1
     if args.trace:
-        trace(args.trace, args.level, args.valley_share, args.ties)
+        trace(args.trace, args.level, args.valley_share, args.ties, sea_water=args.sea_water)
     else:
-        report(args.level, args.valley_share, args.demand_times, args.ties, args.settlements, demands=args.demands)
+        report(args.level, args.valley_share, args.demand_times, args.ties, args.settlements, demands=args.demands, sea_water=args.sea_water)
     return 0
 
 

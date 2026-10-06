@@ -1,0 +1,24 @@
+sea level 2.30 m; sea share 0.7087; planet volume poured 1.335000e+18; rounds 15 settled True
+land 40 to 60 N: year -5.8 vs 3.5; coldest month -12.6 (month 2) vs -12.7 (month 1); warmest 1.4 (month 8) vs 18.4 (month 7); July less January 13.4 vs 31.1
+   by month, twin: [-12.5, -12.6, -11.0, -8.2, -4.8, -1.4, 0.9, 1.4, -0.2, -3.5, -7.3, -10.6]
+   by month, Earth: [-12.7, -10.8, -4.4, 3.9, 10.7, 15.7, 18.4, 17.1, 12.0, 4.9, -3.4, -10.0]
+   under snow in every month (cover > 0.5): 52.3 % of that land; mean snow cover in July 0.66, in January 0.94
+land 30 to 60 N: year -4.0 vs 6.3; coldest month -10.6 (month 2) vs -8.4 (month 1); warmest 3.0 (month 8) vs 20.0 (month 7); July less January 13.0 vs 28.4
+   by month, twin: [-10.5, -10.6, -9.1, -6.3, -3.0, 0.2, 2.5, 3.0, 1.5, -1.6, -5.4, -8.7]
+   by month, Earth: [-8.4, -6.5, -0.7, 6.6, 12.6, 17.4, 20.0, 18.9, 14.2, 7.6, 0.0, -6.1]
+   under snow in every month (cover > 0.5): 43.0 % of that land; mean snow cover in July 0.54, in January 0.82
+land 60 to 90 N: year -15.7 vs -9.6; coldest month -20.4 (month 2) vs -26.4 (month 1); warmest -10.6 (month 8) vs 9.5 (month 7); July less January 8.4 vs 35.8
+   by month, twin: [-19.6, -20.4, -20.0, -18.4, -15.9, -13.2, -11.2, -10.6, -11.5, -13.4, -15.8, -18.0]
+   by month, Earth: [-26.4, -25.4, -20.6, -12.2, -2.3, 5.7, 9.5, 7.2, 1.2, -8.3, -19.0, -24.1]
+   under snow in every month (cover > 0.5): 100.0 % of that land; mean snow cover in July 1.00, in January 1.00
+all cells 30 to 60 N: year 2.0 vs 9.3
+group A: 16.5 %
+group B: 16.5 %
+group C: 18.6 %
+group D: 2.1 %
+group E: 46.3 %
+land under snow in every month: 35.3 %
+rain on land 40 to 60 N: 440 vs 654 mm
+rain on land 60 to 90 N: 181 vs 495 mm
+driest northern band: twin at 58.4 with 273 mm; Earth's rain at the same cells driest at 38.9
+lakes share of land 5.51 %
