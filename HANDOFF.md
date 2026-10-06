@@ -7,7 +7,7 @@ Read `docs/BUILD_NOTES.md` first: its head, section 1, section 5.4 (what the fif
 
 - The brief is in `handoff/brief.md`, verbatim. The design is approved; the design document is a Claude doc:
   https://claude.ai/code/artifact/0ad5d499-95b9-4211-8e8c-74651f03652b . Its section "Build order" and its sources
-  were brought up to step 2 on 2026-10-06 (revision 470); its layers still describe the design as approved.
+  were brought up to step 2 on 2026-10-06 (revision 471); its layers still describe the design as approved.
 - Do NOT start build step 3 before Minh answers the four questions of `docs/BUILD_NOTES.md`, section 11.
 - Never loosen a design condition to make a test pass. Every number comes from a measurement or a log; every
   claim carries [MEASURED], [DOCUMENTED], [INFERRED] or [UNVERIFIED].
