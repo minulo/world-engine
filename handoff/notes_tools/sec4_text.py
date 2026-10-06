@@ -318,7 +318,8 @@ ocean. [DOCUMENTED at second hand: Wikipedia gives 371,000 km² without the Gara
 −28 m; a paper on the sea's level gives "about 436000 km2"] Either way the lake is two and a half to
 three times too large. As built it overflows, by {c['overflow']:.1f} km³ a year; it keeps its water in {t20['caspian']['closed']} of 20
 random settlements and in {c100['closed']} of 100. The water that runs over crosses {c['cells']} land cells and ends in a
-second, closed lake of {N(c['ends_area'])} km²; it reaches the sea in none of the settlements. Its books as built
+second, closed lake of {N(c['ends_area'])} km²; it reaches the sea in none of the {t20['caspian']['overflowing']} of 20 and {c100['overflowing']} of 100 settlements
+that overflow. That holds at this valley share; at two others it does not (section 4.5). Its books as built
 [MEASURED: part 4 of the tool]:
 
 * Rivers and shores bring it {c['brought']} km³ a year. About 300 reach the real sea. [DOCUMENTED at second
@@ -332,7 +333,8 @@ second, closed lake of {N(c['ends_area'])} km²; it reaches the sea in none of t
   Voronezh, which on Earth runs to the Black Sea.
 * Each square metre of the lake loses {c['loses']} mm a year and gets {c['rain']} mm of rain.
 
-Why twice the water arrives is not established. The Volga gives most of it, and point 6 leaves open
+Why twice the water arrives is not established. The land above Volgograd sheds {v['mesh'] * v['data']['sheds'] / 1000:.0f} km³ of it before
+any lake on the way loses water [my arithmetic from point 6: {N(v['mesh'] * 1000)} km² times {v['data']['sheds']} mm], and point 6 leaves open
 whether the Volga's excess comes with the precipitation handed in or is the model's.
 
 **9. The land of the whole Earth, by this build:** {w['rain']:.1f} thousand km³ of rain a year (GPCP on the
@@ -361,6 +363,7 @@ def sec45(d, o):
     over_built = [s for s in sec4.SHARES if info[s]["caspian"]["engine_overflows"]]
     never = [s for s in sec4.SHARES if info[s]["caspian"]["closed"] == 20]
     areas = [x for s in sec4.SHARES if s != "0.5" for x in info[s]["caspian"]["area"]]
+    to_sea = [s for s in sec4.SHARES if info[s]["caspian"]["to_sea"]]
     lakes = [info[s]["lakes"][0] for s in sec4.SHARES]
     seas = [info[s]["to_sea"][0] for s in sec4.SHARES]
     mouths = [info[s]["mouths_engine"] for s in sec4.SHARES]
@@ -385,14 +388,18 @@ What the rows show:
 
 * **The counts hardly move.** As built {min(mouths)} to {max(mouths)} mouths and {min(gauges)} to {max(gauges)} gauges pass over the thirteen
   shares. Which rivers pass changes with the share and with the ties.
-* **The water of all the land moves little, and one way.** The larger the share, the more land lies
-  under lakes ({min(lakes):.2f} to {max(lakes):.2f} %) and the less water reaches the sea ({max(seas):.2f} to {min(seas):.2f} thousand km³ a
-  year).
+* **The water of all the land moves little.** From the smallest share to the largest, more land lies
+  under lakes ({min(lakes):.2f} to {max(lakes):.2f} %) and less water reaches the sea ({max(seas):.2f} to {min(seas):.2f} thousand km³ a
+  year), with one step the other way, between 0.07 and 0.08.
 * **The closed Caspian fails as built at {len(over_built)} of the thirteen shares** ({", ".join(over_built)}) and holds at {len(closed_built)}
   ({", ".join(closed_built)}). At {len(never)} shares ({", ".join(never)}) the lake keeps its water in all 20 random
   settlements; at the others it overflows in some. No band of shares is safe, and the tenth is not a
   share at which the condition fails "alone", as I had written from six shares: the fifth check ran
   the shares between them.
+* **Where the overflow ends depends on the share as well.** At the tenth it ends in a closed lake in
+  every settlement that overflows. At {", ".join(to_sea)} it reaches the sea: {"; ".join(f"at {s} in {info[s]['caspian']['to_sea']} of the {info[s]['caspian']['overflowing']} random settlements that overflow" for s in to_sea)}.
+  Whether it reaches the sea as built at those shares I did not look. [The sixth check found this in
+  my own logs; I had left it out.]
 * **The lake is far too large at every share:** {min(areas):.2f} to {max(areas):.2f} million km² up to a share of 0.3, {min(areas) / 0.371:.1f} to
   {max(areas) / 0.371:.1f} times the 371,000 km² of the real sea. At 0.5 the lake covers {info['0.5']['caspian']['engine_area']:.2f} million km², at {info['0.5']['caspian']['engine_level']} m.
 * **The engine's own settlement is one draw among many.** At a share of 0.05 it gives a like-for-like

@@ -3,12 +3,15 @@ reports of the fifth check (handoff/reviews/) and from what was changed in answe
 build_notes.py from measurements."""
 
 FIFTH_HEAD = ("A fifth check, by two reviewers, looked at nothing but the claims: these notes, the README, the reasons of "
-              "the tests and the descriptions in the code. It found no wrong number and again found that the account claimed "
-              "more than was measured (section 5.4). The answer to it was written in two sittings; the second worked from the "
+              "the tests and the descriptions in the code. It found no number wrong that a tool prints, about ten counts and small numbers "
+              "wrong that I had typed into the texts, and again that the account claimed more than was measured (section "
+              "5.4). A sixth, narrow check of the answer found the same once more (section 5.5). The answer to it was written in two sittings; the second worked from the "
               "first's written hand-over and logs (`HANDOFF.md`, `handoff/`), and measured every number of sections 4.2 to "
               "4.5 again on the committed code.")
 
-FIFTH_ROW = ("No wrong number: every number that a tool prints was printed again by the reviewers and came out the same. 3 "
+FIFTH_ROW = ("No number that a tool prints was found wrong: the reviewers printed again what runs in minutes and read my logs "
+             "for the 100 settlements, five of the six shares, the twin and the worlds. About ten counts and small numbers "
+             "typed in the texts were wrong. 3 "
              "findings marked high, 2 between high and medium, 6 medium and 18 lower, all in what I had claimed. \"The "
              "closed Caspian fails at this share alone\" was false: it fails at shares between the six I had tried. The "
              "Earth tests poured another volume of water than the design's row names, and the outcomes turn on it. The "
@@ -24,8 +27,11 @@ def sec54(x):
 Two reviewers, neither of whom had seen the work, with one brief: the claims alone. One took the
 numbers of sections 4.2 to 4.6 and 8 and the reasons of the Earth tests; the other took the record
 of the checks, the engine's own claims and the hand-over texts. Their reports are in
-`handoff/reviews/`. Both begin "The numbers hold": every number that a tool prints they printed
-again and got the same. [MEASURED by them] What they found was in the account built on the numbers.
+`handoff/reviews/`. Both begin "The numbers hold": what a tool prints in minutes they printed again
+and got the same, and for the 100 settlements, five of the six valley shares, the twin and the two
+worlds they read my logs and found them to agree with the texts. [MEASURED by them, so far as they
+ran it] Numbers that I had typed into the texts were wrong in about ten places, listed below. What
+else they found was in the account built on the numbers.
 I repeated the measurements that the changes below rest on; where I only read a reviewer's number
 the text says "measured by the reviewer".
 
@@ -40,8 +46,10 @@ repository] Section 4.5 now gives thirteen shares.
 
 * **"It fails at this share alone" (high).** Above. Section 4.5 is rewritten on thirteen shares. The
   reviewer also traced where the overflow goes, which no text said: into a second, closed lake, not
-  to the sea. The harness now follows the water (`earth_reference.lake_books`), the tool prints it,
-  and whether that meets "stays a closed lake" is put to you (section 11).
+  to the sea, in every case the reviewer traced. The harness now follows the water
+  (`earth_reference.lake_books`) and the tool prints it. At the tenth it ends in a closed lake in every
+  settlement that overflows; at two other shares it reaches the sea in some (section 4.5). Whether
+  the tenth's outcome meets "stays a closed lake" is put to you (section 11).
 * **The water poured (medium to high).** The design's row for SeaLevel names "the volume of sea water
   measured from that relief at full detail". The Earth tests poured the planet file's volume, 0.19 %
   less, and no text named it as deciding anything. With the relief's own volume the sea of the mesh
@@ -123,11 +131,20 @@ repository] Section 4.5 now gives thirteen shares.
   The four worlds were built one change before the commit. "Two of its fourteen rows hold more
   runoff than the rain can supply" (one does). "Eight breakages" (nine). "48 ways" (49). The fourth
   check's finding on labels had no entry. "Two failures outside the default setting" of the crust
-  trial (three, and four seeds in which the first condition cannot be measured). Three
-  cross-references and attributions. Hock's table (her 2.5 to 5.5 are for sites without glaciers).
+  trial (three, and four seeds in which the first condition cannot be measured). Six
+  cross-references and attributions, of which five are changed; the sixth, "Left as found, and
+  said" over an item that had been changed, stands in section 5.3 as it was. Hock's table (her 2.5 to 5.5 are for sites without glaciers).
   One test's description claimed more than its assertions.
-* **Missing from section 6.** Eight things that were not done stood elsewhere or nowhere; they are
-  in section 6 now.
+* **Missing from section 6.** The reviewer listed nine things that were not done and stood elsewhere
+  or nowhere. Seven are items of section 6 now (11 to 16 and 19); the other two were mended instead: the
+  refusals, and the scan's rule for a cell wholly under a closed lake.
+* **Named by the reviewers and not carried into the lists above until the sixth check asked.** The
+  Danube's and the Lena's other way out exists on the mesh only: the mesh has the Lena's divide at
+  122 m where no way in the data is below 152 m. [MEASURED by the reviewer] The 0.62 of the
+  like-for-like figure after lakes was said to be "in the tool's report and in a test" and was in
+  neither; the tool prints it now. The suite of 2026-10-05 did not have the machine to itself.
+  Earth's "10 % under ice" carried different labels in two places of the code; both now say
+  [DOCUMENTED: National Snow and Ice Data Center].
 
 **Found in the answer to the fifth check, by me.**
 
@@ -146,4 +163,60 @@ repository] Section 4.5 now gives thirteen shares.
 pass into the sea from above. Most rules of the scan of the "why" answers have no planted fault.
 The valley shares other than the tenth, and the counts of 100 settlements, are held by no test.
 {x['not_done']}
+"""
+
+
+SIXTH_ROW = ("| Step 2, 6. One reviewer, narrow: only what was rewritten in answer to the fifth check | The numbers hold again. 1 finding "
+             "between medium and high, 3 medium, 5 lower. Where the Caspian's overflow ends depends on the valley share, and my own "
+             "logs showed it reaching the sea at two shares; the notes and a question put to the owner said only that it does "
+             "not. The head said the fifth check \"found no wrong number\" against the section's own list. Four numbers of test "
+             "reasons were held by no assertion | Section 5.5 |")
+
+
+def sec55(x):
+    return f"""### 5.5 A sixth, narrow check of the answer to the fifth
+
+Because four checks in a row had found that my account claimed more than was measured, I had the
+answer to the fifth read by one more reviewer who had not seen it written, on the diff alone:
+the rewritten sections of these notes, the rewritten end of `tests/test_earth.py` and the README.
+Its report is `handoff/reviews/report_sixth.md`. It was a narrow check. The reviewer read my logs
+and the assertions and ran one script of its own and no tool or test; what it did not check is listed
+at the end of its report, and among it are the reasons of the river mouths and gauges one by one.
+
+It found the numbers to hold, and nine things in the account. Each is changed where it stood.
+
+* **Where the Caspian's overflow ends (medium to high).** I had written, and asked you in section
+  11, as if the overflow always ended in a neighbouring closed lake. My own logs of the valley
+  shares say otherwise: at 0.07 it reaches the sea in 2 of the 3 random settlements that overflow,
+  and at 0.5 in all 20. The reader of those logs that writes these notes parsed the count and printed
+  it for the tenth only. The table of section 4.5 has the column now, and sections 4.4, 5.4 and 11
+  say that the outcome is of one share.
+* **"It found no wrong number" (medium)** stood in the head and in the table of rounds, against
+  section 5.4's own list of about ten wrong counts and small numbers; and "every number that a tool
+  prints was printed again" was more than the reviewers of the fifth check had run. Both are
+  reworded.
+* **Reasons of expected failures (medium).** Four numbers were held by no assertion: the polar
+  group's 46.3 %, Earth's driest northern band at 39°, the rain poleward of 60° north (181 mm for
+  495) and the Black Sea's lake at 0 m under the other water. Each has an assertion now. Two
+  readings stood without a label after a "[MEASURED]"; they are labelled [INFERRED].
+* **The Volga test's description (medium to low)** still gave the runoff "twice" and a range that
+  left out the source's third figure, against section 4.4; and it gave one order of taking the rain
+  and the snow apart as the split. It gives three figures and both orders now.
+* **Lower.** "The water of all the land moves ... one way" (one step of twelve runs the other way).
+  "What does not depend on the ties" over 20 draws. "Number for number; two lines of wording" for
+  the comparison of the logs (one typed number differs, and one tool prints more). Two counts in
+  section 5.4 that were not the report's, and four findings of the fifth check that section 5.4 had
+  not named. "About 8 GB" beside "about 7 GB". "The Volga gives most of it", unlabelled. "At
+  least as much as they test Hydrology" in a question to you, a judgment. A test's description
+  that claimed "any wet climate" from one. The hand-over file still said that the design document
+  was not updated.
+
+After these changes `tests/test_earth.py` was run whole again: {x['after_sixth']} The other test
+files are as they were when the whole suite ran.
+
+**What this check does not cover.** It was made by a reviewer of the same kind as the builder, in
+the same sitting, briefed by the builder. It read; it hardly ran. It did not look at the engine, at
+sections 1 to 3 or at the older reasons of the test file. Five checks have each found claims
+beyond the evidence, and this one found them in a text written to answer exactly that. I expect
+that another reader would find more.
 """

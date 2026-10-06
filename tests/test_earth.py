@@ -225,6 +225,8 @@ def test_the_water_poured_is_what_the_ocean_of_the_relief_data_holds_and_what_th
     assert (near(then), near(now), within(then), within(now)) == (16, 15, 7, 8)
     assert abs(then["mouth_km"]["Amazon"] - 203.0) < 5.0 and abs(now["mouth_km"]["Amazon"] - 354.0) < 5.0
     assert then["caspian"]["overflows"] and abs(then["caspian"]["outflow_km3"] - 0.47) < 0.05 and abs(now["caspian"]["outflow_km3"] - 17.9) < 0.2
+    black_sea = other.lake_at(43.0, 34.0)                                        # under the other water this lake stood at the sea's level
+    assert abs(black_sea["area_m2"] / 1e6 - 472_814) < 500 and black_sea["level_m"] == 0.0
     with pytest.raises(ValueError, match="sea_water can be 'relief' or 'planet', not 'tap'"):
         ref.Earth(LEVEL, sea_water="tap")
 
@@ -1227,8 +1229,8 @@ def test_what_the_land_sheds_like_for_like_basin_by_basin(outcomes):
         "km3 of the 669 that reach it in a year. In 20 random settlements it keeps its water in 1 and overflows in 19, by "
         "3.1 to 23.4 km3. The water that runs over does not reach the sea, as built or in any of the 20: as built it "
         "crosses 4 land cells and ends in a closed lake of 19,939 km2 at 42.2 N, 57.1 E. Whether that meets \"stays a "
-        "closed lake\" is a question for the design; this test reads the condition as written and fails. What does not "
-        "depend on the ties is that the lake is far too large: 1.07 to 1.09 million km2 at 60 to 61 m, where the real sea "
+        "closed lake\" is a question for the design; this test reads the condition as written and fails. As built and "
+        "in each of the 20 the lake is far too large: 1.07 to 1.09 million km2 at 60 to 61 m, where the real sea "
         "covers 371,000 km2 and stands 28 m below the ocean [DOCUMENTED at second hand: Wikipedia, read out by a page "
         "reader; a paper on the sea's level gives about 436,000 km2]. The lake's books: rivers and shores bring it 590 km3 "
         "a year, where about 300 reach the real sea [DOCUMENTED at second hand, that paper: the Volga 237 km3 a year, "
@@ -1253,8 +1255,9 @@ def test_what_the_volgas_land_sheds_under_four_precipitations(earth, outcomes):
 
     The Volga is the one basin for which a published precipitation and a published share of snow are at hand
     beside the published runoff [DOCUMENTED: Kalugin 2022: 1,360,000 km2, 585 mm of which 30 % solid, 262 km3 a
-    year]. The source gives the runoff twice, and the two do not agree: 262 km3 over the basin is 193 mm, and its
-    "runoff coefficient of 0.38" makes 222 mm of the 585.
+    year]. The source gives the runoff three times, and the three do not agree: 262 km3 over the basin is 193 mm,
+    its "runoff coefficient of 0.38" makes 222 mm of the 585, and its "water content" of 250 km3 is 184 mm. The
+    table and the assertions below use the first two; the tool prints all three (the test of the tools' reports).
 
     The land that drains through Volgograd on the mesh (1,222 thousand km2), under four precipitations
     (earth_reference.volga) [MEASURED: handoff/repin/repin.log, line "volga:"]:
@@ -1266,9 +1269,10 @@ def test_what_the_volgas_land_sheds_under_four_precipitations(earth, outcomes):
         the rain data's total, the published snow       747    30 %    287       1.49          1.29
 
     What the four rows show, and all they show: IF the published 585 mm and 30 % are right for this land, the model
-    sheds between 0.80 and 0.92 of the published runoff there, and the whole excess of the first row comes with
-    what was handed in (of its 345 mm, 120 go with the larger total and 47 with the harness's snow). IF the rain data's 747 mm
-    are right, the model sheds 1.3 to 1.8 times the published runoff. The snow matters by itself: at either total,
+    sheds between 0.80 and 0.92 of the published runoff there (0.97 on the third figure), and the whole excess of
+    the first row comes with what was handed in (of its 345 mm, 120 go with the larger total and 47 with the
+    harness's snow; taken in the other order, 58 with the snow and 109 with the total). IF the rain data's 747 mm
+    are right, the model sheds 1.3 to 1.8 times the published runoff (1.9 on the third figure). The snow matters by itself: at either total,
     the harness's 43 % of snow in place of 30 % adds 47 to 58 mm to what the land sheds. The snow handed in is
     made from monthly mean temperatures and is no measurement.
     [An earlier version said "four fifths of the excess come with the rain data, the model's part lies between
@@ -1325,7 +1329,7 @@ def test_what_the_ties_decide_about_the_caspian(earth, outcomes):
     assert all(c["overflow_ends"] == "closed lake" for c in there if c["overflows"]) and all(c["overflow_ends"] is None for c in there if not c["overflows"])
     assert abs(min(c["area_km2"] for c in there) - 1_072_838) < 1_000 and abs(max(c["area_km2"] for c in there) - 1_089_603) < 1_000
     assert min(c["level_m"] for c in there) == 60.0 and max(c["level_m"] for c in there) == 61.0
-    assert all(c["area_km2"] > 2.4 * 436_000 for c in there)                    # far too large in every one: that is no matter of ties
+    assert all(c["area_km2"] > 2.4 * 436_000 for c in there)                    # far too large in every one of the 20 drawn
     t = ref.tally(drawn(outcomes))
     assert t["caspian_closed"] == 1 and t["caspian_to_sea"] == 0
     lake = earth.lake_at(*ref.CASPIAN)
@@ -1364,8 +1368,8 @@ def test_a_sea_that_is_cut_off_or_a_great_lake_comes_back_as_a_lake_near_its_rea
     265,947 km2 at 8 m and 298,119 km2 at 179 m [MEASURED]. The sizes of Earth's seas and lakes are from memory
     [UNVERIFIED]: the Black Sea 436,000 km2, the Baltic 377,000 km2, Superior, Michigan and Huron together
     244,000 km2 at 176 to 183 m. The bounds are those of the test's first version and were not moved when the
-    Black Sea's lake rose above its bound. This test passes under any wet climate, since these hollows then
-    overflow whatever the rain: it shows that the relief holds the hollows, and little about the water."""
+    Black Sea's lake rose above its bound. Under a wet climate these hollows overflow, so the test shows
+    that the relief holds the hollows, and little about the water [INFERRED: one climate was run]."""
     place, area_km2, level_m = INLAND[name]
     lake = earth.lake_at(*place)
     assert lake is not None and lake["overflows"]
@@ -1547,9 +1551,10 @@ def test_northern_land_is_far_warmer_in_july_than_in_january_as_on_earth(twin):
     assert swing > 0.75 * measured, f"{swing:.1f} K against {measured:.1f} K"
 
 
-@missed("Group D takes 2.1 % of the twin's land, and the polar group E 46.3 % where Earth has 12.8 % [MEASURED]: with summers "
-        "as weak as the test above measures, northern land that has warm summers on Earth stays under 10 C in its warmest "
-        "month, and 35 % of the twin's land lies under snow in every month.")
+@missed("Group D takes 2.1 % of the twin's land, and the polar group E 46.3 % where Earth has 12.8 %, and 35 % of "
+        "the twin's land lies under snow in every month [MEASURED]. That group D is missing because northern land with "
+        "warm summers on Earth stays under 10 C in its warmest month on the twin is a reading: the share of that land "
+        "was not counted [INFERRED].")
 def test_the_cold_climates_with_warm_summers_take_a_fifth_of_the_twins_land_as_on_earth(twin):
     """Group D of Köppen and Geiger takes 24.6 % of Earth's land (Peel, Finlayson and McMahon 2007). The condition:
     more than 15 % of the twin's."""
@@ -1569,8 +1574,9 @@ def _twin_land_rain(twin):
 
 @pytest.mark.parametrize("half", [pytest.param("north", marks=missed(
     "The twin's driest northern band lies at 58 degrees, with 273 mm a year, where Earth's own rain over the same cells is driest "
-    "at 39 degrees [MEASURED]. The twin's northern land is too cold and so too dry: between 40 and 60 degrees it gets 440 mm "
-    "against Earth's 654, and poleward of 60 degrees 181 mm against 495.")), "south"])
+    "at 39 degrees [MEASURED]. The twin's northern land is too cold and too dry: between 40 and 60 degrees it gets 440 mm "
+    "against Earth's 654, and poleward of 60 degrees 181 mm against 495 [MEASURED]. That it is dry because it is cold is a "
+    "reading, not a measurement [INFERRED].")), "south"])
 def test_on_the_twin_the_driest_land_band_between_the_equator_and_60_degrees_lies_between_15_and_40(twin, half):
     """The design's pass condition for rain, on the engine's own climate over Earth's land, where Earth itself
     meets it (the first test of this file)."""
@@ -1653,3 +1659,15 @@ def test_the_expected_failures_of_the_twin_fail_by_the_numbers_their_reasons_giv
     snow = f["snow_cover"].astype(np.float64)
     assert abs(100.0 * area[north & (snow.min(axis=0) > 0.5)].sum() / area[north].sum() - 52.3) < 0.5
     assert abs(100.0 * area[land & (snow.min(axis=0) > 0.5)].sum() / area[land].sum() - 35.3) < 0.5
+    # ... the polar group's share, Earth's own driest northern band at the same cells, and the rain poleward of 60 north
+    names = twin[0].registry.fields["climate_class"].categories
+    group = np.array([n[0] for n in names])[f["climate_class"]]
+    assert abs(100.0 * area[land & (group == "E")].sum() / area[land].sum() - 46.3) < 0.2
+    _, _, yearly, lat, land_rain = _twin_land_rain(twin)
+    earth_rain = ref.at_cell_centres(m, *ref.rain_monthly()).sum(axis=0)
+    _, earths_bands = op.zonal_mean(m, earth_rain, 5.0, mask=land.astype(np.float64))
+    side = (lat > 0) & (lat < 60) & ~np.isnan(land_rain)
+    assert abs(lat[side][np.nanargmin(earths_bands[side])] - 38.9) < 0.5
+    far_north = land & (m.lat > 60)
+    assert abs((yearly * area)[far_north].sum() / area[far_north].sum() - 181.0) < 2.0
+    assert abs((earth_rain * area)[far_north].sum() / area[far_north].sum() - 495.0) < 2.0

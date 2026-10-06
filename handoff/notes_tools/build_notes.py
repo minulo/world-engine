@@ -55,7 +55,7 @@ def main(logs, values):
         if name == "4.6":
             parts.append(other_text.sec47(x) + "\n")
         if name == "5":
-            parts.append(sec5_text.sec54(x["fifth"]) + "\n")
+            parts.append(sec5_text.sec54(x["fifth"]) + "\n" + sec5_text.sec55(x) + "\n")
     parts.append(other_text.sec11(x, o))
     out = "".join(parts)
     assert "⟦" not in out, out[out.index("⟦") - 80:out.index("⟦") + 80]

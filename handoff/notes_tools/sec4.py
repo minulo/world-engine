@@ -191,8 +191,8 @@ def sec44_tables(d):
 
 
 def share_table(d):
-    rows = ["| Valley share | Mouths within 300 km, as built | in 20 random settlements | Gauges within a factor of two, as built | in 20 | The lake at the Caspian's place, as built | keeps its water in, of 20 | overflow at most, km³ a year | its area, million km² | its level, m | Like for like, as built | in 20 | Land under lakes | Back to the air | To the sea, thousand km³ |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| Valley share | Mouths within 300 km, as built | in 20 random settlements | Gauges within a factor of two, as built | in 20 | The lake at the Caspian's place, as built | keeps its water in, of 20 | overflow at most, km³ a year | of those that overflow, the water reaches the sea in | its area, million km² | its level, m | Like for like, as built | in 20 | Land under lakes | Back to the air | To the sea, thousand km³ |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     info = {}
     for s in SHARES:
         t = lg.ties(d["shares"][s])
@@ -203,7 +203,7 @@ def share_table(d):
         span = lambda a: f"{a[0]} to {a[1]}" if a[0] != a[1] else f"{a[0]}"
         rows.append(f"| {b}{s}{b} | {t['mouths_engine']} | {span(t['mouths_random'])} | {t['gauges_engine']} | {span(t['gauges_random'])} | "
                     + (f"overflows by {c['engine_overflow']:.2f} km³" if c["engine_overflows"] else "keeps its water")
-                    + f" | {c['closed']} | {'' if c['overflow_up_to'] is None else format(c['overflow_up_to'], '.2f')} | {span(c['area'])} | {span(c['level'])} | {t['like'][0]:.2f} | "
+                    + f" | {c['closed']} | {'' if c['overflow_up_to'] is None else format(c['overflow_up_to'], '.2f')} | {'' if not c['overflowing'] else str(c['to_sea']) + ' of ' + str(c['overflowing'])} | {span(c['area'])} | {span(c['level'])} | {t['like'][0]:.2f} | "
                     f"{t['like'][2]:.2f} to {t['like'][3]:.2f} | {t['lakes'][0]:.2f} % | {t['back'][0]:.4f} | {t['to_sea'][0]:.2f} |")
     return "\n".join(rows), info
 

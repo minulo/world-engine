@@ -21,7 +21,7 @@ the source during the build. **[INFERRED]** my reasoning. **[UNVERIFIED]** recal
 **[PROVISIONAL]** a first value that an Earth test must tune. **[CALIBRATED]** set by hand on the default
 planet.
 
-The build environment was a cloud workspace with 2 processor cores and about 8 GB of memory, Python 3.13,
+The build environment was a cloud workspace with 2 processor cores and 7 to 8 GB of memory, Python 3.13,
 and the versions in `requirements.lock`. The measurements of {x['date']} were made in a fresh workspace
 of the same kind, set up from the lock file. Nothing here was run on the target laptop.
 
@@ -124,16 +124,18 @@ start it before you answer.
    by region are at hand.
 2. **Do the 21 gauges belong to the "done when" of Hydrology?** The design's row says "River flow
    data is still to be chosen". I chose the last gauging stations of 21 great rivers and asked for
-   the measured flow within a factor of two. As built {o['gauges_n']} pass and {21 - o['gauges_n']} miss, and section 4.4 shows
-   that the gauges test the relief data and the precipitation handed in at least as much as they
-   test Hydrology. If they belong to the "done when", step 2 is further from done than the one
+   the measured flow within a factor of two. As built {o['gauges_n']} pass and {21 - o['gauges_n']} miss. Section 4.4 shows
+   that a gauge's flow depends on the relief data and on the precipitation handed in as well as on
+   Hydrology; how much on each is not measured. If they belong to the "done when", step 2 is further from done than the one
    failed design condition says.
 3. **Does a Caspian whose overflow ends in a neighbouring closed lake "stay a closed lake"?** As
    built the lake at the Caspian's place overflows by {o['c']['overflow']:.1f} km³ a year, of {o['c']['brought']} that rivers and
    shores bring it, and that water ends in a second, closed lake {o['c']['cells']} cells away; none reaches the sea,
-   as built or in any of 100 random settlements. No water of the Caspian's basin leaves for the
-   ocean, which may be what the design's sentence meant; the lake itself is not closed, which is what
-   it says. The test reads it as written and fails. Either answer leaves the larger miss standing:
+   as built or in any of the {o['t100']['caspian']['overflowing']} of 100 random settlements that overflow. At the valley share I
+   built with, then, no water of the Caspian's basin leaves for the ocean, which may be what the
+   design's sentence meant; the lake itself is not closed, which is what it says. The test reads it
+   as written and fails. This is a fact of one valley share: at 0.07 the overflow reaches the sea in
+   2 of the 3 random settlements that overflow, and at 0.5 in all 20 (section 4.5). Either answer leaves the larger miss standing:
    the lake is two and a half to three times the real sea's size.
 4. **Relief with its rivers cut in, fetched on your machine?** The mouths and the gauges test the
    relief data, their ties, the valley rule and the water poured more than they test Drainage
@@ -220,7 +222,7 @@ fourth checks of step 2 each found tests that could not fail."""),
          "The data tools failed on Windows encodings and trusted files they had not checked | Section 5.1 |"),
         ("The check of the table of hollows still let eight breakages through.", "The check of the table of hollows still let nine breakages through."),
         ("| Step 2, 5. One reviewer: the claims alone, in the notes, the README, the tests' reasons and the descriptions in the code | ⟦FIFTH_ROW⟧ | Section 5.4 |",
-         "| Step 2, 5. Two reviewers: the claims alone, in the notes, the README, the tests' reasons and the descriptions in the code | " + sec5_text.FIFTH_ROW + " | Section 5.4 |"),
+         "| Step 2, 5. Two reviewers: the claims alone, in the notes, the README, the tests' reasons and the descriptions in the code | " + sec5_text.FIFTH_ROW + " | Section 5.4 |\n" + sec5_text.SIXTH_ROW),
         ("A test of 21 great rivers at their gauges was\n  written before it was run; 15 failed.",
          "A test of 21 great rivers at their gauges was\n  added; 15 failed. (No record shows that it was written before it was run: section 4.3.)"),
         ("23\n  to the Earth harness and its tools, and 7 to the smaller things.", "23\n  to the Earth harness, and 7 to the smaller things."),
@@ -369,6 +371,10 @@ def r8(x, o, d):
     lowest = sorted((r["ratio"], k) for k, r in like.items() if r["alike"])[:3]
     highest = max((r["ratio"], k) for k, r in like.items() if r["alike"])
     return x["world_table"] + [
+        ("| July less January, land from 40° to 60° north | 12.3 K | 11.6 K | 30.9 K [MEASURED from the same data] |",
+         "| July less January, land from 40° to 60° north | 12.3 K | 11.6 K [both MEASURED: `handoff/notes_tools/more2.py`, `handoff/repin/more2.log`; the tool does not print it] | 30.9 K [MEASURED from the same data] |"),
+        ("| Land whose water never reaches the sea, as the water runs | 18 % | 19 % | |",
+         "| Land whose water never reaches the sea, as the water runs | 18 % | 19 % | [the tool does not print this row, and it was not measured again on 2026-10-06; the fifth check measured 18.6 % in a preview build of its own] |"),
         ("Default world, seed 20261004. [MEASURED unless marked: `python tools/world_report.py STORE`]",
          "Default world, seed 20261004. [MEASURED unless marked: `python tools/world_report.py STORE`; two rows that\nthe tool does not print say where they come from]"),
         ("| 0.37 million km², the Caspian [UNVERIFIED] |", "| 0.37 million km², the Caspian [DOCUMENTED at second hand: Wikipedia] |"),
