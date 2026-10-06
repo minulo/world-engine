@@ -1,0 +1,28 @@
+the Black Sea lake: 612693 km2 at 32.0 m, overflows True | data at the place: {'height': -2175.0, 'ocean': False, 'level': 2.0}
+   kept apart: {'cell': 153028, 'lat': 40.491, 'lon': 26.652, 'mean_m': 58.799, 'handed_m': 21.0, 'ocean_share': 0.466}
+   outlet cell 153024 at 40.5, 27.3: mean -5.6 m, handed 32.0 m, ocean share 0.778
+the Baltic lake: 265947 km2 at 8.0 m, overflows True | data at the place: {'height': -192.0, 'ocean': True, 'level': nan}
+   kept apart: {'cell': 152516, 'lat': 55.119, 'lon': 10.929, 'mean_m': 2.086, 'handed_m': 4.0, 'ocean_share': 0.747}
+   outlet cell 64404 at 54.6, 13.3: mean -9.1 m, handed 8.0 m, ocean share 0.871
+the Great Lakes lake: 298119 km2 at 179.0 m, overflows True | data at the place: {'height': -6.0, 'ocean': False, 'level': 203.0}
+   kept apart: {'cell': 126284, 'lat': 46.487, 'lon': -86.639, 'mean_m': 223.73, 'handed_m': 132.0, 'ocean_share': 0.0}
+   outlet cell 5434 at 42.9, -82.4: mean 192.2 m, handed 179.0 m, ocean share 0.000
+the Caspian lake: 1089603 km2 at 61.0 m, overflows True | data at the place: {'height': -30.0, 'ocean': False, 'level': 91.0}
+   kept apart: {'cell': 125365, 'lat': 48.46, 'lon': 43.528, 'mean_m': 94.31, 'handed_m': 61.0, 'ocean_share': 0.0}
+   outlet cell 101155 at 40.2, 56.9: mean 88.7 m, handed 61.0 m, ocean share 0.000
+big lake row 1: 629173 km2 at 61 m, overflows True; deepest cell at 0.0, -63.0; data there {'height': 30.0, 'ocean': False, 'level': 61.0}; cells 179, of them in a hollow of the data 152
+big lake row 13: 150490 km2 at 122 m, overflows True; deepest cell at 65.9, 125.0; data there {'height': 137.0, 'ocean': False, 'level': 152.0}; cells 51, of them in a hollow of the data 34
+big lake row 514: 265947 km2 at 8 m, overflows True; deepest cell at 57.3, 19.9; data there {'height': -243.0, 'ocean': True, 'level': nan}; cells 76, of them in a hollow of the data 0
+big lake row 515: 612693 km2 at 32 m, overflows True; deepest cell at 43.3, 36.8; data there {'height': -2178.0, 'ocean': False, 'level': 2.0}; cells 174, of them in a hollow of the data 126
+big lake row 523: 1089603 km2 at 61 m, overflows True; deepest cell at 38.7, 49.1; data there {'height': -30.0, 'ocean': False, 'level': 91.0}; cells 340, of them in a hollow of the data 315
+big lake row 525: 437843 km2 at 91 m, overflows True; deepest cell at 58.2, 68.4; data there {'height': 61.0, 'ocean': False, 'level': 91.0}; cells 134, of them in a hollow of the data 76
+big lake row 526: 109370 km2 at 102 m, overflows True; deepest cell at 43.6, -78.6; data there {'height': -51.0, 'ocean': False, 'level': 95.0}; cells 37, of them in a hollow of the data 14
+big lake row 527: 180651 km2 at 107 m, overflows True; deepest cell at 50.1, 136.5; data there {'height': 68.0, 'ocean': False, 'level': 122.0}; cells 61, of them in a hollow of the data 40
+big lake row 531: 250841 km2 at 208 m, overflows True; deepest cell at 44.7, 20.4; data there {'height': 206.0, 'ocean': False, 'level': 317.0}; cells 82, of them in a hollow of the data 72
+big lake row 535: 131455 km2 at 198 m, overflows True; deepest cell at 61.2, -115.2; data there {'height': 116.0, 'ocean': False, 'level': 183.0}; cells 38, of them in a hollow of the data 16
+big lake row 536: 298119 km2 at 179 m, overflows True; deepest cell at 47.5, -86.9; data there {'height': 9.0, 'ocean': False, 'level': 203.0}; cells 100, of them in a hollow of the data 69
+big lake row 549: 880226 km2 at 457 m, overflows True; deepest cell at -3.0, 16.5; data there {'height': 274.0, 'ocean': False, 'level': 457.0}; cells 282, of them in a hollow of the data 233
+big lakes: 12, together 5036413 km2, share of all lakes 0.5374; lakes 9371432 km2, 0.0628 of land
+open water at the Caspian's place: 1002.2 mm; lake fraction there 1.000
+lake_books: {"row": 523, "area_km2": 1089603.476, "level_m": 61.0, "overflows": true, "outlet_cell": 101155, "outflow_km3": 17.879, "brought_km3": 589.885, "loses_mm": 932.887, "rain_mm": 407.921, "catchment_km2": 4053447.752, "outside_km2": 2963844.276, "depth_mm": 199.027, "holds_voronezh": true, "overflow": {"ends": "closed lake", "lat": 42.15827793364441, "lon": 57.07932870814529, "cells": 4, "area_km2": 19938.896473905406}}
+inflow km3 668.80
