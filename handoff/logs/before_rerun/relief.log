@@ -1,0 +1,47 @@
+Earth's relief (ETOPO5) on 163842 cells; valley floors at the lowest 0.1 of each cell's land points
+the ocean of the data holds 1.33758e+18 m3 of water below 0 m; the planet file has 1.33500e+18 m3, 0.19 % less. Poured here: the first; the sea of the mesh comes to rest at +1.9 m and covers 70.75 % of the planet, with 47962 land cells
+
+1. How coarse the heights are, and how often they tie
+every height of the data is a whole number of metres: yes; of its land (by area), 48 % lies within half a metre of a whole number of hundreds of feet
+on the mesh, of 47962 land cells 16510 (34.4 %) have a land neighbour at exactly their own height; the commonest heights handed to Drainage: 91 m (1627 cells), 61 m (1392 cells), 30 m (1327 cells), 152 m (1246 cells), 122 m (1129 cells)
+of 42657 land cells with a lower neighbour, 9641 (22.6 %) have several equally low: the lower bed settles 3341, the wider way 6249, the cell numbers 51; another 4578 land cells (9.5 %) lie on level ground
+with every hollow full, the water of 0.04 % of the land's area reaches the sea in another cell when the order of the cells is turned round, and of 14.9 % when the wider way is left out and the cell numbers settle the ties
+
+2. The closed hollows of the data on their own grid, and of the mesh
+the data: the ocean (water below 0 m joined to the open Pacific) covers 71.1 % of the planet. Of all that is not ocean, 13.3 % lies under water when every hollow of the data is full (14.8 % between 60 south and 60 north); of the land above 0 m alone, 12.6 % (13.9 %)
+the mesh: 29.3 % of the planet is not sea. Of it, 10.5 % lies under water when every hollow is full (11.9 % between 60 south and 60 north); 62.4 % drains into a closed hollow
+
+3. Narrows of six great rivers: in the data (5 minutes of arc), and on the mesh
+             the data: the river stands at  its valley rises to  joined to the ocean at |  the mesh: the valley rises to  the lake above stands at
+Congo                                274 m                610 m                   457 m |                          518 m                     457 m
+Danube                                98 m                317 m                   317 m |                          208 m                     208 m
+Lena                                  91 m                152 m                   152 m |                          137 m                     122 m
+St Lawrence                          -10 m      open to the sea                         |                          204 m                     102 m
+Amur                                  76 m                213 m                   122 m |                          137 m                     107 m
+Yangtze                              404 m                945 m                   823 m |                          762 m                     396 m
+closed in the data themselves: 5 of 6 (Congo, Danube, Lena, Amur, Yangtze)
+
+4. Seas behind straits, and the mesh's largest lakes: what the data make of each place
+the Black Sea      the data:  -2175 m, cut off from the ocean: joined to it at 2 m; the mesh: not sea
+the Red Sea        the data:  -1937 m, ocean; the mesh: not sea
+the Baltic         the data:   -192 m, ocean; the mesh: not sea
+the Caspian        the data:    -30 m, cut off from the ocean: joined to it at 91 m; the mesh: not sea
+the Mediterranean  the data:  -3294 m, ocean; the mesh: sea
+Hudson Bay         the data:   -143 m, ocean; the mesh: sea
+the mesh's lakes larger than 100,000 km2 (under Earth's rain and warmth), at the lowest point of each:
+    1,089,603 km2 at    61 m, lowest point   38.7,    49.1: the data there    -30 m, joined to the ocean at 91 m: a closed hollow of the data
+      880,226 km2 at   457 m, lowest point   -3.0,    16.5: the data there    274 m, joined to the ocean at 457 m: a closed hollow of the data
+      629,173 km2 at    61 m, lowest point    0.0,   -63.0: the data there     30 m, joined to the ocean at 61 m: a closed hollow of the data
+      612,693 km2 at    32 m, lowest point   43.3,    36.8: the data there  -2178 m, joined to the ocean at 2 m: a closed hollow of the data
+      437,843 km2 at    91 m, lowest point   58.2,    68.4: the data there     61 m, joined to the ocean at 91 m: a closed hollow of the data
+      298,119 km2 at   179 m, lowest point   47.5,   -86.9: the data there      9 m, joined to the ocean at 203 m: a closed hollow of the data
+      265,947 km2 at     8 m, lowest point   57.3,    19.9: the data there   -243 m, ocean
+      250,841 km2 at   208 m, lowest point   44.7,    20.4: the data there    206 m, joined to the ocean at 317 m: a closed hollow of the data
+      180,651 km2 at   107 m, lowest point   50.1,   136.5: the data there     68 m, joined to the ocean at 122 m: a closed hollow of the data
+      150,490 km2 at   122 m, lowest point   65.9,   125.0: the data there    137 m, joined to the ocean at 152 m: a closed hollow of the data
+      131,455 km2 at   198 m, lowest point   61.2,  -115.2: the data there    116 m, joined to the ocean at 183 m: a closed hollow of the data
+      109,370 km2 at   102 m, lowest point   43.6,   -78.6: the data there    -51 m, joined to the ocean at 95 m: a closed hollow of the data
+of these 12 lakes, 11 lie in hollows that the data hold on their own grid
+
+5. The valley rule on coasts
+of 4800 coastal land cells, 0 are handed to Drainage at 1 m or lower, and 0 of those have a mean height above 300 m: cells that hold a shore and a range, handed in at the height of the shore. In all, 437 land cells are handed in at 0 m or lower (the sea of the mesh stands at 1.9 m).

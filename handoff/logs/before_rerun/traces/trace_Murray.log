@@ -1,0 +1,12 @@
+The Murray on the mesh with every hollow full, from -34.2, 142.2; its real mouth: -35.5, 138.9
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0  -34.1   142.2          52 m         68 m  down                       340   77 m, 77 m
+   1  -34.1   141.6          36 m         43 m  down                       294   36 m, 51 m
+   2  -34.1   141.0          28 m         41 m  lake         33 m          250   34 m, 51 m
+   3  -34.5   140.6          27 m         37 m  lake         33 m          191   40 m, 51 m
+   4  -34.5   140.0          33 m         52 m  down                       150   60 m, 60 m
+   5  -34.5   139.4          13 m         32 m  lake         17 m          120   2 m, 36 m
+   6  -35.0   139.0          17 m         86 m  down                        60   27 m, 36 m
+   7  -35.5   139.3           6 m         15 m  down                        33   -1 m, ocean
+   8  -35.9   138.9         -33 m        -33 m  sea                         47   -47 m, ocean
+8 land cells: 5 steps down to lower ground, 0 over level ground, 3 across full hollows; nearest to its real mouth: 33 km; leaves the land 33 km from it

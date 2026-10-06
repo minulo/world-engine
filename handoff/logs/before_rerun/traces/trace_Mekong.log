@@ -1,0 +1,20 @@
+The Mekong on the mesh with every hollow full, from 18.0, 102.6; its real mouth: 10.0, 106.5
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   18.1   102.4         152 m        197 m  level                     1005   152 m, 183 m
+   1   17.7   102.8         152 m        153 m  level                      942   152 m, 183 m
+   2   17.2   103.1         152 m        190 m  level                      879   183 m, 183 m
+   3   16.7   103.4         152 m        185 m  down                       816   213 m, 213 m
+   4   16.2   103.7         122 m        153 m  level                      754   152 m, 152 m
+   5   15.7   104.0         122 m        122 m  down                       689   122 m, 152 m
+   6   15.2   104.4         106 m        117 m  lake        107 m          625   122 m, 152 m
+   7   15.2   103.8         106 m        120 m  lake        107 m          651   122 m, 152 m
+   8   14.7   104.1         107 m        165 m  down                       586   183 m, 183 m
+   9   14.2   104.4          30 m         88 m  lake         45 m          521   91 m, 91 m
+  10   14.2   105.0          30 m         96 m  lake         45 m          496   61 m, 61 m
+  11   13.7   105.3          45 m         76 m  lake         45 m          432   91 m, 91 m
+  12   13.2   105.0          30 m         59 m  down                       391   45 m, 45 m
+  13   13.2   104.4          15 m         29 m  lake         23 m          422   30 m, 30 m
+  14   12.7   104.7          23 m         39 m  down                       357   46 m, 46 m
+  15   12.2   105.0          15 m         25 m  down                       292   30 m, 30 m
+  16   11.7   105.3           1 m          1 m  sea                        227   0 m, 0 m
+16 land cells: 6 steps down to lower ground, 4 over level ground, 6 across full hollows; nearest to its real mouth: 292 km; leaves the land 292 km from it

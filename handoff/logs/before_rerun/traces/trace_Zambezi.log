@@ -1,0 +1,27 @@
+The Zambezi on the mesh with every hollow full, from -17.9, 25.9; its real mouth: -18.8, 36.3
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0  -17.9    26.0         838 m        917 m  down                      1096   960 m, 960 m
+   1  -17.8    26.5         610 m        835 m  down                      1044   853 m, 853 m
+   2  -17.7    27.0         548 m        617 m  down                       992   548 m, 610 m
+   3  -17.1    27.2         518 m        730 m  lake        533 m          979   731 m, 731 m
+   4  -17.0    27.7         304 m        508 m  lake        533 m          930   518 m, 610 m
+   5  -16.9    28.2         533 m        647 m  lake        533 m          881   671 m, 671 m
+   6  -16.4    28.4         518 m        594 m  down                       876   549 m, 610 m
+   7  -16.0    28.8         442 m        513 m  lake        457 m          860   442 m, 610 m
+   8  -16.0    29.4         457 m        632 m  down                       800   549 m, 610 m
+   9  -16.0    30.0         427 m        552 m  down                       741   457 m, 457 m
+  10  -16.0    30.6         381 m        414 m  down                       683   427 m, 427 m
+  11  -16.0    31.2         366 m        404 m  lake        373 m          626   381 m, 396 m
+  12  -15.6    31.5         373 m        418 m  down                       622   396 m, 396 m
+  13  -15.6    32.1         290 m        346 m  lake        350 m          570   290 m, 396 m
+  14  -15.6    32.7         350 m        400 m  down                       521   351 m, 366 m
+  15  -16.0    33.0         289 m        376 m  down                       467   335 m, 335 m
+  16  -16.0    33.6         183 m        270 m  down                       421   167 m, 244 m
+  17  -16.5    33.9         152 m        237 m  down                       366   221 m, 244 m
+  18  -16.9    34.2          91 m        164 m  down                       311   122 m, 122 m
+  19  -16.9    34.8          61 m        207 m  level                      268   183 m, 183 m
+  20  -17.3    35.1          61 m        144 m  down                       212   61 m, 61 m
+  21  -17.7    35.4          53 m        125 m  down                       157   183 m, 183 m
+  22  -18.1    35.7          15 m         23 m  down                       101   15 m, 15 m
+  23  -18.5    36.0           0 m          0 m  sea                         46   0 m, 0 m
+23 land cells: 16 steps down to lower ground, 1 over level ground, 6 across full hollows; nearest to its real mouth: 101 km; leaves the land 101 km from it

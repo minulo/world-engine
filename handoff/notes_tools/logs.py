@@ -104,7 +104,7 @@ def lakes(text):
 def caspian(text):
     a = need(r"The lake at the Caspian's place: ([\d.]+) million km2 at (-?\d+) m; (it keeps its water|it overflows by ([\d.]+) km3 a year)", text)
     b = need(r"rivers and shores bring it (\d+) km3 a year; each square metre of it gives the air (\d+) mm a year and gets (\d+) mm of rain", text)
-    c = need(r"the land whose water reaches it: ([\d.]+) million km2 with the ground under the lake, ([\d.]+) without; over that land the water brought is "
+    c = need(r"the land whose water reaches it: ([\d.]+) million km2 with the ground under the lake, ([\d.]+) without; over (?:that land the|the land without the lake, the) water brought is "
              r"(\d+) mm a year; it (holds|does not hold) the Don at Voronezh", text)
     d = re.search(rf"the water that runs over crosses (\d+) land cells and ends in (the sea|a (closed lake|lake with no way out|dry hollow)(?: of ({NUM}) km2)?), at ({NUM}), ({NUM})", text)
     return {"area": float(a[1]), "level": int(a[2]), "overflows": a[4] is not None, "overflow": float(a[4]) if a[4] else 0.0, "brought": int(b[1]),

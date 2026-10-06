@@ -23,9 +23,14 @@ closed in the data themselves: 5 of 6 (Congo, Danube, Lena, Amur, Yangtze)
 
 4. Seas behind straits, and the mesh's largest lakes: what the data make of each place
 the Black Sea      the data:  -2175 m, cut off from the ocean: joined to it at 2 m; the mesh: not sea
+                   under Earth's rain a lake of 612,693 km2 stands there at 32 m. It leaves through the cell at 40.5, 27.3: 78 % of its points are ocean in the data, its mean height is -5.6 m, and it is handed to Drainage at 32 m
 the Red Sea        the data:  -1937 m, ocean; the mesh: not sea
+                   kept apart from the mesh's sea by the cell at 13.1, 43.2: 65 % of its points are ocean in the data, its mean height is +15.8 m (the sea of the mesh stands at +1.9 m), and it is handed to Drainage at 107 m
 the Baltic         the data:   -192 m, ocean; the mesh: not sea
+                   kept apart from the mesh's sea by the cell at 55.1, 10.9: 75 % of its points are ocean in the data, its mean height is +2.1 m (the sea of the mesh stands at +1.9 m), and it is handed to Drainage at 4 m
+                   under Earth's rain a lake of 265,947 km2 stands there at 8 m. It leaves through the cell at 54.6, 13.3: 87 % of its points are ocean in the data, its mean height is -9.1 m, and it is handed to Drainage at 8 m
 the Caspian        the data:    -30 m, cut off from the ocean: joined to it at 91 m; the mesh: not sea
+                   under Earth's rain a lake of 1,089,603 km2 stands there at 61 m. It leaves through the cell at 40.2, 56.9: 0 % of its points are ocean in the data, its mean height is +88.7 m, and it is handed to Drainage at 61 m
 the Mediterranean  the data:  -3294 m, ocean; the mesh: sea
 Hudson Bay         the data:   -143 m, ocean; the mesh: sea
 the mesh's lakes larger than 100,000 km2 (under Earth's rain and warmth), at the lowest point of each:
@@ -44,4 +49,5 @@ the mesh's lakes larger than 100,000 km2 (under Earth's rain and warmth), at the
 of these 12 lakes, 11 lie in hollows that the data hold on their own grid
 
 5. The valley rule on coasts
-of 4800 coastal land cells, 0 are handed to Drainage at 1 m or lower, and 0 of those have a mean height above 300 m: cells that hold a shore and a range, handed in at the height of the shore. In all, 437 land cells are handed in at 0 m or lower (the sea of the mesh stands at 1.9 m).
+of 4800 coastal land cells, 248 are handed to Drainage no more than 5 m above the sea of the mesh (which stands at +1.9 m), and 10 of those have a mean height above 300 m: cells that hold a shore and a range, handed in at the height of the shore. In all, 437 land cells are handed in at or below the level of that sea: dry ground that the sea does not reach.
+A diagnosis, not the rule of the tests: the valley rule leaves out the sea in a cell. With the ocean's points of each cell counted as well, at the level of the mesh's sea, 4086 land cells are handed in at another height, 3448 of them at the sea's own level. Great rivers that leave the land within 300 km of their mouths: 16, for 15 as built; gauges within a factor of two: 8 for 8; lakes on 5.57 % of the land for 6.28 %. Mouths that move by more than 5 km: Yangtze 60 to 100 km; Ob 586 to 581 km; Mackenzie 26 to 32 km; Danube 579 to 1212 km; Yenisei 398 to 343 km; Murray 33 to 74 km; Orinoco 244 to 192 km; St Lawrence 1090 to 232 km; Amur 1290 to 1274 km; Huang He 1215 to 1261 km

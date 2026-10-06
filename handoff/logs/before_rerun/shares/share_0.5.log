@@ -1,0 +1,202 @@
+Earth on 163842 cells; valley floors at the lowest 0.5 of each cell's land points; exact ties settled as the engine settles them
+sea water poured: 1.33758e+18 m3, what the ocean of the relief data holds; the sea of the mesh comes to rest at +1.9 m and covers 70.75 % of the planet; 47962 land cells
+
+1. Great rivers at their last gauging stations (flows in km3 a year, areas in thousand km2, depths in mm a year)
+                           flow            |  land that drains to the gauge   | what that land sheds               | lakes on the
+             measured  engine  within x2  |     real  reaches  all hollows full | measured  engine   rain  demand | way lose
+Amazon           5330    4182  yes        |     4619     5246              5398 |     1154     840   2356    1654 |      223
+Congo            1271       9  NO         |     3475       44                44 |      366     256   1578    1673 |        2
+Orinoco           984     346  NO         |      836      591               591 |     1177     730   2115    1683 |       85
+Yangtze           910     117  NO         |     1705      802              1549 |      534     187   1355    1211 |       33
+Brahmaputra       613     482  yes        |      555     1299              2132 |     1105     382   1273    1261 |       14
+Mississippi       536     911  yes        |     2896     3370              3384 |      185     302   1003     857 |      108
+Yenisei           577     207  NO         |     2440      462               462 |      236     460    722     274 |        6
+Parana            476     528  yes        |     2346     3064              3393 |      203     189   1340    1434 |       50
+Lena              526       6  NO         |     2430       56                56 |      216     119    372     265 |        1
+Mekong            292     169  yes        |      545      342               342 |      536     602   1828    1598 |       37
+Ob                397      56  NO         |     2430      104               104 |      163     549    830     283 |        1
+Ganges            382     504  yes        |      952     1341              2174 |      401     387   1281    1266 |       14
+St Lawrence       226     101  NO         |      774      217               217 |      292     531   1091     602 |       14
+Amur              312      33  NO         |     1730      121               121 |      180     329    797     485 |        7
+Mackenzie         288      91  NO         |     1660     1649              1691 |      173      84    424     412 |       47
+Columbia          172     106  yes        |      614      421               947 |      280     338    739     719 |       36
+Danube            202       3  NO         |      807      158               158 |      250     154    708     800 |       21
+Niger              33       2  NO         |     1516       18                28 |       22     123   1024    1722 |        0
+Zambezi           105      21  NO         |      940      312              2283 |      112      93    962    1572 |        8
+Indus              89       0  NO         |      975       64              1042 |       91       0    253    1457 |        0   no river within 150 km: the cell that the most land drains to, with every hollow full
+Rhine              73     105  yes        |      180      234               234 |      406     472   1115     697 |        6
+within a factor of two of the measured flow: 8 of 21
+the books of every gauge close: land that reaches it x what it sheds - what lakes on the way lose - what a closed lake in the gauge's own cell keeps = the flow, to within 1.9e-05 km3 a year
+and at every cell of the mesh, to within 5.8e-08 of the larger of the flow and the water shed upstream
+
+2. Like for like: what the land of each basin sheds, on the mesh's own river at the gauge (areas in thousand km2, depths in mm a year)
+             basin: real    mesh  alike  sheds: measured  engine  engine / measured   rain  demand  measured / rain  snow / rain
+Amazon              4619    4974  yes               1154     821               0.71   2313    1650             0.50         0.00
+Congo               3475      44  no                 366     256               0.70   1578    1673             0.23         0.00
+Orinoco              836     591  yes               1177     730               0.62   2115    1683             0.56         0.00
+Yangtze             1705    1549  yes                534     112               0.21   1146    1144             0.47         0.01
+Brahmaputra          555     975  no                1105     215               0.20    915     964             1.21         0.05
+Mississippi         2896    2961  yes                185     318               1.72   1005     816             0.18         0.17
+Yenisei             2440     462  no                 236     460               1.95    722     274             0.33         0.62
+Parana              2346    3252  yes                203     174               0.86   1275    1436             0.16         0.00
+Lena                2430      56  no                 216     119               0.55    372     265             0.58         0.54
+Mekong               545     342  no                 536     602               1.12   1828    1598             0.29         0.00
+Ob                  2430     104  no                 163     549               3.36    830     283             0.20         0.58
+Ganges               952    1027  yes                401     252               0.63    969     979             0.41         0.04
+St Lawrence          774     217  no                 292     531               1.82   1091     602             0.27         0.33
+Amur                1730     121  no                 180     329               1.82    797     485             0.23         0.32
+Mackenzie           1660    1658  yes                173      84               0.48    423     412             0.41         0.35
+Columbia             614     773  yes                280     104               0.37    456     806             0.61         0.31
+Danube               807     158  no                 250     154               0.61    708     800             0.35         0.10
+Niger               1516    1306  yes                 22      12               0.55    354    1684             0.06         0.00
+Zambezi              940    2059  no                 112      39               0.35    746    1566             0.15         0.00
+Indus                975     984  yes                 91      14               0.16    472    1248             0.19         0.07
+Rhine                180     213  yes                406     475               1.17   1127     700             0.36         0.13
+(rain: all that falls, rain and snow together; snow / rain: the share of it handed to the engine as snow, which is made from the
+ month's mean temperature and not measured)
+basins alike: 11 of 21. All of them together, the engine sheds 0.71 of the measured depth; basin by basin 0.16 to 1.72, 9 below 1 and 2 above; within a factor of two: 7
+what that figure can bear: it is a mean weighted by water, and the Amazon carries 60 % of the weight. Without the Amazon: 0.71. The median of the basins' own ratios: 0.62
+basins in which the runoff measured is more than 0.6 of the rain handed to the engine over the mesh's basin, so that the comparison tests the rain data or the basin more than what Hydrology does with rain: the Columbia (rain 456, measured runoff 280). Without them: 0.72
+(the engine's depth is taken before any lake loses water, the measured one after: that favours the engine. Taken as the flow at the same
+ cells, after closed hollows upstream have kept their water and lakes on the way have lost theirs: 0.64)
+The Volga at Volgograd, which ends in a closed sea and is not among the gauges: basin 1360 real, 1307 on the mesh (alike)
+   published for the basin: precipitation 585 mm a year, 30 % of it snow (176 mm); 53 % of the runoff in the spring flood; and three figures for the runoff that do not agree: 262 km3 of runoff, 193 mm; a runoff coefficient of 0.38, 222 mm; a water content of 250 km3, 184 mm
+   on the mesh, over the land that drains through the place   precipitation of it snow  sheds  in its largest month   over the 193   over the 222   over the 184
+   under the rain data                                                  752        324    347          325 (month  4)           1.80           1.56           1.89
+   the rain data scaled to the published total                          585        252    224          222 (month  4)           1.16           1.01           1.22
+   the published total with the published share of snow                 585        176    176          160 (month  4)           0.92           0.79           0.96
+   the rain data's total with the published share of snow               752        226    289          233 (month  4)           1.50           1.30           1.57
+   (the last three rows are diagnoses. Which precipitation is nearer the truth is not known here: if the published one, the excess of the
+    first row comes with the rain data and with the snow made of them; if the rain data, it is the model's)
+
+3. Where each great river leaves the land with every hollow full, against its real mouth
+Amazon          354 km from its mouth, at   -1.7,   -53.0
+Nile             96 km from its mouth, at   30.7,    31.3
+Mississippi     295 km from its mouth, at   30.2,   -92.1
+Congo           668 km from its mouth, at   -1.0,     9.0
+Yangtze          60 km from its mouth, at   31.5,   121.2
+Ob              343 km from its mouth, at   69.6,    67.9
+Mackenzie        26 km from its mouth, at   69.1,  -134.6
+Danube         1724 km from its mouth, at   55.1,    10.9
+Ganges          277 km from its mouth, at   23.9,    88.3
+Parana           20 km from its mouth, at  -34.3,   -58.0
+Niger           260 km from its mouth, at    4.6,     8.3
+Lena            206 km from its mouth, at   72.8,   120.9
+Yenisei         587 km from its mouth, at   69.6,    67.9
+Indus            39 km from its mouth, at   24.3,    67.7
+Murray           33 km from its mouth, at  -35.5,   139.3
+Volga          1878 km from its mouth, at   40.9,    26.2
+Zambezi         101 km from its mouth, at  -18.1,    35.7
+Orinoco         244 km from its mouth, at    9.7,   -62.9
+St Lawrence    3029 km from its mouth, at   30.2,   -92.1
+Columbia        115 km from its mouth, at   45.2,  -123.4
+Rhine            99 km from its mouth, at   51.6,     5.4
+Mekong          292 km from its mouth, at   12.2,   105.0
+Amur           1290 km from its mouth, at   43.3,   131.5
+Huang He       1215 km from its mouth, at   43.3,   131.5
+within 300 km: 15 of 24
+
+4. The largest lakes (km2; m; km3 a year)
+        area  level  outlet reaches it extra loss  runs on rain on it evaporates   lowest point at
+   1,834,125    111  yes          1119        946   173.70       1040       1673     43.3,    36.8
+     729,829    457  yes           601        289   311.77       1286       1429     -1.5,    16.7
+     534,479     61  yes          4274        172  4101.95       1403       1052     -4.0,   -60.5
+     315,198    208  yes           548         66   482.05        334        250     45.8,   -73.4
+     306,224     28  yes           700         59   640.86        244        180     57.3,    19.9
+     260,225    367  yes           141         74    67.36        231        230     45.7,    20.7
+     208,835     91  yes           352         44   307.74        128        122     57.6,    66.6
+     184,148    274  yes           112         31    80.23         66         91     61.8,  -114.6
+     180,743    213  yes           161         28   133.16        139        128     45.9,   133.0
+     129,104     61  yes          1238          7  1231.16         94         35     67.5,    73.2
+     120,744    152  yes           187         15   171.32         42         49     64.0,   126.3
+     114,013    114  yes           277         27   249.94         91         73     56.9,    46.7
+(reaches it: the water that runs toward the lake, counted as if none of its ground were flooded; so it holds the rain on the lake's own
+ cells less what their ground would have given the air. What rivers and shores bring = runs on + evaporates - rain on it.)
+lakes larger than 100,000 km2: 15, with 51 % of all the land under lakes
+The lake at the Caspian's place: 1.83 million km2 at 111 m; it overflows by 173.70 km3 a year
+   rivers and shores bring it 806 km3 a year; each square metre of it gives the air 912 mm a year and gets 567 mm of rain
+   the land whose water reaches it: 5.14 million km2 with the ground under the lake, 3.31 without; over that land the water brought is 244 mm a year; it holds the Don at Voronezh
+   the water that runs over crosses 3 land cells and ends in the sea, at 40.4, 26.0
+
+5. The water of all the land (thousand km3 a year)
+rain on land 117.2; back to the air 87.0 (0.742 of the rain); rivers reaching the sea 30.3
+shed by the land as if none of it were flooded 34.2 (0.708 of the rain back to the air); lakes with an outlet lose 3.35 more than the ground they cover; closed lakes keep 0.60
+land whose water reaches the sea as the water runs: 71.6 %; land that drains into a closed hollow (depression_id above 0): 65.7 %; land under water if every hollow were full: 11.7 %, and another 3.6 % exactly level with that water
+the air's demand for water over land 1004 mm a year; rain 786 mm; back to the air 583 mm; lakes cover 6.94 % of the land: 725 lakes, 571 with an outlet
+
+6. Narrows (the lowest way through the valley, on the heights Drainage was handed), and where the water goes instead
+Congo        the valley rises to 579 m, at -4.0, 16.0; the lake above it stands at 457 m and overflows by another way
+             its water leaves the land at -1.0, 9.0; the highest cell on its way, by mean height: 482 m at 0.0, 14.1, handed to Drainage at 457 m
+Danube       the valley rises to 431 m, at 45.4, 22.0; the lake above it stands at 367 m and overflows by another way
+             its water leaves the land at 55.1, 10.9; the highest cell on its way, by mean height: 388 m at 49.7, 17.9, handed to Drainage at 367 m
+Lena         the valley rises to 213 m, at 71.3, 127.4; the lake above it stands at 152 m and overflows by another way
+             its water leaves the land at 72.8, 120.9; the highest cell on its way, by mean height: 164 m at 70.5, 122.1, handed to Drainage at 152 m
+St Lawrence  the valley rises to 396 m, at 46.4, -69.9; the lake above it stands at 208 m and overflows by another way
+             its water leaves the land at 30.2, -92.1; the highest cell on its way, by mean height: 207 m at 41.8, -88.2, handed to Drainage at 204 m
+Amur         the valley rises to 274 m, at 53.4, 136.8; the lake above it stands at 213 m and overflows by another way
+             its water leaves the land at 43.3, 131.5; the highest cell on its way, by mean height: 206 m at 43.6, 132.1, handed to Drainage at 213 m
+Yangtze      the valley rises to 884 m, at 29.3, 108.3; the lake above it stands at 473 m and keeps its water
+
+7. What the ties decide: the engine's way of settling them, the cells' mean heights, and 20 settlements at random
+   (a random settlement draws the width of every way, the order of the cells, which of several passes of one height is taken,
+    and the order in which level ground is drained)
+
+River mouths within 300 km, of 24: engine 15; mean heights 14; at random 12 to 15
+              engine    mean   at random: from     to   within 300 km in
+Amazon           354     354               354    354     0 of 20
+Nile              96      96                96     99    20 of 20
+Mississippi      295     241               241    295    20 of 20
+Congo            668     668               668    668     0 of 20
+Yangtze           60      60                60    897     5 of 20   <- the ties decide
+Ob               343     343               343    631     0 of 20
+Mackenzie         26      26                26     26    20 of 20
+Danube          1724    1724              1724   1724     0 of 20
+Ganges           277     277               277    277    20 of 20
+Parana            20      20                20    250    20 of 20
+Niger            260     136               136    671     4 of 20   <- the ties decide
+Lena             206     431               206    496     5 of 20   <- the ties decide
+Yenisei          587     587               294    587     9 of 20   <- the ties decide
+Indus             39      75                39     75    20 of 20
+Murray            33      33                33     33    20 of 20
+Volga           1878    1878              1878   1878     0 of 20
+Zambezi          101     101                78    101    20 of 20
+Orinoco          244     192               192    244    20 of 20
+St Lawrence     3029    3001              3001   3029     0 of 20
+Columbia         115     115               115    115    20 of 20
+Rhine             99      99                99     99    20 of 20
+Mekong           292     292               270    292    20 of 20
+Amur            1290    1290              1274   1290     0 of 20
+Huang He        1215    1215               203   1261     7 of 20   <- the ties decide
+in all 20: 12 rivers; in none: 7; in some: 5
+
+Gauges within a factor of two, of 21: engine 8; mean heights 7; at random 6 to 9
+             measured  engine    mean   at random: from     to   within x2 in    | like for like: alike in, engine / measured from, to
+Amazon           5330    4182    4136              4130   4370    20 of 20                      |  20 of 20   0.70  0.72
+Congo            1271       9       9                 5     11     0 of 20                      |   0 of 20
+Orinoco           984     346     348               337    357     0 of 20                      |  20 of 20   0.62  0.63
+Yangtze           910     117     114                 9    117     0 of 20                      |   5 of 20   0.21  0.21
+Brahmaputra       613     482     476               217    493    13 of 20   <- the ties decide |   0 of 20
+Mississippi       536     911     913               911    913    20 of 20                      |  20 of 20   1.72  1.72
+Yenisei           577     207     204                88    210     0 of 20                      |   0 of 20
+Parana            476     528     520               500    539    20 of 20                      |  20 of 20   0.84  0.88
+Lena              526       6     172                 4    172     0 of 20                      |   7 of 20   0.44  0.44
+Mekong            292     169     113                16    172     6 of 20   <- the ties decide |   1 of 20   1.08  1.08
+Ob                397      56     127                27    774     5 of 20   <- the ties decide |   0 of 20
+Ganges            382     504     496               276    516    20 of 20                      |  20 of 20   0.52  0.64
+St Lawrence       226     101     101               101    101     0 of 20                      |   0 of 20
+Amur              312      33      31                23     32     0 of 20                      |   0 of 20
+Mackenzie         288      91      91                90     92     0 of 20                      |  20 of 20   0.48  0.48
+Columbia          172     106     106               106    106    20 of 20                      |  20 of 20   0.36  0.37
+Danube            202       3       4                 3      4     0 of 20                      |   0 of 20
+Niger              33       2       3                 2      3     0 of 20                      |   4 of 20   0.54  0.55
+Zambezi           105      21      14                13     22     0 of 20                      |   0 of 20
+Indus              89       0       0                 0      0     0 of 20                      |  20 of 20   0.15  0.16
+Rhine              73     105      98                98    105    20 of 20                      |  20 of 20   1.17  1.17
+in all 20: 6 rivers; in none: 12; in some: 3
+
+Like for like, all like basins together, the engine sheds of the measured depth: engine 0.71; mean heights 0.70; at random 0.69 to 0.77
+Of the rain on land, back to the air: engine 0.7420; mean heights 0.7419; at random 0.7415 to 0.7421
+Rivers reaching the sea, thousand km3 a year: engine 30.25; mean heights 30.26; at random 30.24 to 30.30
+Land under lakes, %: engine 6.94; mean heights 6.94; at random 6.94 to 6.97
+The Volga at Volgograd, like for like: engine: basin 1307, rain 752 mm, sheds 347; at random: alike in 20 of 20, basin 1162 to 1341, rain 724 to 756, sheds 328 to 351, back to the air 396 to 405
+The lake at the Caspian's place: engine: overflows by 173.70 km3 a year, 1.83 million km2 at 111 m; mean heights: overflows by 177.81 km3 a year, 1.83 million km2 at 111 m; at random: closed in 0 of 20, overflow up to 178.72 km3 a year, 1.83 to 1.83 million km2 at 111 to 111 m; of the 20 that overflow, the water reaches the sea in 20

@@ -1,0 +1,13 @@
+The Indus on the mesh with every hollow full, from 27.7, 68.9; its real mouth: 24.0, 67.5
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   27.9    68.8          46 m         57 m  lake         61 m          457   61 m, 91 m
+   1   27.6    68.3          30 m         34 m  lake         61 m          407   30 m, 91 m
+   2   27.2    68.0          30 m         53 m  lake         61 m          357   30 m, 91 m
+   3   26.6    68.2          61 m         82 m  lake         61 m          300   76 m, 76 m
+   4   26.1    68.4          30 m         46 m  level                      249   45 m, 45 m
+   5   25.7    68.1          30 m         91 m  level                      195   61 m, 61 m
+   6   25.1    68.3          30 m         45 m  down                       149   37 m, 37 m
+   7   24.6    68.5          22 m         28 m  down                       122   30 m, 30 m
+   8   24.2    68.2           7 m         16 m  down                        75   30 m, 30 m
+   9   23.8    67.9         -13 m        -13 m  sea                         49   -1 m, ocean
+9 land cells: 3 steps down to lower ground, 2 over level ground, 4 across full hollows; nearest to its real mouth: 75 km; leaves the land 75 km from it

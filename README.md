@@ -44,13 +44,14 @@ test of its own.
 
 The archive that was handed over comes with `worlds/first.zarr`, the default world on the preview
 mesh, so `serve` works at once. A clone of the repository does not hold it (`worlds/` is not under
-version control): the second command above builds it. The times are from a two-core machine whose
-speed changes from day to day by a factor of two (docs/BUILD_NOTES.md, section 4.7); nothing was
-timed on a laptop.
+version control): the second command above builds it. The times are from two-core cloud machines whose
+speed changes within a day by a factor of two (docs/BUILD_NOTES.md, section 4.7); nothing was
+timed on a laptop. The standard build holds more than 5 GB of memory at its peak.
 
 The same seed and parameters always give the same world, bit for bit, on one machine with the pinned
-versions. On a machine with another kind of processor the last digits can differ (docs/BUILD_NOTES.md,
-section 5.3); a world store carries its fingerprints, so a difference shows. A world store is written
+versions. With numpy's AVX-512 code switched off the last digits differ, so on another kind of
+processor they probably do too; that was not tried (docs/BUILD_NOTES.md, section 6, item 11). A world
+store carries its fingerprints, so a difference shows. A world store is written
 once and never changed.
 
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, switch to the flat map, play
@@ -102,22 +103,26 @@ on Earth's own relief (docs/BUILD_NOTES.md, sections 4.3 to 4.6). They are not k
 
 Read section 4.4 of the notes before any single river. The relief file comes in whole metres and
 holds closed valleys of its own, so where a river runs on it is decided mostly by the data, by the
-rule that puts them on the mesh and by how exact ties are settled, not by the engine. What the
-yardstick does measure: the water of all the land, and what the land of a great basin sheds, like
-for like. There the engine's land sheds 0.68 of the measured depth, and why is not established.
+rule that puts them on the mesh, by how exact ties are settled and by the volume of water poured,
+not by the engine. The tools pour what the ocean of the relief data holds, as the design asks;
+`--sea-water planet` pours the planet file's volume, 0.19 % less, and moves several outcomes
+(section 4.5). What the yardstick does measure: the water of all the land, and what the land of a
+great basin sheds, like for like. There the engine's land sheds 0.69 of the measured depth, and why
+is not established. The inputs are data sets, not the truth; the snowfall is not measured at all,
+but made from monthly temperatures.
 
 Without the data the tests that need it are skipped. The precipitation file asks that GPCP be cited
 in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 787 tests, about 9 minutes where it was built
+    python -m pytest                    # 864 tests, about 10 minutes where it was built
 
-34 of them are expected failures: patterns of Earth, and two conditions of the design (the dry
+35 of them are expected failures: patterns of Earth, and two conditions of the design (the dry
 belt of the north and the closed Caspian), that the engine is known to miss, each with the number
 measured. `python -m pytest -rx` prints them. They are not the whole list of known errors: the
 notes' sections 4.4, 4.6 and 8 name misses that no test states. Without the Earth data the
-97 tests that need it are skipped.
+102 tests that need it are skipped.
 
 Extra checks that are not part of the test run:
 
@@ -127,6 +132,8 @@ Extra checks that are not part of the test run:
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
     python tools/why_scan.py worlds/first.zarr     # reads the "why" answers of every cell against the numbers of the cell
     python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks in a headless browser
+    python tools/refusal_audit.py                  # is every refusal of the engine held by a test? Takes about as long as
+                                                   # three runs of the test suite
 
 The two trials print their results. The files in `trials/results/` are the records of build step 1,
 and a trial writes over them only when run with `--write`. `tools/viewer_check.py` needs the
@@ -166,6 +173,8 @@ refuses an option it does not know.
     trials/               the two trials of build step 1 and their results
     tools/                development tools
     docs/BUILD_NOTES.md   the state of the build
+    HANDOFF.md, handoff/  the working record of the close-out of build step 2: the reports of its fifth check,
+                          the logs of the tools that the notes quote, and the scripts that write the notes' tables
 
 ## How to add things
 

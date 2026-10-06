@@ -1,0 +1,17 @@
+The Amur on the mesh with every hollow full, from 48.5, 135.1; its real mouth: 52.9, 141.2
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   48.4   135.3          61 m         87 m  lake        107 m          651   61 m, 122 m
+   1   47.9   135.4          91 m        178 m  lake        107 m          692   91 m, 122 m
+   2   47.5   134.8          91 m        246 m  lake        107 m          753   610 m, 610 m
+   3   47.2   134.1          91 m        196 m  lake        107 m          813   198 m, 198 m
+   4   46.7   134.2          91 m        165 m  lake        107 m          855   91 m, 122 m
+   5   46.2   134.3          61 m        107 m  lake        107 m          898   91 m, 122 m
+   6   45.8   133.7          61 m        163 m  lake        107 m          957   183 m, 183 m
+   7   45.4   133.1          61 m         61 m  lake        107 m         1017   61 m, 122 m
+   8   44.9   133.2          61 m        155 m  lake        107 m         1060   213 m, 213 m
+   9   44.6   132.6          91 m        182 m  lake        107 m         1122   137 m, 137 m
+  10   44.2   132.0         107 m        149 m  lake        107 m         1184   137 m, 137 m
+  11   43.6   132.1         107 m        206 m  down                      1228   396 m, 396 m
+  12   43.3   131.5          60 m        145 m  down                      1290   113 m, 113 m
+  13   42.7   131.6        -209 m       -209 m  sea                       1335   -219 m, ocean
+13 land cells: 2 steps down to lower ground, 0 over level ground, 11 across full hollows; nearest to its real mouth: 651 km; leaves the land 1290 km from it

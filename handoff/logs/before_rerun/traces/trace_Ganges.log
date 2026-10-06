@@ -1,0 +1,18 @@
+The Ganges on the mesh with every hollow full, from 25.3, 83.0; its real mouth: 22.0, 90.0
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   25.4    83.0          61 m         90 m  level                      805   76 m, 76 m
+   1   25.5    83.5          61 m         67 m  level                      762   61 m, 61 m
+   2   25.6    84.1          61 m         65 m  level                      722   61 m, 61 m
+   3   25.7    84.6          61 m         61 m  level                      684   61 m, 61 m
+   4   25.8    85.2          61 m         61 m  level                      648   61 m, 61 m
+   5   25.9    85.7          61 m         61 m  down                       615   61 m, 61 m
+   6   26.0    86.2          30 m         40 m  level                      586   30 m, 30 m
+   7   26.1    86.8          30 m         45 m  level                      560   45 m, 45 m
+   8   26.2    87.3          30 m         53 m  level                      539   61 m, 61 m
+   9   25.7    87.6          30 m         37 m  level                      481   30 m, 30 m
+  10   25.3    87.9          30 m         31 m  level                      424   30 m, 30 m
+  11   24.9    88.2          30 m         30 m  down                       367   30 m, 30 m
+  12   24.4    88.5          15 m         27 m  level                      310   23 m, 30 m
+  13   24.0    88.8          15 m         10 m  down                       253   0 m, 0 m
+  14   23.6    89.1           0 m          0 m  sea                        196   0 m, 0 m
+14 land cells: 3 steps down to lower ground, 11 over level ground, 0 across full hollows; nearest to its real mouth: 253 km; leaves the land 253 km from it

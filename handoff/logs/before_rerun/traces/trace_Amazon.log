@@ -1,0 +1,19 @@
+The Amazon on the mesh with every hollow full, from -3.1, -60.0; its real mouth: -0.5, -50.0
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   -3.0   -60.0          30 m         35 m  lake         61 m         1149   45 m, 61 m
+   1   -3.0   -59.5          30 m         30 m  lake         61 m         1088   30 m, 61 m
+   2   -2.5   -59.2          30 m         38 m  lake         61 m         1048   30 m, 61 m
+   3   -2.5   -58.6          30 m         40 m  lake         61 m          987   46 m, 61 m
+   4   -2.5   -58.1          30 m         30 m  lake         61 m          925   30 m, 61 m
+   5   -2.0   -57.8          30 m         47 m  lake         61 m          886   46 m, 61 m
+   6   -2.0   -57.3          30 m         53 m  lake         61 m          824   61 m, 61 m
+   7   -2.0   -56.7          30 m         38 m  lake         61 m          763   30 m, 61 m
+   8   -2.0   -56.1          30 m         49 m  lake         61 m          702   46 m, 61 m
+   9   -2.0   -55.6          61 m         60 m  down                       642   61 m, 61 m
+  10   -2.0   -55.0          30 m         40 m  lake         45 m          581   30 m, 61 m
+  11   -1.9   -54.5          45 m         72 m  down                       524   84 m, 84 m
+  12   -1.8   -54.0          15 m         40 m  lake         30 m          467   0 m, 30 m
+  13   -1.8   -53.5          30 m         44 m  down                       411   30 m, 30 m
+  14   -1.7   -53.0          15 m          8 m  down                       354   0 m, 0 m
+  15   -1.7   -52.4          -2 m         -2 m  sea                        297   -10 m, 0 m
+15 land cells: 4 steps down to lower ground, 0 over level ground, 11 across full hollows; nearest to its real mouth: 354 km; leaves the land 354 km from it

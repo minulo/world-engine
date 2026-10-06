@@ -1,0 +1,14 @@
+The St Lawrence on the mesh with every hollow full, from 45.5, -73.6; its real mouth: 49.0, -66.0
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   45.3   -73.4          27 m         48 m  lake        102 m          693   34 m, 54 m
+   1   44.8   -73.3          30 m        101 m  lake        102 m          729   56 m, 56 m
+   2   44.3   -73.3          37 m        215 m  lake        102 m          767   96 m, 96 m
+   3   43.8   -73.3          78 m        263 m  lake        102 m          807   192 m, 192 m
+   4   43.5   -74.0         102 m        335 m  down                       868   360 m, 360 m
+   5   43.0   -74.0          69 m        154 m  lake         69 m          909   84 m, 113 m
+   6   42.5   -73.9          59 m        195 m  lake         69 m          953   34 m, 113 m
+   7   41.9   -73.9          62 m        167 m  lake         69 m          998   166 m, 166 m
+   8   41.4   -73.9          69 m        161 m  down                      1045   211 m, 211 m
+   9   40.9   -73.9          10 m         31 m  down                      1090   -10 m, ocean
+  10   40.4   -73.9         -12 m        -12 m  sea                       1137   -26 m, ocean
+10 land cells: 3 steps down to lower ground, 0 over level ground, 7 across full hollows; nearest to its real mouth: 693 km; leaves the land 1090 km from it

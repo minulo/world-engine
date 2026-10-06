@@ -1,0 +1,31 @@
+Earth's land on the mesh (100.0 % of it has temperatures in the data), with one share of sunshine, 0.62, everywhere
+
+1. Radiation at the ground over land, W/m2 on the year's mean
+                                    the engine  the budget
+sunlight that reaches the ground         185.7       184.7
+sunlight that the ground absorbs         154.1       145.1
+heat that the ground radiates away        68.3        79.6
+left to warm the air and evaporate        85.8        65.5   the engine has 1.31 of the budget's
+of that, evaporation takes                45.1        38.5   the engine has 1.17 of the budget's
+the excess of 20.3 W/m2 taken apart: 0.8 from the sunlight that reaches the ground; 8.2 from the ground reflecting 0.17 of it where the budget has 0.21; 11.3 from the heat that the ground radiates away
+the share of sunshine that would return the budget's sunlight at the ground: 0.61; the budget's loss of heat: 0.76
+the share of sunshine enters both formulas. With another share, everywhere alike:
+        share  sunlight at the ground  heat radiated away    left
+         0.50                   165.8                58.9    78.7
+         0.62                   185.7                68.3    85.8   as built
+         0.76                   209.4                79.6    94.2
+       budget                   184.7                79.6    65.5
+(the budget is a published synthesis for 2000 to 2004, not a measurement; the engine's side uses Earth's temperatures of 1961 to 1990
+ from a grid of 5 degrees, and the evaporation is Hydrology's under the rain data. What the comparison cannot show: where on the land
+ the energy is too much, since the budget is one number for all land; and why.)
+
+2. The demand for water over land, mm a year, on the ground that is free of snow
+the field potential_evapotranspiration: 1004; worked out again here from the same numbers: within 6.8e-05 mm a month in every cell
+                         the engine  the paper  the night gives back  the paper, net  net / engine
+all land                       1004       1247                   195            1052          1.05
+60 south to 60 north           1228       1527                   238            1288          1.05
+23 south to 23 north           1640       1999                   284            1714          1.05
+30 to 60 north                  774        990                   174             816          1.05
+60 to 90 north                  247        301                    46             255          1.03
+the engine: the whole day's net radiation. The paper: the hours of gain alone (1.24 of the engine's over all land), with the night's loss given back to the soil as condensation
+in 2.7 % of the land's cells and months the engine's demand is nothing where the paper's form gives more than 1 mm

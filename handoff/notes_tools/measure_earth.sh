@@ -1,19 +1,12 @@
 #!/bin/bash
-# Earth's rivers on the code of the snapshot (the working tree as it stood when the snapshot was made): provisional numbers,
-# to be run again on the committed code and compared line for line.
-F=/tmp/claude-0/-home-claude/059ceeac-064c-547a-88dd-cb05ea65ee21/scratchpad/step2/fifth
-cd $F/snapshot
-export PYTHONPATH=$F/snapshot/src
-export WORLDENGINE_REFERENCE_DATA=/home/claude/world-engine/reference_data
-L=$F/logs
-T=$F/snapshot/timed.py
-cat > $T <<'PY'
-import resource, subprocess, sys, time
-t = time.time()
-code = subprocess.call(sys.argv[2:], stdout=open(sys.argv[1], "w"), stderr=subprocess.STDOUT)
-peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1e6
-open(sys.argv[1] + ".time", "w").write(f"{time.time() - t:.1f} s; peak memory {peak:.2f} GB; exit {code}\n")
-PY
+# Earth's rivers on the committed code (handoff/notes_tools/measure_earth.sh, paths adapted): compared with handoff/logs afterwards
+S=/tmp/claude-0/-home-claude-world-engine/40ddc0f6-9b30-5080-a9da-54072bce01e8/scratchpad
+cd /home/claude/world-engine
+export PYTHONPATH=/home/claude/world-engine/src
+L=$S/final/earth
+mkdir -p $L/shares $L/traces
+git rev-parse HEAD > $L/code_state.txt; git status --short >> $L/code_state.txt
+T=$S/timed.py
 run() { out=$1; shift; python $T $L/$out "$@"; echo "$(date +%H:%M:%S) $out $(cat $L/$out.time)" >> $L/progress.txt; }
 run relief.log python tools/earth_relief.py
 run rivers.log python tools/earth_rivers.py

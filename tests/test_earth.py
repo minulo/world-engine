@@ -1230,12 +1230,15 @@ def test_what_the_land_sheds_like_for_like_basin_by_basin(outcomes):
         "closed lake\" is a question for the design; this test reads the condition as written and fails. What does not "
         "depend on the ties is that the lake is far too large: 1.07 to 1.09 million km2 at 60 to 61 m, where the real sea "
         "covers 371,000 km2 and stands 28 m below the ocean [DOCUMENTED at second hand: Wikipedia, read out by a page "
-        "reader; another source opened gives 436,000 km2]. The lake's books: rivers and shores bring it 590 km3 a year, "
-        "off land of 2.96 million km2 without the lake and 4.05 million with it, where the real sea's catchment is given "
-        "as 3.6 million km2 [DOCUMENTED at second hand: Wikipedia]; that land holds the Don at Voronezh, which on Earth "
-        "runs to the Black Sea; the lake's water loses 933 mm a year and gets 408 mm of rain. How much reaches the real "
-        "sea is not documented here [UNVERIFIED: about 300 km3 a year, from memory]. What the Volga's part of the excess "
-        "is made of is the subject of the next test. [MEASURED: earth_reference.lake_books; handoff/repin/repin.log]")
+        "reader; a paper on the sea's level gives about 436,000 km2]. The lake's books: rivers and shores bring it 590 km3 "
+        "a year, where about 300 reach the real sea [DOCUMENTED at second hand, that paper: the Volga 237 km3 a year, "
+        "about 80 % of the inflow]. The land that feeds it is not larger than the real rivers' catchment: 2.96 million km2 "
+        "without the lake (4.05 million with the ground under it), where that paper gives about 3 million km2 for the "
+        "rivers that flow into the sea and Wikipedia 3.6 million for the sea's catchment. The excess is in the depth: "
+        "199 mm a year off that land, where 300 km3 off 3 million km2 are 100 mm. That land holds the Don at Voronezh, "
+        "which on Earth runs to the Black Sea. The lake's water loses 933 mm a year and gets 408 mm of rain. What the "
+        "Volga's part of the excess is made of is the subject of the next test, which leaves it open. [MEASURED for the "
+        "mesh: earth_reference.lake_books; handoff/repin/repin.log]")
 def test_the_caspian_stays_a_closed_lake(earth):
     """The design's: the Caspian stays a closed lake."""
     lake = earth.lake_at(*ref.CASPIAN)
@@ -1327,6 +1330,8 @@ def test_what_the_ties_decide_about_the_caspian(earth, outcomes):
     assert t["caspian_closed"] == 1 and t["caspian_to_sea"] == 0
     lake = earth.lake_at(*ref.CASPIAN)
     assert abs(lake["inflow_m3_per_year"] / 1e9 - 669.0) < 3.0
+    # the arithmetic of the reason: the depth off the land that feeds the lake, beside 300 km3 off 3 million km2
+    assert abs(1e6 * 300.0 / 3.0e6 - 100.0) < 1e-9 and abs(237.0 / 0.8 - 296.0) < 0.5
     books = ref.lake_books(earth)
     assert abs(books["brought_km3"] - 590.0) < 3.0 and abs(books["outflow_km3"] - built["outflow_km3"]) < 1e-9
     assert abs(books["loses_mm"] - 933.0) < 3.0 and abs(books["rain_mm"] - 408.0) < 3.0
@@ -1394,13 +1399,14 @@ def test_open_water_under_the_caspians_sky_loses_about_a_metre_a_year(earth):
 
 @missed("6.28 % of the land lies under lakes, 9.37 million km2 (6.25 to 6.28 % in 20 random settlements). Twelve lakes larger "
         "than 100,000 km2 hold 54 % of it, where Earth has one of that size, the Caspian. Eleven of the twelve have their "
-        "deepest cell in a hollow that the relief data hold on their own grid: the lake at the Caspian's place at two and "
-        "a half to three times the sea's size, those at the places of the Black Sea and the Great Lakes, which are real, "
-        "and nine more: in the basins of the Congo (880,226 km2), the Amazon (629,173) and the Danube (250,841), on the West "
-        "Siberian plain (437,843), in the lowlands of the Amur (180,651) and the Lena (150,490), at 61.2 N, 115.2 W "
-        "(131,455) and at 43.6 N, 78.6 W (109,370). The twelfth is the Baltic, which is ocean in the data and which the "
-        "mesh cuts off. [MEASURED: handoff/repin/more1.log; tools/earth_relief.py for the hollows of the data. UNVERIFIED, "
-        "from memory: which of the hollows hold lakes on Earth]")
+        "lowest point in a hollow that the relief data hold on their own grid. Five of the eleven stand where Earth has a "
+        "sea or a great lake, though none of that size: at the places of the Caspian (1,089,603 km2, two and a half to "
+        "three times the sea), the Black Sea (612,693), the upper Great Lakes (298,119), Great Slave Lake (131,455) and "
+        "Lake Ontario (109,370). Six stand where Earth has no such water: in the basins of the Congo (880,226 km2), the "
+        "Amazon (629,173) and the Danube (250,841), on the West Siberian plain (437,843) and in the lowlands of the Amur "
+        "(180,651) and the Lena (150,490). The twelfth is the Baltic (265,947), which is ocean in the data and which the "
+        "mesh cuts off. [MEASURED: tools/earth_relief.py, part 4; handoff/repin/more1.log. UNVERIFIED, from memory: "
+        "which waters Earth has at those places]")
 def test_lakes_cover_no_more_of_the_land_than_on_earth(earth):
     """Lakes larger than 0.002 km2 cover 3.7 % of Earth's land that is free of ice [DOCUMENTED at second hand:
     Verpoorter et al. 2014, as a page that reports the paper quotes it; the paper itself could not be opened]. The

@@ -115,7 +115,7 @@ within 300 km: 15 of 24
 lakes larger than 100,000 km2: 12, with 54 % of all the land under lakes
 The lake at the Caspian's place: 1.09 million km2 at 61 m; it overflows by 17.88 km3 a year
    rivers and shores bring it 590 km3 a year; each square metre of it gives the air 933 mm a year and gets 408 mm of rain
-   the land whose water reaches it: 4.05 million km2 with the ground under the lake, 2.96 without; over that land the water brought is 199 mm a year; it holds the Don at Voronezh
+   the land whose water reaches it: 4.05 million km2 with the ground under the lake, 2.96 without; over the land without the lake, the water brought is 199 mm a year; it holds the Don at Voronezh
    the water that runs over crosses 4 land cells and ends in a closed lake of 19,939 km2, at 42.2, 57.1
 
 5. The water of all the land (thousand km3 a year)
@@ -208,6 +208,6 @@ The lake at the Caspian's place: engine: overflows by 17.88 km3 a year, 1.09 mil
     0.76           0.98        0.98                0.98            0.32     1.74            2            0.635        499        42.8            12 of 21
      0.6           1.24        1.18                1.29            0.42     2.28            4            0.544        427        53.5            11 of 21
 (Earth: like for like 1 by definition; 0.65 of the rain on land back to the air; 40 thousand km3 a year to the sea.
- 0.794 is the Priestley-Taylor rule with its factor of 1.26 taken as 1.00; 0.76 is 65.5 over 85.7, the energy that a published budget
+ 0.794 is the Priestley-Taylor rule with its factor of 1.26 taken as 1.00; 0.76 is 65.5 over 85.8, the energy that a published budget
  leaves the land over what the engine's formulas leave it: python tools/earth_demand.py. The two cuts have different causes and mend
  the weighted figure alike. Neither mends the basins: one factor for all land leaves them spread from a third to 1.7 times the measured.)

@@ -1,0 +1,45 @@
+The Yenisei on the mesh with every hollow full, from 56.0, 92.9; its real mouth: 71.0, 83.0
+        lat     lon  handed in at  mean height  step   lake level  km to mouth   the data there: height, joined to the ocean at
+   0   55.9    92.9         297 m        498 m  down                      1747   503 m, 503 m
+   1   56.4    93.3         152 m        232 m  lake        152 m         1690   182 m, 198 m
+   2   57.0    93.6         152 m        259 m  lake        152 m         1634   244 m, 244 m
+   3   57.4    92.9         137 m        181 m  lake        152 m         1577   122 m, 152 m
+   4   57.9    92.2         152 m        187 m  down                      1522   213 m, 213 m
+   5   58.3    91.5         122 m        156 m  down                      1467   152 m, 152 m
+   6   58.9    91.8          91 m        166 m  lake        114 m         1409   122 m, 122 m
+   7   59.3    91.1         106 m        136 m  lake        114 m         1354   106 m, 122 m
+   8   59.7    90.3          91 m        124 m  lake        114 m         1300   122 m, 122 m
+   9   60.3    90.6          91 m        276 m  lake        114 m         1242   305 m, 305 m
+  10   60.7    89.8         114 m        149 m  lake        114 m         1188   122 m, 122 m
+  11   61.1    89.0          91 m        113 m  lake        106 m         1135   115 m, 122 m
+  12   61.7    89.3          91 m        123 m  lake        106 m         1076   137 m, 137 m
+  13   62.1    88.5         106 m        135 m  down                      1023   137 m, 137 m
+  14   62.5    88.8          61 m         93 m  lake         61 m          973   61 m, 76 m
+  15   62.9    87.9          61 m        113 m  lake         61 m          930   91 m, 91 m
+  16   63.3    88.2          61 m         98 m  lake         61 m          880   107 m, 107 m
+  17   63.6    87.2          30 m         65 m  lake         61 m          837   30 m, 61 m
+  18   64.1    87.5          30 m         61 m  lake         61 m          787   30 m, 61 m
+  19   64.4    86.5          30 m         36 m  lake         61 m          745   30 m, 61 m
+  20   64.7    85.6          61 m         91 m  lake         61 m          705   106 m, 106 m
+  21   65.0    84.5          61 m         84 m  lake         61 m          668   91 m, 91 m
+  22   65.5    84.8          61 m         88 m  level                      615   61 m, 76 m
+  23   66.0    85.0          61 m         85 m  down                       562   91 m, 91 m
+  24   66.3    84.0          30 m         64 m  lake         30 m          525   68 m, 68 m
+  25   66.6    82.9          30 m         40 m  lake         30 m          492   30 m, 61 m
+  26   66.8    81.8          30 m         31 m  lake         30 m          465   30 m, 61 m
+  27   67.1    80.6          30 m         30 m  lake         30 m          443   30 m, 61 m
+  28   67.4    79.5          30 m         54 m  lake         30 m          427   61 m, 61 m
+  29   67.6    78.3          15 m         19 m  lake         30 m          419   -1 m, ocean
+  30   67.8    77.1          15 m         18 m  lake         30 m          420   0 m, 0 m
+  31   68.3    77.2          15 m         10 m  lake         30 m          371   0 m, 0 m
+  32   68.8    77.3          15 m          9 m  lake         30 m          324   -1 m, ocean
+  33   69.1    76.0          15 m          5 m  lake         30 m          341   -9 m, ocean
+  34   69.3    74.7          15 m         19 m  lake         30 m          367   15 m, 15 m
+  35   69.8    74.8          30 m         44 m  lake         30 m          336   30 m, 30 m
+  36   70.0    73.4          30 m          5 m  lake         30 m          374   -9 m, ocean
+  37   70.2    72.0          30 m         41 m  lake         30 m          416   61 m, 61 m
+  38   70.7    72.0          30 m         44 m  lake         30 m          403   61 m, 61 m
+  39   71.2    72.0          30 m         33 m  level                      396   30 m, 30 m
+  40   71.7    72.0          30 m         19 m  down                       398   0 m, 0 m
+  41   72.0    73.5          -0 m         -0 m  sea                        350   -9 m, ocean
+41 land cells: 6 steps down to lower ground, 2 over level ground, 33 across full hollows; nearest to its real mouth: 324 km; leaves the land 398 km from it

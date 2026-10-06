@@ -1,0 +1,116 @@
+Earth on 163842 cells; valley floors at the lowest 0.1 of each cell's land points; exact ties settled as the engine settles them; the demand for water multiplied by 0.76 (a diagnosis)
+sea water poured: 1.33758e+18 m3, what the ocean of the relief data holds; the sea of the mesh comes to rest at +1.9 m and covers 70.75 % of the planet; 47962 land cells
+
+1. Great rivers at their last gauging stations (flows in km3 a year, areas in thousand km2, depths in mm a year)
+                           flow            |  land that drains to the gauge   | what that land sheds               | lakes on the
+             measured  engine  within x2  |     real  reaches  all hollows full | measured  engine   rain  demand | way lose
+Amazon           5330    6400  yes        |     4619     5921              5921 |     1154    1115   2314    1258 |      202
+Congo            1271      22  NO         |     3475       50                50 |      366     506   1566    1272 |        3
+Orinoco           984     511  yes        |      836      563               563 |     1177     953   2080    1279 |       26
+Yangtze           910     423  NO         |     1705     1450              1567 |      534     330   1190     877 |       56
+Brahmaputra       613     465  yes        |      555      565               903 |     1105     845   1661     864 |       13
+Mississippi       536     713  yes        |     2896     2417              2431 |      185     300    950     709 |       13
+Yenisei           577      89  NO         |     2440      201               201 |      236     449    652     203 |        1
+Parana            476    1013  NO         |     2346     3010              3387 |      203     341   1304    1089 |       14
+Lena              526       6  NO         |     2430       32                32 |      216     181    379     198 |        0
+Mekong            292     206  yes        |      545      275               275 |      536     775   1764    1203 |        7
+Ob                397     757  yes        |     2430     2853              3242 |      163     282    613     380 |       48
+Ganges            382     465  yes        |      952      565               903 |      401     845   1661     864 |       13
+St Lawrence       226     621  NO         |      774     1244              1244 |      292     531   1020     491 |       39
+Amur              312      39  NO         |     1730      100               100 |      180     415    783     368 |        3
+Mackenzie         288     204  yes        |     1660     1770              1770 |      173     127    420     308 |       20
+Columbia          172     151  yes        |      614      722               884 |      280     255    612     539 |       33
+Danube            202     169  yes        |      807      650               650 |      250     357    902     577 |       63
+Niger              33       6  NO         |     1516       28               787 |       22     245    951    1300 |        0
+Zambezi           105     107  yes        |      940     1423              2016 |      112     143    819    1193 |       97
+Indus              89       6  NO         |      975     1001              1301 |       91      34    473     946 |       28
+Rhine              73     104  yes        |      180      184               184 |      406     583   1113     531 |        3
+within a factor of two of the measured flow: 12 of 21
+the books of every gauge close: land that reaches it x what it sheds - what lakes on the way lose - what a closed lake in the gauge's own cell keeps = the flow, to within 5.8e-05 km3 a year; a closed lake in the cell of the Niger's gauge keeps 0.34 km3
+and at every cell of the mesh, to within 5.8e-08 of the larger of the flow and the water shed upstream
+
+2. Like for like: what the land of each basin sheds, on the mesh's own river at the gauge (areas in thousand km2, depths in mm a year)
+             basin: real    mesh  alike  sheds: measured  engine  engine / measured   rain  demand  measured / rain  snow / rain
+Amazon              4619    5154  yes               1154    1135               0.98   2339    1256             0.49         0.00
+Congo               3475      50  no                 366     506               1.38   1566    1272             0.23         0.00
+Orinoco              836     563  yes               1177     953               0.81   2080    1279             0.57         0.00
+Yangtze             1705    1567  yes                534     307               0.58   1151     866             0.46         0.01
+Brahmaputra          555     735  yes               1105     366               0.33   1013     742             1.09         0.04
+Mississippi         2896    2431  yes                185     299               1.61    947     708             0.20         0.09
+Yenisei             2440     201  no                 236     449               1.90    652     203             0.36         0.61
+Parana              2346    3134  yes                203     318               1.57   1228    1086             0.17         0.00
+Lena                2430      41  no                 216     138               0.64    339     201             0.64         0.52
+Mekong               545     275  no                 536     775               1.45   1764    1203             0.30         0.00
+Ob                  2430    3176  yes                163     242               1.48    568     393             0.29         0.41
+Ganges               952     967  yes                401     339               0.84   1045    1026             0.38         0.01
+St Lawrence          774    1012  yes                292     508               1.74   1005     498             0.29         0.28
+Amur                1730     100  no                 180     415               2.30    783     368             0.23         0.32
+Mackenzie           1660    1690  yes                173     128               0.74    426     312             0.41         0.35
+Columbia             614     515  yes                280     107               0.38    437     608             0.64         0.33
+Danube               807     650  yes                250     357               1.42    902     577             0.28         0.12
+Niger               1516    1135  yes                 22      24               1.10    312    1277             0.07         0.00
+Zambezi              940    1940  no                 112     106               0.95    746    1190             0.15         0.00
+Indus                975    1301  yes                 91      29               0.32    464     883             0.20         0.09
+Rhine                180     178  yes                406     586               1.44   1118     532             0.36         0.11
+(rain: all that falls, rain and snow together; snow / rain: the share of it handed to the engine as snow, which is made from the
+ month's mean temperature and not measured)
+basins alike: 15 of 21. All of them together, the engine sheds 0.98 of the measured depth; basin by basin 0.32 to 1.74, 8 below 1 and 7 above; within a factor of two: 12
+what that figure can bear: it is a mean weighted by water, and the Amazon carries 52 % of the weight. Without the Amazon: 0.98. The median of the basins' own ratios: 0.98
+basins in which the runoff measured is more than 0.6 of the rain handed to the engine over the mesh's basin, so that the comparison tests the rain data or the basin more than what Hydrology does with rain: the Brahmaputra (rain 1013, measured runoff 1105), the Columbia (rain 437, measured runoff 280). Without them: 1.04
+(the engine's depth is taken before any lake loses water, the measured one after: that favours the engine. Taken as the flow at the same
+ cells, after closed hollows upstream have kept their water and lakes on the way have lost theirs: 0.93)
+
+3. Where each great river leaves the land with every hollow full, against its real mouth
+Amazon          354 km from its mouth, at   -1.7,   -53.0
+Nile            270 km from its mouth, at   30.5,    28.4
+Mississippi     295 km from its mouth, at   30.2,   -92.1
+Congo           603 km from its mouth, at   -1.5,     9.4
+Yangtze          60 km from its mouth, at   31.5,   121.2
+Ob              586 km from its mouth, at   71.7,    72.0
+Mackenzie        26 km from its mouth, at   69.1,  -134.6
+Danube          579 km from its mouth, at   40.5,    26.7
+Ganges          253 km from its mouth, at   24.0,    88.8
+Parana           20 km from its mouth, at  -34.3,   -58.0
+Niger           142 km from its mouth, at    5.5,     5.5
+Lena            206 km from its mouth, at   72.8,   120.9
+Yenisei         398 km from its mouth, at   71.7,    72.0
+Indus            75 km from its mouth, at   24.2,    68.2
+Murray           33 km from its mouth, at  -35.5,   139.3
+Volga          1865 km from its mouth, at   40.5,    26.7
+Zambezi         101 km from its mouth, at  -18.1,    35.7
+Orinoco         244 km from its mouth, at    9.7,   -62.9
+St Lawrence    1090 km from its mouth, at   40.9,   -73.9
+Columbia        115 km from its mouth, at   45.2,  -123.4
+Rhine            99 km from its mouth, at   51.6,     5.4
+Mekong          292 km from its mouth, at   12.2,   105.0
+Amur           1290 km from its mouth, at   43.3,   131.5
+Huang He       1215 km from its mouth, at   43.3,   131.5
+within 300 km: 15 of 24
+
+4. The largest lakes (km2; m; km3 a year)
+        area  level  outlet reaches it extra loss  runs on rain on it evaporates   lowest point at
+   1,331,360     62  yes           772        514   258.56        565        933     38.7,    49.1
+     880,226    457  yes          1546        223  1322.16       1546       1310     -3.0,    16.5
+     629,173     61  yes          6210        139  6071.40       1649        941      0.0,   -63.0
+     612,693     32  yes          1034        151   882.32        493        429     43.3,    36.8
+     437,843     91  yes           638         43   595.88        277        190     58.2,    68.4
+     300,709    427  no            208        208     0.00        285        457      8.1,    31.2
+     298,119    179  yes           380         27   352.87        296        169     47.5,   -86.9
+     265,947      8  yes           951         27   924.68        213        124     57.3,    19.9
+     250,841    208  yes           207         32   174.62        222        169     44.7,    20.4
+     196,577    716  yes           111         32    78.51        205        193     28.8,   104.3
+     180,651    107  yes           291         15   276.00        140         98     50.1,   136.5
+     150,490    122  yes           294         10   284.24         53         46     65.9,   125.0
+(reaches it: the water that runs toward the lake, counted as if none of its ground were flooded; so it holds the rain on the lake's own
+ cells less what their ground would have given the air. What rivers and shores bring = runs on + evaporates - rain on it.)
+lakes larger than 100,000 km2: 15, with 54 % of all the land under lakes
+The lake at the Caspian's place: 1.33 million km2 at 62 m; it overflows by 258.56 km3 a year
+   rivers and shores bring it 626 km3 a year; each square metre of it gives the air 701 mm a year and gets 425 mm of rain
+   the land whose water reaches it: 4.23 million km2 with the ground under the lake, 2.90 without; over that land the water brought is 216 mm a year; it holds the Don at Voronezh
+   the water that runs over crosses 25 land cells and ends in the sea, at 40.4, 26.0
+
+5. The water of all the land (thousand km3 a year)
+rain on land 117.2; back to the air 74.4 (0.635 of the rain); rivers reaching the sea 42.8
+shed by the land as if none of it were flooded 45.8 (0.609 of the rain back to the air); lakes with an outlet lose 2.41 more than the ground they cover; closed lakes keep 0.58
+land whose water reaches the sea as the water runs: 78.8 %; land that drains into a closed hollow (depression_id above 0): 62.4 %; land under water if every hollow were full: 10.5 %, and another 3.7 % exactly level with that water
+the air's demand for water over land 763 mm a year; rain 786 mm; back to the air 499 mm; lakes cover 7.28 % of the land: 599 lakes, 521 with an outlet
