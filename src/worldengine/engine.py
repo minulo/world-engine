@@ -91,6 +91,7 @@ class World:
         self.lineage: dict[str, dict] = {}
         self.timings: dict[str, float] = {}
         self.round_times: list[dict] = []                    # seconds spent in each step of each round
+        self.snapshots: list[dict] = []                      # pictures of the geological history: round, time_my, fields
         self.meta: dict = {}
 
     def notice(self, kind, **details):
@@ -338,6 +339,7 @@ class Engine:
         self.lagged_tables = sorted({f[len("table:"):] for d in steps for f in d["lagged"] if f.startswith("table:")})
         self.lagged_groups = sorted({g for d in steps for g in d["lagged_group"]})
         self.mesh = None
+        self.carry = None                                    # a stored world to continue the geological history of
         self.world: World | None = None
         self.memo: dict = {}
         self._fresh: dict[str, set] = {}
@@ -445,9 +447,16 @@ class Engine:
                     problems.append(f"stages.yaml: stage {name} gives {key}, which only a stage on the geological clock takes")
             if cfg["clock"] == "geological" and not ("round_length_my" in cfg and "history_length_my" in cfg):
                 problems.append(f"stages.yaml: stage {name} runs on the geological clock and needs round_length_my and history_length_my")
-        if self.profile.get("snapshot_every_rounds") is not None or self.profile.get("snapshot_fields"):
-            problems.append(f"profiles.yaml: profile {self.profile_name} asks for snapshots of the geological history; "
-                            f"they are built in step 3, with the plate history")
+        every, snap = self.profile.get("snapshot_every_rounds"), self.profile.get("snapshot_fields") or []
+        if (every is None) != (not snap):
+            problems.append(f"profiles.yaml: profile {self.profile_name} must give both snapshot_every_rounds and snapshot_fields, or neither")
+        if every is not None and (not isinstance(every, int) or every < 1):
+            problems.append(f"profiles.yaml: profile {self.profile_name}: snapshot_every_rounds must be a whole number of at least 1")
+        for f in snap:
+            if f not in self.registry.fields or self.registry.fields[f].shape != "cell" or \
+                    self.clocks.get(self.stage_of.get(f)) != "geological":
+                problems.append(f"profiles.yaml: profile {self.profile_name} asks for snapshots of {f}, which is not a field of one "
+                                f"value per cell written on the geological clock")
         if self.profile.get("climate_rerun_every_rounds") is not None:
             problems.append(f"profiles.yaml: profile {self.profile_name} reruns the climate inside the geological history; "
                             f"that link is built in step 9")
@@ -898,12 +907,60 @@ class Engine:
     def _run_geological(self, stage):
         cfg = self.stage_cfg[stage]
         rounds = max(1, math.ceil(cfg["history_length_my"] / cfg["round_length_my"] - 1e-9))
-        self._start(stage)
-        for r in range(1, rounds + 1):
+        every, snap = self.profile.get("snapshot_every_rounds"), list(self.profile.get("snapshot_fields") or [])
+        if self.carry is not None:                           # go on from a stored world (design: continue a finished history)
+            first = self._load_carry(stage)
+            if first > rounds:
+                raise EngineError(f"the stored world has run {first - 1} rounds of {stage}; asked to stop after {rounds}")
+        else:
+            self._start(stage)
+            first = 1
+        for r in range(first, rounds + 1):
             self._run_round(stage, r, recording=True)      # geological causes are recorded as the stage runs
             self._end_round(stage, 1.0)
+            if every and r % every == 0:
+                self.world.snapshots.append({"round": r, "time_my": r * float(cfg["round_length_my"]),
+                                             "fields": {f: self.world.fields[f].copy() for f in snap}})
             self.log(f"  {stage} round {r} of {rounds}")
         self.world.rounds_used[stage] = rounds
+
+    def carry_state(self, stage) -> dict:
+        """What the geological clock carries from round to round, for a later build to go on from."""
+        w = self.world
+        mine = lambda g, k: self.member_stage.get((g, k)) == stage
+        return {"tables": {t: dict(c) for t, c in w.tables.items() if self.table_stage.get(t) == stage},
+                "lagged_tables": {t: dict(c) for t, c in w.lagged_tables.items() if self.table_stage.get(t) == stage},
+                "group_lagged": {g: {k: v for k, v in m.items() if mine(g, k)} for g, m in w.group_lagged.items()},
+                "group_now": {g: {k: v for k, v in m.items() if mine(g, k)} for g, m in w.group_now.items()},
+                "lagged": {f: a for f, a in w.lagged.items() if self.stage_of.get(f) == stage},
+                "round": int(w.rounds_used.get(stage, 0))}
+
+    def _load_carry(self, stage) -> int:
+        """Fill the world from a stored one as it stood after its last geological round. Only what the setup and the
+        geological stage wrote is taken: the climate of the stored world is not read, so that the rounds that follow are
+        the rounds of one long run, bit for bit."""
+        view, w = self.carry, self.world
+        if view.attrs["seed"] != self.seed or view.meta["mesh_level"] != self.level:
+            raise EngineError("a history can be continued only with the seed and the mesh level of the stored world")
+        state = view.carry()
+        for f in view.field_names():
+            if self.stage_of.get(f) == stage:
+                w.fields[f] = np.array(view.field(f))
+                w.fields[f].flags.writeable = False
+                w.written_round[f] = state["round"]
+        for key in ("tables", "lagged_tables"):                # a store keeps true and false as 0 and 1: back to each column's type
+            for t, cols in state[key].items():
+                types = self.registry.tables[t].columns
+                typed = {col: np.asarray(a, dtype=types[col]) for col, a in cols.items()}
+                for a in typed.values():
+                    a.flags.writeable = False
+                getattr(w, key)[t] = typed
+        for key in ("group_lagged", "group_now"):
+            for g, members in state[key].items():
+                getattr(w, key).setdefault(g, {}).update(members)
+        w.lagged.update(state["lagged"])
+        w.snapshots = view.snapshots()
+        return state["round"] + 1
 
     def _run_climate(self, stage):
         """Repeat the stage until it is steady, then record the causes in one extra pass over the settled round."""
@@ -1025,7 +1082,10 @@ class Engine:
                 "pushes": [q.id for q in pushes], "round": w.written_round.get(f)}
 
     # ------------------------------------------------------------------ the build
-    def build(self) -> World:
+    def build(self, continue_from=None) -> World:
+        """Build a world. With continue_from (a StoreView), the geological history goes on from where the stored world
+        stopped, to this engine's history length."""
+        self.carry = continue_from
         with self._limit_threads():
             return self._build()
 

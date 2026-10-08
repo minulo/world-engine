@@ -2,4 +2,5 @@
 # A process may draw only for the purposes listed under its slot.
 world_seed: 20261004
 draws:
-  Tectonics: [plate_centres, plate_axes, plate_speeds, outline_waves, continent_plates, continent_waves, thickness_waves]
+  Tectonics: [plate_centres, plate_axes, plate_speeds, outline_waves, continent_plates, continent_waves, thickness_waves,
+              rift_chance, rift_parts, rift_centres, rift_waves, rift_speeds]

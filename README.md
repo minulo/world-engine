@@ -7,9 +7,12 @@ checking changed, where the build departs from the design and where its worlds a
 [docs/BUILD_NOTES.md](docs/BUILD_NOTES.md). Read its sections 4, 6 and 8 before trusting a map.
 
 Built so far: the skeleton (build step 0), the smallest end-to-end slice (step 1: terrain,
-temperature, wind, rainfall and biomes, with a viewer) and the water on land (step 2: drainage,
-snow, soil water, rivers, lakes, and the water that land gives back to the air). Erosion, moving
-plates, ocean currents, soils, storms and daily weather are designed and not built.
+temperature, wind, rainfall and biomes, with a viewer), the water on land (step 2: drainage,
+snow, soil water, rivers, lakes, and the water that land gives back to the air) and deep time
+(step 3: 250 My of moving plates, with subduction, collision, spreading and rifting, rivers that cut
+the land as it rises, the rock at the surface and the age of each surface, and a film of the history
+in the viewer). Ocean currents, soils, storms and daily weather are designed and not built. What step 3
+measured, and what it did not do, is in docs/BUILD_NOTES.md, section 12.
 
 ## Install
 
@@ -32,12 +35,14 @@ test of its own.
 ## Use
 
     python -m worldengine order                                  # the running order computed from the declarations
-    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; half a minute where it was built
+    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; a minute and a half where it was built
     python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 10 to 20 minutes where it was built
     python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/
     python -m worldengine explain worlds/first.zarr --lat 18 --lon -102 --field biome
     python -m worldengine info worlds/first.zarr
 
+    python -m worldengine build --profile preview --history-my 500 --continue-from worlds/first.zarr --out worlds/later.zarr
+                                                                  # the same history, run on from 250 to 500 My
     python -m worldengine build --profile preview --seed 7 --out worlds/other.zarr
     python -m worldengine build --profile preview --interventions data/examples/frozen_region.yaml --out worlds/frozen.zarr
     python -m worldengine build --profile preview --interventions data/examples/place_label.yaml --out worlds/forest.zarr
@@ -55,7 +60,8 @@ store carries its fingerprints, so a difference shows. A world store is written
 once and never changed.
 
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, switch to the flat map, play
-the months, and click a cell for its values and its "why" answer.
+the months, and click a cell for its values and its "why" answer. For elevation, ocean_mask, plate_id
+and crust_type a second slider plays the geological history as a film, one picture every 10 My.
 
 ### A "why" answer
 
@@ -129,6 +135,8 @@ Extra checks that are not part of the test run:
     python trials/crust_points_trial.py            # the trial of crust carried on moving points (docs/BUILD_NOTES.md, 3.2)
     python trials/crust_points_trial.py seeds      # the same on ten other seeds
     python trials/climate_round_cost.py standard   # what a climate round costs on this machine
+    python trials/long_history_trial.py            # 2,500 My of plates on the preview mesh, measured every 250 My
+    python handoff/step3/relief_report.py worlds/first.zarr [older.zarr]   # relief, ocean floor, rivers and lakes
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
     python tools/why_scan.py worlds/first.zarr     # reads the "why" answers of every cell against the numbers of the cell
     python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks in a headless browser
@@ -164,6 +172,7 @@ refuses an option it does not know.
       testing.py          the harness that runs one process alone
       library/            shared mathematics: mesh operators, flooding, transport, orbit, noise, drainage, snow,
                           soil water, the demand for water, lakes
+      library/plates.py   the seeded start and the reading of plate boundaries that both Tectonics implementations share
       processes/          one file per implementation of a slot; each file's first lines name the model,
                           what it ignores and where it is wrong
     src/earth_reference/  readers of the Earth data, Earth on the mesh, the Earth twin. Not part of the engine:

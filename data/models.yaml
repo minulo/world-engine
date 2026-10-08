@@ -22,11 +22,13 @@ slots:
     writes: [latitude, longitude, cell_area, coriolis_parameter]
 
   Tectonics:
-    implementation: worldengine.processes.tectonics_snapshot:SnapshotPlates
+    # The snapshot of build steps 1 and 2 is still there: worldengine.processes.tectonics_snapshot:SnapshotPlates
+    # (it uses the constants below that it names, and ignores history, subduction, collision, rifting and slab_pull).
+    implementation: worldengine.processes.tectonics_plate_history:PlateHistory
     standing: Adapted
-    model: "One snapshot of seeded plates, after the plate model of Cortial et al. 2019: rigid plates turning about axes through the planet's centre, with thicker crust where plates close."
-    ignores: "Time: nothing has moved. The floor's age is read off the distance to the nearest spreading ridge. Island arcs, hot spots, shelves and rifts are absent."
-    wrong_where: "Wherever a history matters. The size and width of the thickening are tuned numbers. Build step 3 replaces this with the full plate history. [INFERRED: a snapshot has no history; not measured against Earth]"
+    model: "A history of moving plates after Cortial et al. 2019: crust points ride on rigid plates; ocean floor dives at trenches and thickens the crust behind them; continents collide, pile up and weld; new floor forms where plates part; plates split and are pulled toward their trenches. The rules thicken the crust and Isostasy lifts it."
+    ignores: "The paper's own erosion and ocean-floor height rules (FluvialErosion and Isostasy replace them), hot spots and plumes, the shape of slabs, sediment, mantle flow beyond slab pull."
+    wrong_where: "The size of the thickening and the chance of rifting are tuned numbers; a weld is all or nothing; fronts are as rough as the mesh. [INFERRED: from the method; not measured against Earth]"
     writes: [plate_id, plate_velocity, crust_type, crust_thickness, ocean_crust_age, orogeny_age, boundary_kind,
              boundary_distance, convergence_rate, volcanism, "table:crust_points", "table:plates", "table:tectonic_events"]
     constants:
@@ -74,8 +76,49 @@ slots:
         equal_within_my: 0.1                   # two floors whose ages differ by less than this count as equally old [INFERRED]
       volcanism: {arc_distance_km: 200.0, arc_width_km: 150.0, ridge_width_km: 150.0}   # [INFERRED]
       zones: {ridge_km: 300.0, transform_km: 200.0}
+      # ---- the plate history (build step 3). [DOCUMENTED: Cortial et al. 2019, as a page reader gave it on 2026-10-06,
+      #      docs/step3/GOAL.md; not seen as printed] marks the paper's numbers; the rest are mine.
+      history:
+        contact_cells: 0.5                     # points of two plates nearer than this many cell spacings overlap [INFERRED: the crust trial's rule]
+        gap_cells: 0.75                        # a cell with no point within this many spacings lies in a gap: new floor [INFERRED: the crust trial's rule]
+        resample_every_rounds: 10              # the paper resamples every 10 to 60 steps [DOCUMENTED]; the fastest end is taken
+        flat_determinant: 1.0e-12              # three old points whose places span less than this lie in a row [INFERRED]
+        equal_age_my: 0.1                      # two fronts whose summed floor ages differ by less than this count as equally old
+        minimum_thickness_m: 1000.0            # erosion thins no crust below this [INFERRED]
+        maximum_thickness_m: 70000.0           # thickening stops here [UNVERIFIED: about the thickest crust on Earth, under Tibet]
+        arc_becomes_continental_above_m: 20000.0   # ocean crust thickened past this is an island arc grown into continent [PROVISIONAL]
+        active_above_m_per_round: 100.0        # thickening faster than this counts as mountain building acting now [PROVISIONAL]
+        crust_flow: {above_m: 50000.0, length_km: 300.0}   # thicker crust flows sideways [PROVISIONAL; a departure from the design]
+        collision_spread_km: 600.0             # consumed continental crust is piled within this distance of the front [PROVISIONAL]
+        weld_after_rounds: 5                   # a collision that has gone on this many rounds welds the terrane (10 My, about 300 km at 3 cm/yr;
+                                               #  the paper welds at 300 km of overlap [DOCUMENTED])
+        weld_reach_cells: 1.5                  # the terrane is the lower plate's continent within this many spacings of the consumed crust
+      subduction:
+        uplift_m_per_my: 600.0                 # u0 = 0.6 mm/y [DOCUMENTED]
+        reference_speed_m_per_year: 0.1        # v0 = 100 mm/y [DOCUMENTED]
+        maximum_speed_factor: 1.5              # [INFERRED]
+        reach_km: 1800.0                       # rs, where the uplift fades to zero [DOCUMENTED]
+        peak_km: 300.0                         # the control distance at which it peaks [PROVISIONAL: the paper's value was not read out]
+        lowest_m: -10000.0                     # zt [DOCUMENTED]
+        highest_m: 10000.0                     # zc [DOCUMENTED]
+        floor_height: {ridge_m: -1000.0, abyssal_m: -6000.0,      # [DOCUMENTED: the paper's Table 3]
+                       abyssal_age_my: 100.0}                     # floor reaches the abyssal plain at this age [PROVISIONAL]
+        height_share_of_thickening: 0.1515     # 1 - 2800/3300: Isostasy's share of a broad thickening that becomes height [INFERRED]
+      rifting:
+        rate_per_round: 0.002                  # L0 of P = L exp(-L) [PROVISIONAL: about one split in 1,000 My for a plate of mean size]
+        continent_weight: 1.0                  # f(continental share) = 1 + weight * share [PROVISIONAL]
+        smallest_share_of_mean: 0.5            # a plate smaller than this share of the starting mean area does not split [INFERRED]
+        most_per_round: 1
+        waves: 8
+        wave_number: [2.0, 8.0]
+        warp_rad: 0.15
+        parting_speed_cm_per_year: [1.0, 3.0]  # the parts move apart at this speed each [PROVISIONAL]
+      slab_pull:
+        turn_share_per_my: 0.01                # the share of a plate's motion turned toward its diving fronts each My [PROVISIONAL]
+        fastest_cm_per_year: 10.0              # no plate turns faster than this at its widest circle [UNVERIFIED: Earth's fastest plates]
     expected_range:
       radius_m: [5.0e+6, 8.0e+6]               # the plate picture is tuned to an Earth-sized planet [INFERRED]
+      stage.geological.history_length_my: [2.0, 2500.0]   # until the long trial measures it [PROVISIONAL]
 
   Isostasy:
     implementation: worldengine.processes.isostasy_airy:AiryIsostasy
@@ -108,6 +151,36 @@ slots:
     expected_range:
       surface_gravity_m_s2: [5.0, 20.0]
 
+  Lithology:
+    implementation: worldengine.processes.lithology_rule_table:RuleTableLithology
+    standing: Rule
+    model: "A table maps the tectonic setting to a family of rock and its erodibility; the first row that matches wins."
+    ignores: "Rock carried from elsewhere, weathering, the layering of rock, sediment laid down by rivers."
+    wrong_where: "Everywhere a setting holds several rocks; the erodibilities are relative numbers, not measured. [INFERRED]"
+    writes: [rock_type, erodibility]
+    constants:
+      rules:                                   # in order; the first that matches wins. [PROVISIONAL: the erodibilities are relative]
+        - {rock: ocean_floor_basalt, crust: oceanic, erodibility: 0.6}
+        - {rock: volcanic_arc, volcanism_above: 0.3, erodibility: 0.9}
+        - {rock: young_fold_belt, orogeny_younger_than_my: 60.0, erodibility: 1.5}
+        - {rock: rift_basin, boundary: [ridge], erodibility: 2.0}
+        - {rock: old_mountain_roots, orogeny_younger_than_my: 1000.0, erodibility: 0.7}
+        - {rock: stable_platform, erodibility: 1.0}
+
+  FluvialErosion:
+    implementation: worldengine.processes.fluvial_stream_power:StreamPowerErosion
+    standing: Established
+    model: "The stream power law E = K k (Q)^m S^n with n = 1, solved implicitly along the flow paths from the sea up (Braun and Willett 2013), and hillside creep as an implicit diffusion step. The water that flows is the runoff of the last climate, or a set runoff before any climate has run."
+    ignores: "Where the eroded rock goes (it is laid down nowhere: the design's stated limit), glaciers, the wear of coasts, rivers narrower than a cell."
+    wrong_where: "The law depends on the size of the cells: K is set per mesh level. Before the climate is rerun inside the history (build step 9) every place gets the same runoff. [INFERRED]"
+    writes: [erosion_rate, erosion_thinning]
+    constants:
+      area_exponent_m: 0.5                     # m with n = 1: m/n = 0.5 [UNVERIFIED: the usual value on Earth]
+      coefficient_per_year: {by_level: {5: 1.2e-7, 6: 1.2e-7, 7: 1.2e-7, 8: 1.2e-7}}   # K [PROVISIONAL: tuned by eye on the preview mesh]
+      reference_runoff_mm_per_year: 300.0      # the runoff that K is set for, and the runoff used before any climate [UNVERIFIED: about Earth's land mean]
+      creep_m2_per_year: 0.01                  # hillside diffusion [UNVERIFIED: a common value]
+      sea_level_before_any_sea_m: 0.0          # the base level in the first round, before SeaLevel has run once
+
   SeaLevel:
     implementation: worldengine.processes.sea_level_pour:PouredSea
     standing: Adapted
@@ -125,6 +198,17 @@ slots:
     ignores: "Rivers that split, as in deltas; groundwater; valleys narrower than a cell."
     wrong_where: "A cell has one height: a river that crosses a range through a gorge narrower than a cell finds the range closed, and the mesh shows a hollow where there is none or sends the river out by another pass [INFERRED from the rule. On Earth's relief, every closed valley that was looked into is closed in the relief data themselves, or by the way those data were put on the mesh, and not by the width of a cell: docs/BUILD_NOTES.md, section 4.4]. Where heights are exactly equal the rule cannot choose; the bed, the mesh's geometry and last the order of the cells do. In the engine's own worlds that settles only which sea cell a river runs into; on relief given in whole metres it decides where whole rivers go [MEASURED: the same section]."
     writes: [flow_receiver, drainage_area, basin_id, depression_id, spill_elevation, slope, "table:hollows"]
+
+  SurfaceAge:
+    implementation: worldengine.processes.surface_age_points:PointSurfaceAge
+    standing: Rule
+    model: "Age grows each round and resets where lava covers the ground, where erosion cuts deep, and where land rises from the sea; ages ride on the crust points."
+    ignores: "Sediment that buries a surface, soils, ice."
+    wrong_where: "Ages before the history began are not known: they count from its start. [INFERRED]"
+    writes: [surface_age, "table:surface_age_points"]
+    constants:
+      lava_above: 0.5                          # volcanism above this renews the ground [PROVISIONAL]
+      deep_erosion_m_per_round: 200.0          # erosion deeper than this in a round exposes fresh rock [PROVISIONAL]
 
   Insolation:
     implementation: worldengine.processes.insolation_daily_mean:DailyMeanInsolation
