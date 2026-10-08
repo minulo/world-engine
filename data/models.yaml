@@ -118,7 +118,7 @@ slots:
         fastest_cm_per_year: 10.0              # no plate turns faster than this at its widest circle [UNVERIFIED: Earth's fastest plates]
     expected_range:
       radius_m: [5.0e+6, 8.0e+6]               # the plate picture is tuned to an Earth-sized planet [INFERRED]
-      stage.geological.history_length_my: [2.0, 2500.0]   # until the long trial measures it [PROVISIONAL]
+      stage.geological.history_length_my: [2.0, 250.0]    # [MEASURED: the long trial drifts from the first 250 My on; docs/BUILD_NOTES.md 12.5]
 
   Isostasy:
     implementation: worldengine.processes.isostasy_airy:AiryIsostasy

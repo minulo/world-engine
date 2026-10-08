@@ -1,0 +1,5 @@
+world written to /tmp/claude-0/cont/a20.zarr: 10242 cells, seed 20261004, 62.4 s, fingerprint 9684a3381156dd3a
+world written to /tmp/claude-0/cont/b40.zarr: 10242 cells, seed 20261004, 57.0 s, fingerprint 1f8c357393ad150a
+world written to /tmp/claude-0/cont/c40.zarr: 10242 cells, seed 20261004, 66.1 s, fingerprint 1f8c357393ad150a
+fields and table columns compared: 124 differing: 0 []
+world fingerprints equal: True

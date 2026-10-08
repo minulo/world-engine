@@ -124,6 +124,9 @@ in anything published from it (`tools/reference_data.yaml`).
 
     python -m pytest                    # 864 tests, about 10 minutes where it was built
 
+Step 3 made the plate history the default and wrote no tests; the suite was not run after it, and the tests that pin
+numbers of the one-round world of step 2 need measuring again (docs/BUILD_NOTES.md, section 12).
+
 35 of them are expected failures: patterns of Earth, and two conditions of the design (the dry
 belt of the north and the closed Caspian), that the engine is known to miss, each with the number
 measured. `python -m pytest -rx` prints them. They are not the whole list of known errors: the

@@ -1,5 +1,8 @@
 # Build notes
 
+Added 2026-10-08: build step 3 (deep time) is built and is the default; section 12 says what was measured and
+what was not done. The rest of these notes describe the state of 2026-10-06.
+
 State of the build on 2026-10-06: build steps 0, 1 and 2 of the design document "World engine design:
 physical causes, replaceable processes". Steps 0 and 1 had two independent reviews and a third,
 narrower check. Step 2 had two independent reviews, a third check that overturned part of what I
@@ -23,6 +26,7 @@ of the same kind, set up from the lock file. Nothing here was run on the target 
 | 0. Skeleton | Done | Tests of the mesh, parameter files, the scheduler with every refusal, rounds, pushes, labels, the store, the server, the test harness |
 | 1. The slice | Done, with the gaps of section 6 | Tests of the ten processes and of the whole world; two trials in `trials/results/` |
 | 2. Water on land | Built. One condition of the design for it fails on Earth, the closed Caspian, and the land sheds too little water (section 4) | Drainage, Hydrology and a stand-in for Soils; tests of each on ground built for the purpose, on the default world and on Earth's own relief, rain and warmth |
+| 3. Deep time | Built and measured on the preview mesh, without tests: section 12 | The plate history, FluvialErosion, Lithology, SurfaceAge, history snapshots, continuation; `handoff/step3/` |
 | 3 to 11 | Not started | |
 
 `python -m pytest` runs 864 tests in about 10 minutes. 829 pass. The other 35 are
@@ -1977,3 +1981,145 @@ These are my decisions; each is yours to overrule.
 
 **Next: build step 3**, as the design orders it. It is not started. Two things that only your machine
 can show stay open: a first run on Windows (section 6), and the times on the laptop.
+
+## 12. Step 3: deep time
+
+Written 2026-10-08, on commit 6bdba78 and the commits after it on the branch `claude/quirky-newton-a5zchs`. This step was
+built in one session at the owner's request to "finish the engine in a token efficient way, follow the plan and ignore
+the test". So it departs from `docs/step3/ACTIONS.md` in three ways, all at the owner's word: no pass conditions were
+written before the runs (`docs/step3/PASS_CONDITIONS.md` does not exist); no test was written; and the test suite was
+not run. Every condition below was judged after its number was seen, so each is "found, then kept" and proves less than
+a condition fixed beforehand. The 864 tests of step 2 pin numbers of a world with one round of geology. Many of them now
+fail or need re-measuring [INFERRED: the default world changed throughout; not run].
+
+### 12.1 What was built
+
+| File | What it does |
+|---|---|
+| `src/worldengine/processes/tectonics_plate_history.py` | Tectonics as a plate history (design, Layer 5). Crust points ride on plates. Ocean floor dives under continents, and the older of two ocean floors dives along their whole front. The overriding crust thickens by the paper's uplift divided by the share of thickness that becomes height. Consumed continental crust is piled onto the upper continent near the front (volume kept), and a collision that lasts 5 rounds welds the terrane to the upper plate. Gaps between parting plates fill with new floor of age zero. Plates split with the paper's chance P = L exp(-L) into 2 to 4 parts along warped lines, and slab pull turns each plate toward its diving fronts. Points are resampled every 10 rounds with barycentric weights, and each row records its sources and weights. Thick island arcs become continental crust. Events go into `table:tectonic_events` with their time. |
+| `src/worldengine/processes/fluvial_stream_power.py` | FluvialErosion: the stream power law with n = 1, solved implicitly along Priority-Flood flow paths from the sea up. Hillside creep is one implicit diffusion step. It modifies `elevation` (priority 10), writes `erosion_rate`, and hands `erosion_thinning` to `crust_thickness_tendency`. |
+| `src/worldengine/processes/lithology_rule_table.py` | Lithology: the rule table of `models.yaml` maps the setting to a rock family and an erodibility, and the first matching row wins. |
+| `src/worldengine/processes/surface_age_points.py` | SurfaceAge: ages are kept on `table:surface_age_points` and carried with the sources and weights of the crust points. An age resets under lava, under deep erosion, and where land rises from the sea. |
+| `src/worldengine/library/plates.py` | The seeded start and the reading of boundaries, moved out of the snapshot so both Tectonics implementations share them. |
+| `engine.py`, `store.py`, `cli.py` | History snapshots (`snapshot_every_rounds`, `snapshot_fields`; the refusal is gone). The store holds a `carry` group, and `build --continue-from STORE --history-my N` continues a stored history. |
+| `server.py`, `viewer/` | `/api/history` and a second slider that plays the history as a film. |
+| `trials/long_history_trial.py` | The long trial (T6). |
+| `handoff/step3/` | The scripts and logs quoted here. |
+
+The default is now the plate history, with `history_length_my: 250` and snapshots every 5 rounds of `elevation`,
+`ocean_mask`, `plate_id` and `crust_type`. The declarations match `tests/design_declarations.py`, and the computed order
+of the geological stage is the design's: Tectonics, Isostasy, Lithology, FluvialErosion, SeaLevel, Drainage, SurfaceAge
+[MEASURED: `python -m worldengine order`].
+
+### 12.2 Departures from the design
+
+1. **Crust flow (Tectonics).** Crust thicker than 50 km flows sideways by one volume-keeping diffusion step of 300 km a
+   round. Without it, collision fronts piled single columns to the 70 km cap, and the preview world had cells 10 to 15 km
+   high [MEASURED: highest cell 13,650 m at 150 My and 15,210 m at 200 My, before the rule; 7,236 m at most after it].
+   The design has no such rule. It is the collapse of over-thick belts, stated as a cause.
+2. **Runoff before any climate (FluvialErosion).** The design's FluvialErosion reads `runoff_annual` from the previous
+   round, but the climate runs only after the history until build step 9. During the history every place gets the same
+   runoff, 300 mm/yr [UNVERIFIED: about Earth's land mean], and the base level of round 1 is 0 m.
+3. **Arcs become continents (Tectonics).** Ocean crust thickened past 20 km turns continental. Without this, Isostasy
+   (which places ocean floor by age alone) would never let an island arc rise.
+4. **Collision as volume moved, not the paper's surge.** The consumed continent's crust is spread within 600 km of the
+   front with weights (1 - (d/r)^2)^2, so continental rock is kept in the books. The paper's surge formula, with its
+   4,200 km reach, was not used.
+5. **Initial ocean ages.** The seeded start has no history, so in round 1 the floor gets the snapshot's age (distance to
+   the plate's ridge at half the opening speed, capped at 180 My).
+
+### 12.3 Measured on the default world (preview mesh, seed 20261004)
+
+[MEASURED: `handoff/step3/relief_report.log`, `handoff/step3/world_report.log`.] The right column is the world of step 2
+(commit ee7e52b), built for the comparison.
+
+| | Step 3 (250 My) | Step 2 (one round) | Earth, for scale |
+|---|---|---|---|
+| Land share of the surface | 0.277 | 0.344 | about 0.29 [UNVERIFIED] |
+| Continental crust share | 0.403 | 0.400 | about 0.4 [UNVERIFIED] |
+| Mean height of the land | 523 m | 675 m | about 840 m [UNVERIFIED] |
+| Highest cell | 5,045 m | 6,435 m | - |
+| Land above 1.5 km | 0.078 of land | 0.080 | - |
+| Ocean floor: mean age / oldest | 121 / 430 My | 126 / 180 My (cap) | about 60 / 180 to 200 My [UNVERIFIED] |
+| Ocean floor at 180 My or older | 0.241 | 0.505 | almost none [UNVERIFIED] |
+| Peaks of the height histogram (500 m bins) | -5,250, -2,750, -250 m | -5,250, -1,250, +250 m | two: about -4.5 km and +0.1 km [UNVERIFIED] |
+| Land draining into closed hollows | 0.192 | 0.468 | - |
+| Land under lakes | 0.035 | 0.089 | about 0.02 [UNVERIFIED] |
+| Mean erosion on land | 0.054 mm/yr | - | 0.01 to 0.1 mm/yr [UNVERIFIED] |
+| Slope against drained area, power (2,230 eroding land cells) | -0.595 | - | -m/n, about -0.5 |
+| Hack's law, river length against basin area (larger half of basins) | 0.546 | - | 0.5 to 0.6 |
+| Build time, preview | 92 s (limit 120 s) | 58 s | - |
+
+What the step mended, and what it did not:
+* Cliffs at continent edges are still there. Erosion cuts the coastal cells, but at 240 km a cell no shelf forms
+  [INFERRED from the maps; no number].
+* Floor at the age cap fell from half to a quarter. The quarter that is left is floor of the seeded start that no
+  trench has reached in 250 My, and it ages on to 430 My.
+* Land draining into closed hollows fell from 0.47 to 0.19, and land under lakes from 0.089 to 0.035.
+* Mountain belts lie along closing edges: 0.93 of the land above 1.5 km is within a trench or collision zone, or has
+  orogeny younger than 100 My [MEASURED]. That measure is loose, though, since 0.57 of all land passes it.
+* New floor is youngest along the ridges [MEASURED by eye on the map of `ocean_crust_age`; no number].
+
+### 12.4 Conditions of the "done when"
+
+| Condition | Result |
+|---|---|
+| A world stopped at 250 My equals, bit for bit, the 250 My moment inside a longer run | Met at 20 My against a 40 My run, for the four snapshot fields [MEASURED: `handoff/step3/bit_for_bit.log`]. Not run at 250 My. |
+| A world built to 250 My and continued to 500 My equals one built to 500 My | Met at 20 → 40 My: 124 of 124 field and table fingerprints equal [MEASURED: `handoff/step3/continuation_check.log`]. Not run at 250 → 500 My. |
+| The long history: no steady drift in five measures over 2,500 My | **Failed** (section 12.5): continental crust, land share, plates and mean continental thickness drift; the patch does not. |
+| Slope-area test | -0.595 against about -0.5 on the default world. The design's test (a tilted block under steady uplift, run to balance) was not built. |
+| Relief tests | Not written. |
+| Hack's law 0.5 to 0.6 | 0.546 [MEASURED]. |
+| Crust trial condition A (patch within one cell after 125 rounds) | Met: 0.42 cells at 250 My on the preview mesh, on a patch that a rift split at about 24 My and collisions later partly consumed [MEASURED: section 12.5]. Two earlier measures were wrong and were dropped (the trial's docstring says how). |
+| Crust trial conditions B and C | Not measured. |
+| Standard mesh | Not run. A standard build will likely exceed its 1,800 s limit: geology alone costs about 0.4 s a round on the preview mesh, and the cost grows with the cell count [INFERRED; not run]. |
+
+### 12.5 The long trial: 2,500 My on the preview mesh
+
+[MEASURED: `python trials/long_history_trial.py 2500 250`, 574 s; `trials/results/long_history_trial.json`,
+`handoff/step3/long_history_trial.log`.]
+
+| Time (My) | Continental crust (10^9 km³) | Continental share | Land share | Plates | Mean land height (m) | Mean continental thickness (km) | Patch stray (cells) | Patch left |
+|---|---|---|---|---|---|---|---|---|
+| 2 | 7.46 | 0.400 | 0.340 | 14 | 507 | 36.6 | 0.00 | 1.00 |
+| 250 | 6.75 | 0.403 | 0.277 | 20 | 523 | 32.8 | 0.42 | 0.58 |
+| 500 | 7.26 | 0.448 | 0.224 | 17 | 425 | 31.8 | 0.32 | 0.57 |
+| 750 | 8.75 | 0.521 | 0.211 | 13 | 565 | 32.9 | 0.28 | 0.59 |
+| 1000 | 10.56 | 0.599 | 0.209 | 10 | 898 | 34.6 | 0.21 | 0.65 |
+| 1250 | 11.90 | 0.694 | 0.219 | 9 | 382 | 33.6 | 0.18 | 0.65 |
+| 1500 | 13.54 | 0.736 | 0.251 | 9 | 561 | 36.0 | 0.17 | 0.67 |
+| 1750 | 14.84 | 0.784 | 0.279 | 12 | 432 | 37.1 | 0.15 | 0.60 |
+| 2000 | 16.48 | 0.812 | 0.207 | 13 | 272 | 39.8 | 0.11 | 0.61 |
+| 2250 | 19.09 | 0.878 | 0.096 | 11 | 372 | 42.6 | 0.09 | 0.53 |
+| 2500 | 20.95 | 0.913 | 0.039 | 11 | 595 | 45.0 | 0.07 | 0.51 |
+
+**Failed.** Four of the five measures drift steadily:
+* Continental crust grows from 0.40 of the surface to 0.91, and its volume nearly triples.
+* The plates fall from 14 (20 at 250 My) to 9 to 13.
+* Land shrinks to 0.04 of the surface, because the oceans have too little floor left to hold the sea.
+* Only the patch keeps to its plates: its stray is 0.42 cells at 250 My and falls to 0.07, within one cell throughout.
+
+The cause [INFERRED, not isolated by a run]: island arcs become continental crust (departure 3 of section 12.2), and
+nothing in the model destroys continental crust except erosion. Erosion takes it slowly, and its thinning stops near
+sea level. Earth recycles crust by sediment subduction and the delamination of roots, which the model does not do.
+
+Drift already shows in the first 250 My: land share 0.34 to 0.28, mean continental thickness 36.6 to 32.8 km, plates 14
+to 20. So no span free of drift was found at this sampling. The expected range of the history length in `models.yaml`
+is set to 2 to 250 My, the default that was measured here; it is not a span that showed no drift. A longer history
+gets the notice that its model runs outside its expected range.
+
+### 12.6 Not done
+
+These are left undone: the tests of T1 to T6; `tools/why_scan.py` rules for the new sentences; the refusal audit; the
+standard mesh; the Earth twin (it leaves Tectonics out, and what erosion should do on measured relief is undecided); the
+design document's "Build order"; an independent check. The `explain` answer walks through the new fields
+[MEASURED: the highest cell's answer names the thickening, the erosion and the collision event behind it].
+
+### 12.7 Questions for the owner
+
+1. Erosion takes rock away for ever (the design's limit), so continental crust thins from 36.6 to 32.8 km in 250 My
+   [MEASURED]. Should step 3 lay the eroded rock down (on margins, as shelves), or does the limit stand until a later step?
+2. The erosion coefficient (1.2e-7 /yr), the rifting rate and the crust-flow rule were tuned by eye on one seed. Which
+   Earth numbers should they be tuned against?
+3. Should the default return to the snapshot until the suite is re-measured and the conditions are fixed beforehand, as
+   `docs/step3/ACTIONS.md` asks?
