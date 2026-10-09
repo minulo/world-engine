@@ -51,8 +51,7 @@ def build(profile: str, out: str):
     if Path(out).exists():
         sys.exit(f"{out} is there already: a world store is written once. Name another path, or remove it.")
     level = text("profiles.yaml")["profiles"][profile]["mesh_level"]
-    overrides = {"models": ref.earth_twin_models(text("models.yaml"), get_mesh(level)),
-                 "explanations": ref.earth_twin_explanations(text("explanations.yaml"))}
+    overrides = ref.earth_twin_overrides(DATA, get_mesh(level))
     engine = Engine(DATA, profile=profile, overrides=overrides, log=print)
     world = engine.build()
     store.save(world, engine, out)

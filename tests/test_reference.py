@@ -597,6 +597,8 @@ def test_the_twins_relief_is_made_afresh_from_the_checked_file_and_a_planted_one
     models = ref.earth_twin_models(yaml.safe_load((DATA / "models.yaml").read_text(encoding="utf-8")), m)
     constants = models["slots"]["Isostasy"]["constants"]
     assert constants == {"file": "earth_relief_level3.npy", "sha256": digest, "folder_from_env": ref.RELIEF_FOLDER_VARIABLE}
-    assert "Tectonics" not in models["slots"] and "Drainage" in models["slots"]
+    assert not set(ref.WITHOUT_CRUST) & set(models["slots"]) and "Drainage" in models["slots"]
+    assert all(s["history_length_my"] == s["round_length_my"] for s in ref.earth_twin_overrides(DATA, m)["stages"]["stages"]
+               if s["clock"] == "geological")
     words = ref.earth_twin_explanations(yaml.safe_load((DATA / "explanations.yaml").read_text(encoding="utf-8")))
     assert "Tectonics" not in words and "read from a file" in words["Isostasy"]["elevation"]["says"]

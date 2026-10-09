@@ -1475,9 +1475,7 @@ def test_earths_measured_climate_falls_into_the_climate_classes_in_earths_shares
 def twin():
     """The whole engine on Earth's relief, on the preview mesh (10,242 cells about 240 km apart): only the heights are
     Earth's. tools/earth_twin.py builds the same world and prints it beside Earth."""
-    models = ref.earth_twin_models(yaml.safe_load((DATA / "models.yaml").read_text(encoding="utf-8")), get_mesh(5))
-    e = Engine(DATA, profile="preview", overrides={"models": models, "explanations": ref.earth_twin_explanations(
-        yaml.safe_load((DATA / "explanations.yaml").read_text(encoding="utf-8")))})
+    e = Engine(DATA, profile="preview", overrides=ref.earth_twin_overrides(DATA, get_mesh(5)))
     return e, e.build()
 
 

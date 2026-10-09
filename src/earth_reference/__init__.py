@@ -1379,13 +1379,34 @@ def earth_relief_file(mesh) -> tuple:
 def earth_twin_explanations(explanations: dict) -> dict:
     """The sentence patterns of the Earth twin: its relief is read from a file, and it has no plates and no crust,
     so the patterns that explain a seeded world's heights by its crust would say false things."""
-    twin = {slot: fields for slot, fields in explanations.items() if slot != "Tectonics"}
+    twin = {slot: fields for slot, fields in explanations.items() if slot not in WITHOUT_CRUST}
     twin["Isostasy"] = {"elevation": {
         "says": "The solid surface stands at {value} relative to the reference level: the mean of Earth's measured relief "
                 "(ETOPO5) over this cell, read from a file.",
         "ends": "The chain ends here, at a file that is not part of the engine. This world is the Earth twin: it is built on "
                 "measured relief, and has no plates and no crust to explain its heights."}}
     return twin
+
+
+# The slots the twin leaves out: they read the crust that a twin on measured relief does not have. Measured relief is
+# already cut by Earth's rivers, so the twin wears nothing away (build step 3: no FluvialErosion on measured relief).
+WITHOUT_CRUST = ("Tectonics", "Lithology", "FluvialErosion", "SurfaceAge")
+
+
+def earth_twin_stages(stages: dict) -> dict:
+    """The stages of the Earth twin: one geological round, since nothing on measured relief changes from round to round."""
+    out = {**stages, "stages": [dict(s) for s in stages["stages"]]}
+    for s in out["stages"]:
+        if s.get("clock") == "geological":
+            s["history_length_my"] = s["round_length_my"]
+    return out
+
+
+def earth_twin_overrides(data_dir, mesh) -> dict:
+    """Everything the Earth twin changes in the parameter files of data_dir: models, sentence patterns and stages."""
+    read = lambda name: yaml.safe_load((Path(data_dir) / name).read_text(encoding="utf-8"))
+    return {"models": earth_twin_models(read("models.yaml"), mesh), "explanations": earth_twin_explanations(read("explanations.yaml")),
+            "stages": earth_twin_stages(read("stages.yaml"))}
 
 
 def earth_twin_models(models: dict, mesh) -> dict:
@@ -1398,7 +1419,7 @@ def earth_twin_models(models: dict, mesh) -> dict:
     process ReliefFromFile reads the variable when the world is built."""
     path, digest = earth_relief_file(mesh)
     os.environ[RELIEF_FOLDER_VARIABLE] = str(Path(path).parent)
-    twin = {**models, "slots": {name: slot for name, slot in models["slots"].items() if name != "Tectonics"}}
+    twin = {**models, "slots": {name: slot for name, slot in models["slots"].items() if name not in WITHOUT_CRUST}}
     twin["slots"]["Isostasy"] = {
         "implementation": "worldengine.processes.relief_from_file:ReliefFromFile", "standing": "Test",
         "model": "Earth's measured relief (ETOPO5), the mean over each cell, read from a file: the Earth twin.",

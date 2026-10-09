@@ -425,10 +425,17 @@ def test_the_lineage_fingerprint_changes_with_everything_a_push_is_given():
 
 # ------------------------------------------------------------------------------------------ settings that are refused, not ignored
 def test_settings_for_what_is_not_built_are_refused_not_ignored():
-    """Every profile asked for snapshots of the history, and nothing read the setting."""
+    """Snapshots of the history are built (step 3); a profile that half asks for them, or names a field that has no
+    single value per cell, is refused. (Until step 3 every profile asked for snapshots, and nothing read the setting.)"""
     with pytest.raises(ParameterError) as err:
         engine({}, keep_trio=True, profile={"snapshot_every_rounds": 5})
-    assert "they are built in step 3" in str(err.value)
+    assert "must give both snapshot_every_rounds and snapshot_fields, or neither" in str(err.value)
+    with pytest.raises(ParameterError) as err:
+        engine({}, keep_trio=True, profile={"snapshot_every_rounds": 0, "snapshot_fields": ["a"]})
+    assert "snapshot_every_rounds: 0 must be at least 1" in str(err.value)
+    with pytest.raises(ParameterError) as err:
+        engine({}, keep_trio=True, profile={"snapshot_every_rounds": 5, "snapshot_fields": ["no_such_field"]})
+    assert "asks for snapshots of no_such_field, which is not a field of one value per cell" in str(err.value)
     stages = copy.deepcopy(WITH_GEO)
     stages["stages"][2]["step"] = "day"
     with pytest.raises(ParameterError) as err:

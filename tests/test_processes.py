@@ -10,6 +10,7 @@ from worldengine.processes.biomes_whittaker_koppen import koppen
 from worldengine.testing import Harness
 
 R = 6.371e6
+SNAPSHOT = "worldengine.processes.tectonics_snapshot:SnapshotPlates"   # the Tectonics of steps 1 and 2, whose rules these tests hold
 CIRCULAR = {"orbit": {"eccentricity": 0.0, "perihelion_solar_longitude_deg": 0.0, "northward_equinox_year_fraction": 0.0}}
 
 
@@ -41,7 +42,7 @@ def two_plates(h, speed_north, speed_south):
     none = np.full(n, -1, dtype=np.int32)
     points = {"plate": plate, "x": m.xyz[:, 0], "y": m.xyz[:, 1], "z": m.xyz[:, 2], "crust_type": np.zeros(n, dtype=np.int16),
               "thickness_m": np.full(n, 7000.0), "ocean_age_my": np.full(n, np.nan), "orogeny_age_my": np.full(n, np.nan),
-              "thickened_by_plates_m": zero, "removed_by_erosion_m": zero, "source_a": none, "source_b": none, "source_c": none,
+              "thickened_by_plates_m": zero, "removed_by_erosion_m": zero, "formed_m": zero, "last_event": none, "source_a": none, "source_b": none, "source_c": none,
               "weight_a": zero, "weight_b": zero, "weight_c": zero}
     plates = {"plate": [0, 1], "axis_x": [1.0, 1.0], "axis_y": [0.0, 0.0], "axis_z": [0.0, 0.0],
               "angular_speed_rad_per_my": [speed_north, speed_south], "area_m2": [0.0, 0.0], "continental_share": [0.0, 0.0],
@@ -53,7 +54,7 @@ def two_plates(h, speed_north, speed_south):
 def test_two_plates_moving_apart_make_young_floor_along_the_line_where_they_part(h):
     g = geometry(h)
     points, plates, events = two_plates(h, 0.005, -0.005)            # at longitude 90 the north plate moves north, the south plate south
-    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]},
+    out = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]},
                 lagged_tables={"crust_points": points, "plates": plates, "tectonic_events": events})
     f, m = out.fields, h.mesh
     kinds = h.registry.fields["boundary_kind"].categories
@@ -73,7 +74,7 @@ def test_continents_closing_thicken_the_crust_on_both_sides(h):
     points, plates, events = two_plates(h, -0.005, 0.005)            # now the plates close along the equator near longitude 90
     points["crust_type"] = np.ones(h.mesh.n, dtype=np.int16)
     points["thickness_m"] = np.full(h.mesh.n, 35000.0)
-    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]},
+    out = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]},
                 lagged_tables={"crust_points": points, "plates": plates, "tectonic_events": events})
     f, m = out.fields, h.mesh
     kinds = h.registry.fields["boundary_kind"].categories
@@ -101,7 +102,7 @@ def split_planet(h, pole, axis_a, axis_b, speed_a, speed_b, continental=None):
     points = {"plate": plate, "x": m.xyz[:, 0], "y": m.xyz[:, 1], "z": m.xyz[:, 2], "crust_type": ctype,
               "thickness_m": np.where(ctype == 1, 35000.0, 7000.0), "ocean_age_my": np.full(n, np.nan),
               "orogeny_age_my": np.full(n, np.nan), "thickened_by_plates_m": zero, "removed_by_erosion_m": zero,
-              "source_a": none, "source_b": none, "source_c": none, "weight_a": zero, "weight_b": zero, "weight_c": zero}
+              "formed_m": np.where(ctype == 1, 35000.0, 7000.0), "last_event": none, "source_a": none, "source_b": none, "source_c": none, "weight_a": zero, "weight_b": zero, "weight_c": zero}
     plates = {"plate": [0, 1], "axis_x": [axis_a[0], axis_b[0]], "axis_y": [axis_a[1], axis_b[1]], "axis_z": [axis_a[2], axis_b[2]],
               "angular_speed_rad_per_my": [speed_a, speed_b], "area_m2": [0.0, 0.0], "continental_share": [0.0, 0.0],
               "carries_continent": [False, False], "centre_x": [0.0, 0.0], "centre_y": [0.0, 0.0], "centre_z": [1.0, -1.0]}
@@ -129,7 +130,7 @@ def test_plates_sliding_past_each_other_make_a_transform_boundary_whichever_way_
     reports false ridges and trenches here."""
     g = geometry(h)
     plate, tables = split_planet(h, pole, pole, pole, 0.005, -0.005)
-    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
+    out = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
     f = out.fields
     kinds = h.registry.fields["boundary_kind"].categories
     edge = touching_another_plate(h.mesh, plate)
@@ -151,7 +152,7 @@ def test_the_closing_speed_of_a_head_on_boundary_is_reported_to_within_three_per
     axis /= np.linalg.norm(axis)
     speed = 0.005
     plate, tables = split_planet(h, pole, axis, axis, speed, -speed)
-    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
+    out = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
     # the true closing speed at each cell: its own plate's velocity relative to the other, along the line to the other plate
     own = np.where((plate == 0)[:, None], axis, -axis) * (2 * speed / 1e6)
     relative = np.cross(own, m.xyz) * R
@@ -172,7 +173,7 @@ def test_ocean_floor_dives_under_a_continent_and_the_belt_rises_on_the_continent
         plate0 = m.xyz[:, 2] > 0
         continental = plate0 if continent_plate == 0 else ~plate0
         plate, tables = split_planet(h, (0, 0, 1), (1, 0, 0), (1, 0, 0), -0.005, 0.005, continental=continental)
-        out = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
+        out = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
         f = out.fields
         near = (np.abs(m.lat) < 6) & (np.abs(m.lon - 90) < 25)                # here the plates close head on
         thickened = out.drivers["crust_thickness"]["thickened_by_plates"]
@@ -187,7 +188,7 @@ def test_between_two_ocean_floors_one_plate_dives_along_the_whole_trench(h):
     g = geometry(h)
     m = h.mesh
     plate, tables = split_planet(h, (0, 0, 1), (1, 0, 0), (1, 0, 0), -0.005, 0.005)
-    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
+    out = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, lagged_tables=tables)
     f = out.fields
     kinds = h.registry.fields["boundary_kind"].categories
     here = np.abs(m.lon - 90) < 25                                             # where the plates close head on
@@ -207,7 +208,7 @@ def plate_tables(mesh, plate, axes, speeds, continental=None):
     points = {"plate": np.asarray(plate).astype(np.int32), "x": mesh.xyz[:, 0], "y": mesh.xyz[:, 1], "z": mesh.xyz[:, 2],
               "crust_type": ctype, "thickness_m": np.where(ctype == 1, 35000.0, 7000.0), "ocean_age_my": np.full(n, np.nan),
               "orogeny_age_my": np.full(n, np.nan), "thickened_by_plates_m": zero, "removed_by_erosion_m": zero,
-              "source_a": none, "source_b": none, "source_c": none, "weight_a": zero, "weight_b": zero, "weight_c": zero}
+              "formed_m": np.where(ctype == 1, 35000.0, 7000.0), "last_event": none, "source_a": none, "source_b": none, "source_c": none, "weight_a": zero, "weight_b": zero, "weight_c": zero}
     plates = {"plate": list(range(k)), "axis_x": list(axes[:, 0]), "axis_y": list(axes[:, 1]), "axis_z": list(axes[:, 2]),
               "angular_speed_rad_per_my": list(speeds), "area_m2": [0.0] * k, "continental_share": [0.0] * k,
               "carries_continent": [False] * k, "centre_x": [0.0] * k, "centre_y": [0.0] * k, "centre_z": [1.0] * k}
@@ -225,7 +226,7 @@ def test_a_narrow_plate_sliding_inside_another_is_a_transform_on_both_flanks(h, 
     half_width = half_width_cells * np.rad2deg(m.spacing())
     plate = np.where(np.abs(m.lat) > half_width, 0, 1)
     tables = plate_tables(m, plate, [(0, 0, 1)] * 2, [0.0, 0.006])
-    f = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=tables).fields
+    f = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, lagged_tables=tables).fields
     kinds = h.registry.fields["boundary_kind"].categories
     edge = touching_another_plate(m, plate)
     assert edge[plate == 1].sum() > 50
@@ -244,7 +245,7 @@ def test_a_plate_of_one_cell_has_no_ridge_or_trench(h):
         plate = np.zeros(m.n, dtype=np.int32)
         plate[cell] = 1
         axis = np.cross(m.xyz[cell], [0.0, 0.0, 1.0] if abs(m.xyz[cell][2]) < 0.9 else [1.0, 0.0, 0.0])
-        f = h.run("Tectonics", reads={"cell_area": g["cell_area"]}, lagged_tables=plate_tables(m, plate, [axis, axis], [0.0, 0.0094])).fields
+        f = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, lagged_tables=plate_tables(m, plate, [axis, axis], [0.0, 0.0094])).fields
         assert f["boundary_kind"][cell] == kinds.index("transform") and f["convergence_rate"][cell] == 0.0
 
 
@@ -266,7 +267,7 @@ def turned_and_plain(hh, points, plates):
     axes = np.stack([plates["axis_x"], plates["axis_y"], plates["axis_z"]], axis=1) @ rz.T
     turned_plates = dict(plates, axis_x=axes[:, 0], axis_y=axes[:, 1], axis_z=axes[:, 2])
     events = {"time_my": [], "kind": [], "plate_a": [], "plate_b": [], "cells": []}
-    run = lambda pts, pl: hh.run("Tectonics", reads={"cell_area": g["cell_area"]},
+    run = lambda pts, pl: hh.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]},
                                  lagged_tables={"crust_points": pts, "plates": pl, "tectonic_events": events}).fields
     return run(points, plates), run(turned_points, turned_plates), goes_to
 
@@ -289,7 +290,7 @@ def test_turning_the_planet_by_one_face_of_the_mesh_turns_the_tectonics_with_it(
     review: the crust differed by up to 10.6 km in the default world)."""
     hh = Harness(level=4, seed=20261004)
     g = geometry(hh)
-    seeded = hh.run("Tectonics", reads={"cell_area": g["cell_area"]}, start=True)
+    seeded = hh.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, start=True)
     plain, turned, goes_to = turned_and_plain(hh, seeded.tables["crust_points"], seeded.tables["plates"])
     assert_the_same_world_turned(plain, turned, goes_to)
 
@@ -338,7 +339,7 @@ def test_events_count_boundary_cells_and_a_cell_names_its_event_only_where_mount
     points, plates, events = two_plates(h, -0.005, 0.005)
     points["crust_type"] = np.ones(h.mesh.n, dtype=np.int16)
     points["thickness_m"] = np.full(h.mesh.n, 35000.0)
-    out = h.run("Tectonics", reads={"cell_area": g["cell_area"]},
+    out = h.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]},
                 lagged_tables={"crust_points": points, "plates": plates, "tectonic_events": events})
     ev = out.tables["tectonic_events"]
     collision, spreading = 2, 4                                                # the plates close on one side of the planet and part on the other
@@ -363,7 +364,7 @@ def test_in_a_seeded_world_the_two_sides_of_a_trench_do_not_both_dive_or_both_ov
     from worldengine.processes.tectonics_snapshot import TRENCH, SnapshotPlates
     hh = Harness(level=5, seed=seed)
     g = geometry(hh)
-    out = hh.run("Tectonics", reads={"cell_area": g["cell_area"]}, start=True)
+    out = hh.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, start=True)
     m, f, pl = hh.mesh, out.fields, out.tables["plates"]
     plate, ctype = f["plate_id"], f["crust_type"]
     k = len(pl["plate"])
@@ -385,7 +386,7 @@ def test_seeded_plates_are_the_same_at_every_mesh_level_and_differ_with_the_seed
     def seeded(level, seed):
         hh = Harness(level=level, seed=seed)
         g = geometry(hh)
-        out = hh.run("Tectonics", reads={"cell_area": g["cell_area"]}, start=True)
+        out = hh.run("Tectonics", implementation=SNAPSHOT, reads={"cell_area": g["cell_area"]}, start=True)
         return hh.mesh, out
     m3, a = seeded(3, 5)
     m4, b = seeded(4, 5)

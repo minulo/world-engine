@@ -2,6 +2,7 @@
 
     python -m worldengine order   [--profile P]
     python -m worldengine build   --profile preview --out worlds/first.zarr [--seed N] [--interventions FILE]
+                                  [--history-my 500 --continue-from worlds/older.zarr]
     python -m worldengine serve   worlds/first.zarr [--port 8765]
     python -m worldengine explain worlds/first.zarr --lat 48 --lon -20 --field biome
     python -m worldengine info    worlds/first.zarr
@@ -31,6 +32,12 @@ def _engine(args, log=None):
         except FileNotFoundError:
             raise ParameterError(f"{path}: the push file is missing") from None
         overrides["interventions"] = load_yaml_text(text, path.name) or []
+    if getattr(args, "history_my", None) is not None:        # the length of the geological history, in place of stages.yaml's
+        stages = load_yaml_text((Path(args.data) / "stages.yaml").read_text(encoding="utf-8"), "stages.yaml")
+        for s in stages["stages"]:
+            if s.get("clock") == "geological":
+                s["history_length_my"] = float(args.history_my)
+        overrides["stages"] = stages
     return Engine(args.data, profile=args.profile, seed=args.seed, overrides=overrides or None, log=log)
 
 
@@ -52,6 +59,8 @@ def main(argv=None) -> int:
         if name == "build":
             sp.add_argument("--out", required=True, help="path of the world store to write")
             sp.add_argument("--quiet", action="store_true")
+            sp.add_argument("--history-my", type=float, default=None, help="length of the geological history in My")
+            sp.add_argument("--continue-from", default=None, help="a world store whose geological history this build goes on from")
     sp = sub.add_parser("serve")
     sp.add_argument("store")
     sp.add_argument("--port", type=int, default=8765)
@@ -86,7 +95,11 @@ def main(argv=None) -> int:
                 return 2
             t0 = time.perf_counter()
             eng = _engine(args, log=None if args.quiet else print)
-            world = eng.build()
+            carry = None
+            if args.continue_from:
+                from .store import StoreView
+                carry = StoreView(args.continue_from)
+            world = eng.build(continue_from=carry)
             store.save(world, eng, out)
             m = world.meta
             print(f"world written to {out}: {m['cells']} cells, seed {m['seed']}, {time.perf_counter() - t0:.1f} s, "
