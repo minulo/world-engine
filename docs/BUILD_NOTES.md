@@ -1986,11 +1986,10 @@ can show stay open: a first run on Windows (section 6), and the times on the lap
 
 Written 2026-10-08, on commit 6bdba78 and the commits after it on the branch `claude/quirky-newton-a5zchs`. This step was
 built in one session at the owner's request to "finish the engine in a token efficient way, follow the plan and ignore
-the test". So it departs from `docs/step3/ACTIONS.md` in three ways, all at the owner's word: no pass conditions were
-written before the runs (`docs/step3/PASS_CONDITIONS.md` does not exist); no test was written; and the test suite was
-not run. Every condition below was judged after its number was seen, so each is "found, then kept" and proves less than
-a condition fixed beforehand. The 864 tests of step 2 pin numbers of a world with one round of geology. Many of them now
-fail or need re-measuring [INFERRED: the default world changed throughout; not run].
+the test". So it departs from `docs/step3/ACTIONS.md`: no pass conditions were written before the runs
+(`docs/step3/PASS_CONDITIONS.md` does not exist), and every condition below was judged after its number was seen, so
+each is "found, then kept" and proves less than a condition fixed beforehand. On 2026-10-09 the owner asked for the tests
+to be fixed "as long as they are relevant"; section 12.8 says what changed in them.
 
 ### 12.1 What was built
 
@@ -2110,7 +2109,7 @@ gets the notice that its model runs outside its expected range.
 
 ### 12.6 Not done
 
-These are left undone: the tests of T1 to T6; `tools/why_scan.py` rules for the new sentences; the refusal audit; the
+These are left undone: the slope-area test on a tilted block and the relief tests of T3 and T5; `tools/why_scan.py` rules for the new sentences; the refusal audit; the
 standard mesh; the Earth twin (it leaves Tectonics out, and what erosion should do on measured relief is undecided); the
 design document's "Build order"; an independent check. The `explain` answer walks through the new fields
 [MEASURED: the highest cell's answer names the thickening, the erosion and the collision event behind it].
@@ -2123,3 +2122,37 @@ design document's "Build order"; an independent check. The `explain` answer walk
    Earth numbers should they be tuned against?
 3. Should the default return to the snapshot until the suite is re-measured and the conditions are fixed beforehand, as
    `docs/step3/ACTIONS.md` asks?
+
+### 12.8 The tests, fixed (2026-10-09)
+
+[MEASURED: `python -m pytest` with the Earth data present, on the commit that holds this section: 853 pass, 37 are
+strict expected failures (34 of Earth, 3 of the default world), none fail, none are skipped.]
+
+* **The Tectonics tests of `tests/test_processes.py`** hold the rules of the snapshot, which is still there: they now
+  name it (`Harness.run(..., implementation=...)`, new). The rules of boundaries it shares with the plate history live in
+  `library/plates.py`.
+* **New: `tests/test_history.py`** (13 tests, written with the code in view): a history continued from a store equals one
+  run (8 then 16 My, a geology-only world with a uniform runoff); a world stopped early equals the picture inside a longer
+  run; the store and the server hand out the pictures; the four new refusals; two plates moving apart make new floor
+  youngest where they part; each row of the rock table; the four resets of SurfaceAge. Writing the last found a fault:
+  SurfaceAge compared erosion in mm/yr times My (kilometres) with a depth in metres, so deep erosion never renewed the
+  ground. Fixed; only `surface_age` of the default world changed.
+* **The Earth twin** leaves out Tectonics, Lithology, FluvialErosion and SurfaceAge (measured relief is already cut) and
+  runs one geological round (`earth_reference.earth_twin_overrides`). Its climate is unchanged: the 34 expected failures
+  of `tests/test_earth.py` hold the same numbers.
+* **FluvialErosion records its change of elevation** as a driver, so that the drivers of elevation add up to the stored
+  height, and the "why" answer says what erosion took. The term "erosion has since changed it" now ends its chain.
+* **Snapshots**: a profile that names a field this world does not write on the geological clock (a world of some slots,
+  the twin) gets a note, not a refusal.
+* **Re-measured and pinned again** (`tests/test_world.py`, each saying what it was before): the order of the geological
+  stage; the cooling by 2 % less sunlight (2.97 K, was 4.8) and the dimming at which the world freezes over (9 %, was
+  5 %); the dry band of the north (58° N, 309 mm), its land (91 cells, 0.48 of the band, 405 m, -9.3 C); mountains and
+  closing edges (every cell above 3 km beside a closing boundary or in a belt younger than 100 My, 14 of 16 beside a
+  closing one); land draining into hollows (0.19); the rivers (largest mouth 57,378 m3/s; its largest source gets 624 mm
+  of rain, below the land's mean of 853: snow that never melts at 48° N); snow cover; the world report's counts; the
+  README's example answer.
+* **New strict expected failures**: the design's dry-belt condition in the south (driest band at 58° S, 458 mm; the band
+  at 29° S gets 487 mm), and the found-then-kept dry belt equatorward of 50° in the north (driest at 49° N, 595 mm, as wet
+  as the storm belt). Both came with the plate history, which moved the land. The two southernmost bands of 10° are level
+  within 0.03 K; the test of colder-toward-each-pole now lets a step of 0.1 K pass.
+

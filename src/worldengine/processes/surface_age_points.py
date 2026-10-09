@@ -11,6 +11,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from ..library import operators as op
+from ..library.units import MM_PER_M, TINY, YEARS_PER_MY
 from ..process import Process
 
 
@@ -41,13 +42,14 @@ class PointSurfaceAge(Process):
         total = wts.sum(axis=1)
         safe = np.where(known, src, 0)
         fresh = total <= 0                                   # new ocean floor: no older point
-        age = np.where(fresh, 0.0, (old_age[safe] * wts).sum(axis=1) / np.maximum(total, 1e-300)) + np.where(fresh, 0.0, dt)
+        age = np.where(fresh, 0.0, (old_age[safe] * wts).sum(axis=1) / np.maximum(total, TINY)) + np.where(fresh, 0.0, dt)
         was_sea = np.where(fresh, True, old_sea[safe[:, 0]])
         pos = np.stack([pts["x"], pts["y"], pts["z"]], axis=1)
         cell = op.nearest_cell(mesh, pos, ctx.memo)
         sea = np.asarray(ctx.read("ocean_mask"), dtype=bool)
         lava = ctx.read("volcanism")[cell] > c["lava_above"]
-        deep = ctx.read("erosion_rate")[cell] * dt > c["deep_erosion_m_per_round"]    # mm/yr x My = m
+        worn_m = ctx.read("erosion_rate")[cell] * dt * YEARS_PER_MY / MM_PER_M          # mm/yr over the round, in m
+        deep = worn_m > c["deep_erosion_m_per_round"]
         risen = was_sea & ~sea[cell]
         reason = np.select([fresh, lava, deep, risen], [1, 2, 3, 4], 0)
         age = np.where(reason > 0, 0.0, age)

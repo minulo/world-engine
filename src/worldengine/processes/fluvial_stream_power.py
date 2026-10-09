@@ -20,8 +20,10 @@ import numpy as np
 from numba import njit
 
 from ..library import operators as op
-from ..library.units import YEARS_PER_MY
+from ..library.units import MM_PER_M, YEARS_PER_MY
 from ..process import Process
+
+AMONG_MODIFIERS = 10            # the place of FluvialErosion among the modifiers of elevation (design, Layer 4)
 
 
 @njit(cache=True)
@@ -87,11 +89,11 @@ class StreamPowerErosion(Process):
     reads = ("erodibility", "cell_area")
     reads_lagged = ("runoff_annual", "table:seas")
     modifies = ("elevation",)
-    priority = 10
+    priority = AMONG_MODIFIERS
     writes = ("erosion_rate",)
     adds_to = {"crust_thickness_tendency": "erosion_thinning"}
     model = "the stream power law solved implicitly (Braun and Willett 2013), with hillside creep"
-    drivers = {"erosion_rate": ("rivers", "creep")}
+    drivers = {"erosion_rate": ("rivers", "creep"), "elevation": ("worn_away_by_rivers_and_creep",)}
     additive = ("erosion_rate",)
 
     def run(self, ctx):
@@ -122,8 +124,9 @@ class StreamPowerErosion(Process):
         creep = np.where(sea, 0.0, np.maximum(cut - crept, 0.0))
         worn = rivers + creep
         ctx.write("elevation", h - worn)
-        per_year = 1000.0 / dt_yr                         # m per round -> mm per year
+        per_year = MM_PER_M / dt_yr                       # m per round -> mm per year
         ctx.write("erosion_rate", worn * per_year)
         ctx.add_to_group("crust_thickness_tendency", -worn)
         ctx.driver("erosion_rate", "rivers", rivers * per_year)
         ctx.driver("erosion_rate", "creep", creep * per_year)
+        ctx.driver("elevation", "worn_away_by_rivers_and_creep", -worn)     # with Isostasy's terms, the sum is the stored height

@@ -450,13 +450,13 @@ class Engine:
         every, snap = self.profile.get("snapshot_every_rounds"), self.profile.get("snapshot_fields") or []
         if (every is None) != (not snap):
             problems.append(f"profiles.yaml: profile {self.profile_name} must give both snapshot_every_rounds and snapshot_fields, or neither")
-        if every is not None and (not isinstance(every, int) or every < 1):
-            problems.append(f"profiles.yaml: profile {self.profile_name}: snapshot_every_rounds must be a whole number of at least 1")
         for f in snap:
-            if f not in self.registry.fields or self.registry.fields[f].shape != "cell" or \
-                    self.clocks.get(self.stage_of.get(f)) != "geological":
+            if f not in self.registry.fields or self.registry.fields[f].shape != "cell":
                 problems.append(f"profiles.yaml: profile {self.profile_name} asks for snapshots of {f}, which is not a field of one "
-                                f"value per cell written on the geological clock")
+                                f"value per cell")
+            elif self.clocks.get(self.stage_of.get(f)) != "geological":   # a world built from some of the slots
+                self.plan.notes.append(f"profiles.yaml asks for snapshots of {f}, which this world does not write on the "
+                                       f"geological clock: no picture of it is kept")
         if self.profile.get("climate_rerun_every_rounds") is not None:
             problems.append(f"profiles.yaml: profile {self.profile_name} reruns the climate inside the geological history; "
                             f"that link is built in step 9")
@@ -907,7 +907,8 @@ class Engine:
     def _run_geological(self, stage):
         cfg = self.stage_cfg[stage]
         rounds = max(1, math.ceil(cfg["history_length_my"] / cfg["round_length_my"] - 1e-9))
-        every, snap = self.profile.get("snapshot_every_rounds"), list(self.profile.get("snapshot_fields") or [])
+        every = self.profile.get("snapshot_every_rounds")
+        snap = [f for f in self.profile.get("snapshot_fields") or [] if self.stage_of.get(f) == stage]
         if self.carry is not None:                           # go on from a stored world (design: continue a finished history)
             first = self._load_carry(stage)
             if first > rounds:

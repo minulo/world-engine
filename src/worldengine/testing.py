@@ -66,7 +66,7 @@ class Harness(Engine):
         self._received, self._last_given, self._applied, self._rounds_in_force = set(), {}, {}, {}
 
     def run(self, slot, reads=None, lagged=None, groups=None, tables=None, lagged_tables=None, constants=None,
-            shared=None, round_no=1, recording=True, start=False) -> Result:
+            shared=None, round_no=1, recording=True, start=False, implementation=None) -> Result:
         """Run one slot's process once.
 
         reads           field -> array, for its plain reads (and the fields it modifies)
@@ -77,12 +77,13 @@ class Harness(Engine):
         constants       changes to the slot's constants in models.yaml, merged key by key
         shared          changes to the shared constants
         start           True to call the process's start step before its run
+        implementation  "module:Class" in place of the one models.yaml names for the slot (an earlier model of it)
         """
         slots = self.params["models"]["slots"]
         if slot not in slots:
             raise KeyError(f"models.yaml has no slot named {slot!r} (it has: {', '.join(slots)})")
         cfg = slots[slot]
-        proc = self._load_implementation(slot, cfg["implementation"])
+        proc = self._load_implementation(slot, implementation or cfg["implementation"])
         decl = declaration(proc)
         if start and not decl["start"]:
             raise ValueError(f"{slot} has no start step; start=True asks for one")

@@ -42,10 +42,11 @@ from ..library import operators as op
 from ..library.noise import WAVE_NUMBERS, wave_field
 from ..library.plates import (CONTINENTAL, OCEANIC, NONE, RIDGE, TRENCH, COLLISION, TRANSFORM, EVENT_SUBDUCTION,
                               EVENT_COLLISION, EVENT_SPREADING, _arc, _nearest, boundaries, diving, seeded_start)
-from ..library.units import M_PER_KM, YEARS_PER_MY
+from ..library.units import CM_PER_M, M_PER_KM, TINY, YEARS_PER_MY
 from ..process import Process
 
 EVENT_SPLIT = 3
+SAME_TIME_MY = 1.0e-9          # two event times closer than this are the same round
 
 
 def rotate(pos, axis, angle):
@@ -259,7 +260,7 @@ class PlateHistory(Process):
             window = int(h["weld_after_rounds"])
             for u_pl, t_pl, rid in weld_pairs:
                 lo, hi = min(u_pl, t_pl), max(u_pl, t_pl)
-                times = past[(kinds == EVENT_COLLISION) & (pa == lo) & (pb == hi) & (past > now - window * dt - 1e-9)]
+                times = past[(kinds == EVENT_COLLISION) & (pa == lo) & (pb == hi) & (past > now - window * dt - SAME_TIME_MY)]
                 if np.unique(np.round(times / dt)).size + 1 < window:
                     continue
                 cells = (plate_c == u_pl) & (ctype_c == CONTINENTAL)
@@ -387,10 +388,10 @@ class PlateHistory(Process):
                 plate[members[part == q]] = new_id
                 cq = _unit(pos[members[part == q]].mean(axis=0))
                 away = _unit(np.cross(centroid, cq))
-                speed = (lo_s + (hi_s - lo_s) * speed_draw[si * 4 + q]) / 100.0 / radius * YEARS_PER_MY
+                speed = (lo_s + (hi_s - lo_s) * speed_draw[si * 4 + q]) / CM_PER_M / radius * YEARS_PER_MY
                 new_axes.append(w[p] + speed * away)
             c0 = _unit(pos[members[part == 0]].mean(axis=0))
-            speed = (lo_s + (hi_s - lo_s) * speed_draw[si * 4]) / 100.0 / radius * YEARS_PER_MY
+            speed = (lo_s + (hi_s - lo_s) * speed_draw[si * 4]) / CM_PER_M / radius * YEARS_PER_MY
             w[p] = w[p] + speed * _unit(np.cross(centroid, c0))
             add_event(EVENT_SPLIT, int(p), int(k + len(new_axes) - 1), int(members.size))
         if new_axes:
@@ -412,7 +413,7 @@ class PlateHistory(Process):
             share = min(1.0, sp_["turn_share_per_my"] * dt)
             turned = (1 - share) * w + share * size[:, None] * _unit(pull)
             w = np.where(has[:, None], _unit(turned) * size[:, None], w)
-        top_speed = sp_["fastest_cm_per_year"] / 100.0 / radius * YEARS_PER_MY
+        top_speed = sp_["fastest_cm_per_year"] / CM_PER_M / radius * YEARS_PER_MY
         size = np.linalg.norm(w, axis=1)
         w = w * (np.minimum(size, top_speed) / np.maximum(size, np.finfo(float).tiny))[:, None]
 
@@ -426,7 +427,7 @@ class PlateHistory(Process):
             flat = np.abs(np.linalg.det(places)) < h["flat_determinant"]
             places[flat] = np.eye(3)
             bary = np.clip(np.linalg.solve(places, mesh.xyz[:, :, None])[:, :, 0], 0.0, None)
-            bary[flat] = 1.0 / np.maximum(d3[flat], 1e-12)
+            bary[flat] = 1.0 / np.maximum(d3[flat], TINY)
             bary *= plate[i3] == plate[near][:, None]
             alone = bary.sum(axis=1) <= 0
             bary[alone] = i3[alone] == near[alone][:, None]
@@ -437,7 +438,7 @@ class PlateHistory(Process):
                 miss = np.isnan(vv)
                 ww = np.where(miss, 0.0, bary)
                 tot = ww.sum(axis=1)
-                return np.where(tot > 0, (np.where(miss, 0.0, vv) * ww).sum(axis=1) / np.maximum(tot, 1e-300), np.nan)
+                return np.where(tot > 0, (np.where(miss, 0.0, vv) * ww).sum(axis=1) / np.maximum(tot, TINY), np.nan)
             ctype_new = ctype[near]
             oage_new = np.where(ctype_new == OCEANIC, mix(oage), np.nan)
             oage_new = np.where((ctype_new == OCEANIC) & np.isnan(oage_new), 0.0, oage_new)
