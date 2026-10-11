@@ -2174,6 +2174,13 @@ was measured on the preview mesh unless a line says otherwise. Two things cut ac
   jobs shared the machine; alone it would take perhaps half that [INFERRED: the preview build took 133 s beside the same
   jobs and 68.5 s alone]. Section 19 says where the time goes.
 
+**The default world at the end of step 8** [MEASURED: `python tools/world_report.py` on the preview world, seed 20261004,
+built alone on the machine in 68.5 s]: the climate settles in 19 rounds; global mean 13.0 °C, the poles −16.5 and −14.8 °C,
+the equator 25.6 °C; rain 1,032 mm a year, 793 on land; snow lies all year on 0.05 of the land and some month on 0.34;
+sea ice covers 0.155 of the sea in some month and none all year; 17 lakes, 16 of which overflow. Biomes, as a share of
+the surface: ice 0.067, tundra 0.044, xerophytic woods and scrub 0.056, tropical forests 0.021, temperate and cool
+forests 0.035, taiga 0.013.
+
 ## 14. Step 4: the wind-driven ocean
 
 ### 14.1 What was built
@@ -2227,6 +2234,7 @@ stirs too shallow a layer over the Southern Ocean.
 | Summer rain over the 30-degree deserts | Sahara 12.0 mm a month from June to August (GPCP 15.2): passes. Arabia 41.2 (4.7): a strict expected failure. The stand-in does not reach Arabia |
 | The climate settles with the wind's heat as a known amount | Yes. The costlier way of the design's Layer 3 was not needed |
 | The rainfall tolerance tightens | Not done: the rain of the twin did not get closer to Earth's (section 4.6's tolerance stands) |
+| The design's dry belts (Moisture's condition of Layer 9) | Met again, after failing in the north since step 2 and in the south since step 3: on the default world the driest land bands lie at 29° N with 456 mm a year and 29° S with 388 mm; on the twin's north at 19° with 338 mm, and its land at 40 to 60° N gets 543 mm against Earth's 654 [MEASURED at the end of step 8; the steps of 4 to 8 together, not one of them, were measured] |
 
 ## 16. Step 6: ice and snow
 
