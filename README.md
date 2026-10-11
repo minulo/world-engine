@@ -132,13 +132,13 @@ in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 890 tests; with the Earth data, three quarters of an hour where it was built
+    python -m pytest                    # 984 tests; with the Earth data, under half an hour where it was built
 
-37 of them are expected failures: patterns of Earth, and conditions of the design (the dry belts of
-the north and the south and the closed Caspian), that the engine is known to miss, each with the number
-measured. `python -m pytest -rx` prints them. They are not the whole list of known errors: the
-notes' sections 4.4, 4.6 and 8 name misses that no test states. Without the Earth data the
-102 tests that need it are skipped.
+39 of them are expected failures, all in `tests/test_earth.py`: patterns of Earth, and one condition of
+the design (the closed Caspian), that the engine is known to miss, each with the number measured.
+`python -m pytest -rx` prints them. They are not the whole list of known errors: the notes' sections
+4.4, 4.6, 8 and 13 to 21 name misses that no test states. Without the Earth data the 119 tests that
+need it are skipped.
 
 Extra checks that are not part of the test run:
 

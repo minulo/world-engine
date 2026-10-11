@@ -2181,6 +2181,12 @@ sea ice covers 0.155 of the sea in some month and none all year; 17 lakes, 16 of
 the surface: ice 0.067, tundra 0.044, xerophytic woods and scrub 0.056, tropical forests 0.021, temperate and cool
 forests 0.035, taiga 0.013.
 
+**The tests at the end of steps 4 to 11** [MEASURED: `python -m pytest` with the Earth data on commit 8b7dbfb, in
+about 20 minutes, alone on the machine]: 984 tests, 945 pass and 39 are expected failures, all in `tests/test_earth.py`.
+None fails and none is skipped. The dry belts of the north and the south now pass on the default world and on the twin;
+the one condition of the design among the expected failures is the closed Caspian. Without the Earth data 119 tests
+are skipped.
+
 ## 14. Step 4: the wind-driven ocean
 
 ### 14.1 What was built
