@@ -7,8 +7,15 @@ PlanetGeometry:
   coriolis_parameter:
     says: "The Coriolis parameter is {value}: twice the planet's spin rate times the sine of the latitude, {lat}."
     ends: "The chain ends here, at a planet parameter: the rotation period of {planet[rotation_period_s]} seconds."
+  cell_area:
+    says: "This cell covers {value} of the planet's surface."
+    unit: km2_from_m2
+    ends: "The chain ends here: the size of a cell follows from the mesh and the planet's radius of {planet[radius_m]} m."
 
 Tectonics:
+  volcanism:
+    says: "Volcanic activity here is {value} on a scale from 0 to 1: high above plates that dive under others and along spreading ridges."
+    ends: "The chain ends here, at the history of the plates: where they dive and where they part (the table of tectonic events)."
   plate_id:
     says: "This cell rides on plate {value}."
     ends: "The chain ends here, at the history of the plates: their seeded start, and the splits and welds of the table of tectonic events."
@@ -425,15 +432,34 @@ Soils:
     drivers:
       at_balance_with_erosion: {unit: m}
       time_since_renewal: {unit: My}
+      cell_is: {names: [land, sea]}
+    cases:
+      - when: {cell_is: sea}
+        says: "This cell is sea: no soil forms on its floor."
+        ends: "The chain ends here: the cell is sea."
+        quiet: true
   soil_water_capacity:
     says: "The soil here holds {value} of water for plants: {per_metre} per metre of soil, over the {root_depth} that roots reach."
     follows: [soil_depth, rock_type]
     drivers:
       per_metre: {unit: mm}
       root_depth: {unit: m}
+      cell_is: {names: [land, sea]}
+    cases:
+      - when: {cell_is: sea}
+        says: "This cell is sea: it has no soil, and so nothing that could hold water."
+        ends: "The chain ends here: the cell is sea."
+        quiet: true
   soil_fertility:
     says: "The soil here holds {value} of the nutrients of the richest soil, by its order."
     follows: [soil_order]
+    drivers:
+      cell_is: {names: [land, sea]}
+    cases:
+      - when: {cell_is: sea}
+        says: "This cell is sea: it has no soil."
+        ends: "The chain ends here: the cell is sea."
+        quiet: true
 
 Biomes:
   biome:

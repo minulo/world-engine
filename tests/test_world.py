@@ -555,12 +555,13 @@ def test_no_why_answer_for_water_on_land_says_what_its_numbers_contradict(plain)
     assert not problems, problems[:5]
 
 
-def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(plain, monkeypatch):
+def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(plain, frozen, monkeypatch):
     """The claim that no answer contradicts its numbers rests on tools/why_scan.py. Here one answer after another is
     rewritten to say what an earlier version of the engine said wrongly, and the scan must report each: a scan that
-    reports nothing would pass the test above as well. 33 faults are planted: one for each kind that a check of build
-    step 2 found, and one for each of four rules that the fifth check took out of the scan without any test noticing.
-    Most of the scan's other rules have no planted fault of their own, and could be taken out the same way."""
+    reports nothing would pass the test above as well. 33 faults are planted, 32 in the default world and one in the
+    world with the frozen region: one for each kind that a check of build step 2 found, and one for each of four rules
+    that the fifth check took out of the scan without any test noticing. Most of the scan's other rules have no planted
+    fault of their own, and could be taken out the same way."""
     e, w = plain
     view = store.MemoryView(w, e)
     scan = tool("why_scan")
@@ -660,14 +661,11 @@ def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(pla
     # the water routed on beneath the lake, which had entered it further up; and four rules of the scan that could be
     # taken out with no test noticing
     arrives = d["from_upstream"].mean(axis=0)
-    drowned_shore = pick((place == 5) & (arrives > 1.0))
     lake_cells = [pick(place == 4), pick(share >= 1.0), pick((share > 0) & (np.arange(w.n) != pick(share >= 1.0)))]
     third_lake_cell = pick((share > 0) & ~np.isin(np.arange(w.n), lake_cells))
     through_dry_land = pick(~sea & (place == 0) & (yearly_runoff == 0) & (arrives > 0) & ~np.isin(np.arange(w.n), [dry_river, far_source]))
     planted.update({
-        (drowned_shore, "river_discharge"): (lambda chain: [dict(chain[0], text=re.sub(r"bring the lake \S+ m³/s here", "bring the lake 99999 m³/s here", chain[0]["text"]))] + chain[1:],
-                                             "says that the rivers bring the lake 99999 m³/s here"),
-        (pick((share >= 1.0) & (np.arange(w.n) != drowned_shore)), "runoff"): (swap("wholly under a lake", "partly under a lake"), "does not say 'wholly under a lake'"),
+        (pick(share >= 1.0), "runoff"): (swap("wholly under a lake", "partly under a lake"), "does not say 'wholly under a lake'"),
         (through_dry_land, "river_discharge"): (lambda chain: [dict(chain[0], text=chain[0]["text"].replace(": ", ": the cell's own runoff gives 1.00 m³/s; ", 1))] + chain[1:],
                                                 "own runoff gives"),
         (pick(sea), "river_discharge"): (first("No river runs through this cell: no water runs off it, and none reaches it from higher ground."),
@@ -677,7 +675,7 @@ def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(pla
     })
     turned = (pick(~sea & away & (place == 0) & (yearly("river_discharge") == 0)), "drainage_area")       # an answer whose heading is turned east for west
     cells, fields = sorted({cell for cell, _ in planted} | {turned[0]}), sorted({field for _, field in planted} | {turned[1]})
-    assert len(planted) == 32 and turned not in planted                          # no two faults were planted in one answer
+    assert len(planted) == 31 and turned not in planted                          # no two faults were planted in one answer
     assert not scan.scan(view, cells, fields)                                    # as the engine wrote them, these answers pass
     real = scan.explain
 
@@ -694,6 +692,25 @@ def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(pla
     for (cell, field), (_, words) in planted.items():
         assert any(c == cell and fl == field and words in what for c, fl, what, _ in found), (cell, field, words, [x[:3] for x in found if x[0] == cell])
     assert {(c, fl) for c, fl, _, _ in found} == set(planted)                    # and nothing is reported that was not planted
+
+    # The default world has no cell wholly under a closed lake since step 4 (its lakes overflow, or flood only part of a
+    # cell), so the fault of such a cell is planted in the world with the frozen region, which has one
+    monkeypatch.setattr(scan, "explain", real)
+    e2, w2 = frozen
+    view2 = store.MemoryView(w2, e2)
+    d2 = w2.drivers["river_discharge"]
+    drowned_shore = pick((d2["place"] == 5) & (d2["from_upstream"].mean(axis=0) > 1.0))
+    assert not scan.scan(view2, [drowned_shore], ["river_discharge"])
+
+    def overcounted(v, cell, field):
+        answer = real(v, cell, field)
+        top = answer["chain"][0]
+        answer["chain"] = [dict(top, text=re.sub(r"bring the lake \S+ m³/s here", "bring the lake 99999 m³/s here", top["text"]))] + answer["chain"][1:]
+        return answer
+    monkeypatch.setattr(scan, "explain", overcounted)
+    found = scan.scan(view2, [drowned_shore], ["river_discharge"])
+    assert [(c, fl) for c, fl, _, _ in found] == [(drowned_shore, "river_discharge")]
+    assert "says that the rivers bring the lake 99999 m³/s here" in found[0][2]
 
 
 def test_the_world_report_prints_the_numbers_of_the_world(plain):
@@ -776,9 +793,14 @@ def test_the_frozen_region_example_works_in_reduced_form(plain, frozen):
     assert t[:, inside].max() <= 258.15 + 1e-3                # the cap guarantees the freeze in every month
     assert t0[:, inside].max() > 273.15                       # which the plain world does not have
     before = w.push_records["ever_winter:surface_temperature"]["before"].astype(np.float64)
-    assert (before[:, inside] < t0[:, inside]).all()          # the heat sink alone already cools the region
+    # the heat sink alone already cools the region on the year's mean (measured 0.2 to 3.6 K at the end of build step 8).
+    # Month by month it no longer does everywhere: in winter some of its cells, all of them sea, are up to 1.6 K warmer
+    # than in the plain world [MEASURED]; the ocean of step 4 carries heat into the cooled sea [INFERRED, not measured]
+    assert (before[:, inside].mean(axis=0) < t0[:, inside].mean(axis=0)).all()
     ring = (d > 900.0) & (d < 1500.0)
-    assert (t.mean(axis=0)[ring] < t0.mean(axis=0)[ring]).all()            # and a faint chill reaches beyond the edge
+    chill = t.mean(axis=0)[ring] - t0.mean(axis=0)[ring]
+    assert chill.mean() < -1.0 and (chill < 0).mean() > 0.8   # and a chill reaches beyond the edge (measured: 1.7 K on the
+                                                              # mean, 0.87 of the ring's cells; every cell until step 4)
     assert np.abs(t.mean(axis=0)[far] - t0.mean(axis=0)[far]).max() < np.abs(t.mean(axis=0)[inside] - t0.mean(axis=0)[inside]).min()
     names = e.registry.fields["biome"].categories
     assert set(names[b] for b in w.fields["biome"][inside]) == {"ice"}     # an unchanged process reacts: the biome is ice

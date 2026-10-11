@@ -30,7 +30,7 @@ of the same kind, set up from the lock file. Nothing here was run on the target 
 | 1. The slice | Done, with the gaps of section 6 | Tests of the ten processes and of the whole world; two trials in `trials/results/` |
 | 2. Water on land | Built. One condition of the design for it fails on Earth, the closed Caspian, and the land sheds too little water (section 4) | Drainage, Hydrology and a stand-in for Soils; tests of each on ground built for the purpose, on the default world and on Earth's own relief, rain and warmth |
 | 3. Deep time | Built and measured on the preview mesh, without tests: section 12 | The plate history, FluvialErosion, Lithology, SurfaceAge, history snapshots, continuation; `handoff/step3/` |
-| 3 to 11 | Not started | |
+| 4 to 11 | Built on 2026-10-11 (sections 13 to 21) | The ocean, better air, ice and snow, ground and life, storms and days, the climate inside the history, the GCM comparison, finer detail; tests in `tests/test_ocean.py`, `test_ice_and_ground.py`, `test_storms.py`, `test_days.py`, and in `test_earth.py` and `test_world.py` |
 
 `python -m pytest` runs 864 tests in about 10 minutes. 829 pass. The other 35 are
 expected failures: each states a pattern of Earth, or a condition of the design, that the engine does

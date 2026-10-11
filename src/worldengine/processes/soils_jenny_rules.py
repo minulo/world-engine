@@ -37,8 +37,8 @@ class JennyRuleSoils(Process):
     reads_lagged = ("vegetation_cover", "biome")
     writes = ("soil_order", "soil_depth", "soil_water_capacity", "soil_fertility")
     model = "soil depth from production that slows as the soil thickens (Heimsath et al. 1997) against erosion and time; the order from a rule table over Jenny's five factors"
-    drivers = {"soil_order": ("rule",), "soil_depth": ("at_balance_with_erosion", "time_since_renewal"),
-               "soil_water_capacity": ("per_metre", "root_depth")}
+    drivers = {"soil_order": ("rule",), "soil_depth": ("at_balance_with_erosion", "time_since_renewal", "cell_is"),
+               "soil_water_capacity": ("per_metre", "root_depth", "cell_is"), "soil_fertility": ("cell_is",)}
 
     def run(self, ctx):
         c = ctx.const
@@ -106,3 +106,6 @@ class JennyRuleSoils(Process):
             ctx.driver("soil_depth", "time_since_renewal", np.where(sea, np.nan, age_my))
             ctx.driver("soil_water_capacity", "per_metre", np.where(sea, 0.0, per_metre))
             ctx.driver("soil_water_capacity", "root_depth", root)
+            cell_is = sea.astype(np.int32)                                   # 0 land, 1 sea: the "why" answer of a sea cell
+            for field in ("soil_depth", "soil_water_capacity", "soil_fertility"):
+                ctx.driver(field, "cell_is", cell_is)

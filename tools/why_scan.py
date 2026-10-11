@@ -275,7 +275,7 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                 must(f"leaves the land at cell {int(f['basin_id'][cell])},", not wet)
             elif field == "soil_water_capacity":
                 must("it has no soil", wet)
-                must("can hold", not wet)
+                must("The soil here holds", not wet)
             elif field == "lake_fraction":
                 must("No lake reaches it", share[cell] == 0 and not brim[cell])
                 must_not("No lake reaches it", brim[cell])
@@ -321,7 +321,7 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                 name = biome_names[int(f["biome"][cell])]
                 must(f"The biome here is {name.replace('_', ' ')}")
                 must("the cell is sea", wet and name != "ice")
-                must("ice lies on the sea here", wet and name == "ice")
+                must("ice lies on the sea for most of the year", wet and name == "ice")
                 for words in ("what limits plant life here is cold", "what limits plant life here is drought", "neither cold nor drought limits plant life here"):
                     wanted_words = limits.get(name, "neither cold nor drought limits plant life here")
                     must(words, not wet and words == wanted_words)
