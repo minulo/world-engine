@@ -1461,9 +1461,12 @@ def test_earths_measured_climate_falls_into_the_climate_classes_in_earths_shares
     the share Peel, Finlayson and McMahon 2007 give [DOCUMENTED when build step 2 was written]: arid B 30.2 %,
     cold D 24.6 %, tropical A 19.0 %, temperate C 13.4 %, polar E 12.8 %. The 6 points were chosen when the test
     was written."""
-    out = earth.h.run("Biomes", reads={"surface_temperature": earth.celsius + 273.15, "precipitation": earth.rain, "ocean_mask": earth.wet})
-    names = earth.h.registry.fields["climate_class"].categories
-    group = np.array([n[0] for n in names])[out.fields["climate_class"]]
+    # the classifier itself (library/koppen.py), which Biomes runs since build step 7 among the rest of BIOME1
+    from worldengine.library.koppen import koppen
+    rules = earth.h.params["models"]["slots"]["Biomes"]["constants"]["koppen"]
+    group = np.full(earth.mesh.n, "-")
+    classes, _ = koppen(earth.celsius[:, earth.land], earth.rain[:, earth.land], rules)
+    group[earth.land] = [str(n)[0] for n in classes]
     land_area = earth.area[earth.land].sum()
     for letter, share in (("A", 19.0), ("B", 30.2), ("C", 13.4), ("D", 24.6), ("E", 12.8)):
         found = 100.0 * earth.area[earth.land & (group == letter)].sum() / land_area

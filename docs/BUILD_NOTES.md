@@ -1,5 +1,8 @@
 # Build notes
 
+Added 2026-10-11: build steps 4 to 11 are built (sections 13 to 21; read section 13 first). Sections 4.4 and 4.5
+measure Hydrology with the plain melt rule of step 2, which the Earth tests still use; step 6 changed the engine's.
+
 Added 2026-10-08: build step 3 (deep time) is built and is the default; section 12 says what was measured and
 what was not done. The rest of these notes describe the state of 2026-10-06.
 
@@ -2156,3 +2159,298 @@ strict expected failures (34 of Earth, 3 of the default world), none fail, none 
   as the storm belt). Both came with the plate history, which moved the land. The two southernmost bands of 10° are level
   within 0.03 K; the test of colder-toward-each-pole now lets a step of 0.1 K pass.
 
+## 13. Steps 4 to 11: what was built, in one place
+
+Steps 4 to 11 were built in one stretch after step 3 merged (2026-10-09 to 10-11) and committed together, step by step
+in the sections below. The planet's own Earth tests (`tests/test_earth.py`) run on the preview twin; every number below
+was measured on the preview mesh unless a line says otherwise. Two things cut across the steps:
+
+- **The twin's northern summers stay far too cold** (section 4.9's diagnosis). Steps 4 to 6 changed their causes, not the
+  outcome: the sea now swings with the seasons as much as Earth's does, or more, and snow melts on the warmer days of a
+  month just below freezing, yet the warmest month of land between 40 and 60 degrees north is 6.2 °C where Earth's is
+  18.4 °C. Most of the failures recorded in steps 5 to 8 trace back to it: the boreal forest, Arabia's summer rain, the
+  monsoon, the cyclones of the northern seas.
+- **The standard build is slower than its profile allows**: 4,660 s against a limit of 1,800 s, measured while two other
+  jobs shared the machine; alone it would take perhaps half that [INFERRED: the preview build took 133 s beside the same
+  jobs and 68.5 s alone]. Section 19 says where the time goes.
+
+## 14. Step 4: the wind-driven ocean
+
+### 14.1 What was built
+
+`OceanCurrents` (`ocean_wind_driven.py`, with `library/ocean.py`). The wind's stress drives the loops of a one-layer
+ocean in the balance of Stommel 1948 and Sverdrup, r∇²ψ + β ∂ψ/∂x = curl τ / ρ, solved on the sea cells with the
+coasts closed; the surface layer drifts in the Ekman balance (r τ − f k × τ) / (ρ (r² + f²)), which near the equator
+keeps a friction term where the spin term vanishes [DOCUMENTED in the design: University of Hawaii notes; Wikipedia,
+Ekman transport]. Upwelling is the divergence of that drift, closed so that what rises anywhere sinks elsewhere; the
+heat that the currents carry is worked out upwind and added to the group `surface_heat_flux`. The process also writes
+`mixed_layer_depth`, the depth the wind stirs, 0.6 u* / |f| between 20 and 150 m [INFERRED: the Ekman depth scaling; the
+0.6 is CALIBRATED], which EnergyBalance reads from the last round as the sea's heat capacity (`energy_balance_wind.py`).
+The spreading constant of EnergyBalance was fitted again with the ocean's heat in place: 0.52 [CALIBRATED,
+`tools/fit_spreading.py`: the value at which the twin's yearly temperature by latitude lies closest to Earth's].
+
+Departure: the loop speeds and the heat carried are held by soft limits (tanh) [INFERRED]. Without them a warm sea drew
+stronger winds that drove more warm water to it, and the heat flux ran away to −2.8e14 W/m² within a few rounds
+[MEASURED while building].
+
+### 14.2 Conditions
+
+| Condition | Result |
+|---|---|
+| The western-side test | Passes (`tests/test_ocean.py`): in a closed basin under a steady wind the current of the western fifth is more than twice that of the eastern fifth, and the loop turns as under a subtropical wind |
+| Cold water off west coasts | Three of four [MEASURED, twin; the sea's yearly mean less that of its band]: Peru −0.9 K (Earth −5.4), south-west Africa −3.0 K (−3.6), north-west Africa −1.5 K (−1.8). California +1.9 K where Earth has −2.7: a strict expected failure. The wind there drives no upwelling (−0.02 m a day) |
+| The spreading constant fitted again | 0.52 |
+
+The sea's seasons now swing as Earth's do in the north and too much in the south [MEASURED, twin, open sea more than
+600 km from land, warmest month less coldest]: 20 to 40° N 7.4 K (Earth 7.2), 40 to 60° N 13.6 K (9.8), 20 to 40° S
+7.5 K (5.5), 40 to 60° S 14.2 K (4.8). The stirred layer is 26 to 42 m deep on the band means: the wind of the model
+stirs too shallow a layer over the Southern Ocean.
+
+## 15. Step 5: better air
+
+### 15.1 What was built
+
+- **Wind that carries heat** (`energy_balance_wind.py`). The heat the wind of the last round carries is worked out from
+  this round's own temperatures and the equation solved again, three passes in each round: a known amount from the last
+  round, as the design asks, so the rounds settle (the default world in 25 rounds, the twin in 20) [MEASURED].
+- **A rising branch that follows warm land** (`circulation_monsoon.py`). The tropical rising branch is found in each band
+  of 20 degrees of longitude, not only on the zonal mean, so it can move over a continent in its summer.
+- **A stand-in for summer sinking west of heated land** [INFERRED, after Rodwell and Hoskins 2001]: air sinks over up to
+  3,000 km west of land between 10 and 40 degrees that is warmer than its latitude, by 2 mm/s per kelvin [PROVISIONAL].
+
+### 15.2 Conditions
+
+| Condition | Result [MEASURED, twin] |
+|---|---|
+| Wind-facing coasts milder | Passes: in January western Europe −6.6 °C and the east coast of Asia −20.1 °C (Earth 3.2 and −25.4) |
+| Seasonal wind reversal | Fails over India: the wind blows toward the west and the south in July (−2.33 m/s east) as in January (−6.18). A strict expected failure. India's July is too cool for the rising branch to cross it |
+| Summer rain over the 30-degree deserts | Sahara 12.0 mm a month from June to August (GPCP 15.2): passes. Arabia 41.2 (4.7): a strict expected failure. The stand-in does not reach Arabia |
+| The climate settles with the wind's heat as a known amount | Yes. The costlier way of the design's Layer 3 was not needed |
+| The rainfall tolerance tightens | Not done: the rain of the twin did not get closer to Earth's (section 4.6's tolerance stands) |
+
+## 16. Step 6: ice and snow
+
+### 16.1 What was built
+
+- **Cryosphere** (`cryosphere_thresholds.py`): sea ice in the months the air over the sea is below −10 °C, over a ramp of
+  2 K (the ice-cap edge of North, Cahalan and Coakley 1981, p. 102, taken month by month [INFERRED]; the freezing point of
+  sea water put ice on 0.175 of the sea [MEASURED]); snow cover from Hydrology's store, full at 15 mm; lasting ice where
+  the store never empties; permafrost on a ramp of the year's mean between −8 and −1 °C [UNVERIFIED: rules of thumb].
+- **Albedo** reads `snow_ice_cover` and `vegetation_cover` from the last round (`albedo_cover_table.py`): bare ground 0.25,
+  ground under plants 0.15, and full plant cover hides half of the snow's whiteness [PROVISIONAL].
+- **Snow melts on a month's warmer days** (`library/snow.py`). The days of a month now scatter around its mean with a
+  standard deviation of 5 K [UNVERIFIED: about the value of Reeh 1991, as I recall], and the degrees above freezing are
+  those the days have on average: a month just below freezing melts some snow. This changed the twin more than any other
+  change of step 6: land under lasting ice from 0.348 to 0.177 of the land, the warmest month of land between 40 and 60° N
+  from 2.1 to 6.2 °C, western Europe in July from 1.6 to 4.3 °C (Earth 17.3) [MEASURED].
+
+Not done: the design asks for one more search for a published model before a rule table is built (Cryosphere, the soil
+classes). No record of such a search was kept in this stretch; both remain rule tables.
+
+### 16.2 Conditions
+
+| Condition | Result [MEASURED, twin] |
+|---|---|
+| Ice edge | Passes: the Arctic Ocean north of 70° 1.00 covered in March; the sea south of 60° S 0.94 in September and 0.00 in March; no sea cell nearer the equator than 45° is ever half covered. Not tested, and wrong: the Arctic Ocean is almost open in September (0.02) |
+| Permafrost | Passes in Siberia and northern Canada (1.00). Western Europe 0.17 where Earth has none: a strict expected failure |
+| Lasting ice on land | 0.177 of the land; Earth's ice sheets cover about a tenth [UNVERIFIED]. No test states it |
+
+## 17. Step 7: ground and life
+
+### 17.1 What was built
+
+- **BIOME1** (`biomes_biome1.py`) after Prentice et al. 1992: the plant types and their limits (coldest month, warmest
+  month, growing degree-days above 5 and 0 °C, the drought index) and the dominance order, from Tables 1 and 5
+  [DOCUMENTED: the tables as the CRAN package macroBiome holds them, read from its data file]; the biome is named by the
+  dominant types, and plant cover follows the season and the soil. The Köppen-Geiger class is kept beside it
+  (`library/koppen.py`, shared with the first version).
+- **Soils** (`soils_jenny_rules.py`): depth from production that slows as the soil thickens (Heimsath et al. 1997),
+  P = P0 exp(−h / h0), against erosion and the time since the ground was renewed; a climate factor of my own [PROVISIONAL];
+  the order from a rule table over Jenny's five factors onto the USDA orders; water held and fertility by depth, rock and
+  order. The first factor, which only lowered P0, left 0.55 of the default world's land as bare rock; recentred, 0.26
+  [MEASURED].
+- **The twin's ground**: the twin has no history of its ground, so a stand-in fills the Lithology slot with one rock
+  class, one surface age (100 My) and no erosion (`relief_from_file.py: GroundWithoutHistory`) [INFERRED].
+
+### 17.2 Conditions
+
+| Condition | Result [MEASURED, twin] |
+|---|---|
+| Soil and biome patterns | Pass where the climate is right: the Sahara semi-desert with aridisols on all its cells; the Amazon 59 % and the Congo 82 % tropical forest; the Amazon's soils 66 % oxisols and ultisols; the eastern United States 96 % temperate forest; Greenland ice |
+| The boreal forest | Fails: Siberia (55 to 65° N) is polar desert, tundra and ice, Canada (50 to 60° N) tundra and polar desert; boreal forest on 0 % and 6 %. A strict expected failure, from the cold summers |
+| Known answers | Pass (`tests/test_ice_and_ground.py`): soil at balance stands at h0 ln(P0 / E); ground worn faster than soil forms is bare rock; young ground has weathered only its time; frozen ground is gelisol; and four climates name rain forest, hot desert, taiga and polar desert |
+
+## 18. Step 8: storms and days
+
+### 18.1 What was built
+
+- **StormClimatology** (`storm_climatology.py`, climate clock). Storm tracks are the storm growth rate that
+  Circulation writes, carried downwind by the steering wind and fading over a storm's life of 4 days. It is solved for
+  each month as one sparse linear system. Its unit is the growth a passing storm has gathered, in e-foldings. The
+  tropical cyclone genesis potential index is the one of Emanuel and Nolan [UNVERIFIED: the exponents and divisors
+  are recalled]. Potential intensity follows A + B exp(C (T - T0)) after DeMaria and Kaplan 1994 [UNVERIFIED: the form
+  and the numbers are recalled]. Moisture's saturation formula moved into the library (`library/evaporation.py`), so
+  that both processes use one copy.
+- **WeatherStatistics** (`weather_statistics.py`, climate clock). It gives the spread of a day's temperature as the
+  contrast across a mixing length of 900 km (Schneider, Bischoff and Płotka 2015), and the share of wet days from the
+  month's rain to the power 0.45 (New, Hulme and Jones 2000).
+- **SynopticStorms** (`synoptic_storms.py`, weather clock). Storms are born where the maps are high, in place and in
+  season, each keyed by its birth date. Mid-latitude storms move with the steering wind. Tropical cyclones also drift
+  toward the pole and the west (beta-and-advection, Emanuel et al. 2006). The process writes `storm_influence` and the
+  table of storms.
+- **DailyWeather** (`daily_weather.py`, weather clock). A weather generator in the line of Richardson 1981. Its noise
+  is remembered over the look-back window: a weighted sum of the last 8 days' smoothed noise fields, each drawn from
+  its own date. Wet days come at WeatherStatistics' share, and their exponential amounts keep the month's rain.
+- **The weather clock.** `Engine.day_weather(store, day)` computes any day on request.
+  `engine_for_store(view)` rebuilds the engine from the parameters a world keeps. The server answers
+  `/api/weather?name=&day=&part=`, and the viewer has a day slider with a play button. `python -m worldengine weather
+  STORE --day N --lat --lon` prints a place's days.
+- **The dated clock and its run store.** `Engine.run_dated(store, run_path, last_day, continue_from=...)` steps the
+  stages that step through dates, and writes their state into a run store beside the world (`store.save_run`,
+  `read_run`). It was tried on the toy RainBarrel, which keeps 0.9 of yesterday's water and catches the day's rain.
+
+### 18.2 Conditions of the "done when"
+
+| Condition | Result |
+|---|---|
+| Storm-track test | Passes on the default world: the winter track density peaks at 40-60° in each hemisphere (N 50-60° DJF 2.74 e-foldings, against 0.56 at 0-10°) [MEASURED, preview, seed 20261004]. On the twin the peaks lie at 52.5° N and 52.5° S in DJF [MEASURED] |
+| Cyclone-region test | Seasons pass on both worlds: the northern genesis potential peaks in September, the southern in March [MEASURED]. Regions fail on the twin: 78 % of the yearly index lies south of the equator, and 27 % in the southeast Pacific and the South Atlantic, where Earth has almost no cyclones [MEASURED]. Held as a strict expected failure in `tests/test_earth.py`, with the numbers |
+| WeatherStatistics against Earth's daily data | **Not done.** The reference data hold no daily data. The hosts of the CRU climatologies, which hold wet-day counts, are blocked from the build machine (`crudata.uea.ac.uk` and `psl.noaa.gov` timed out) [MEASURED]. DailyWeather was built on the two fields anyway, out of the design's order: the fields carry [PROVISIONAL] constants until the test runs |
+| Known answers of DailyWeather | Pass (`tests/test_storms.py`): the day's mean over the planet is the climate's, the spread at a place is the month's within 25 %, the rain kept is the month's within 10 %, the share of wet days is within 0.05, no rain falls where the month has none, and a storm lowers the pressure by its set amount |
+| The toy's day 400, in one run or in two joined at day 173 | Equal bit for bit (`tests/test_days.py`) |
+| The engine makes each refusal of check 11 | Yes: six refusals on loading, plus the refusals of a run (another world's run store, a stop before the start, a store written twice, a step that is not a day) |
+
+### 18.3 Why the twin's cyclones fail
+
+The index follows the twin's sea temperatures, and those are wrong in the tropics [MEASURED, twin, preview]:
+
+| Box | Month | Twin (°C) | Earth (°C) | Potential intensity (m/s) | Shear (m/s) |
+|---|---|---|---|---|---|
+| Southeast Pacific, 5-20° S, 140-90° W | March | 27.9 | 25.5 | 67 | 4.0 |
+| West Pacific, 5-20° N, 130-170° E | September | 26.1 | 27.7 | 56 | 8.8 |
+| Arabian Sea, 8-20° N, 55-75° E | September | 18.9 | 26.4 | 0 | 3.0 |
+
+Two causes stand out. The northern tropical seas are too cool in their summer, which is the cold northern summer of
+section 4.9 again. The shear, read as the gap between the steering wind and the surface wind, stays small everywhere.
+On Earth the shear is large over the southeast Pacific [INFERRED: the design names this region as one without
+cyclones, and shear is one of the index's terms]. The index cubes the potential intensity, which rises steeply with
+the sea's temperature, so these errors decide where the cyclones form. The cause lies in the climate, not in the
+index.
+
+### 18.4 Departures
+
+1. DailyWeather reads neither snowfall nor the Coriolis parameter, the height or the cell area, which the design's
+   table lists: nothing in its rule uses them.
+2. The look-back window is one shared constant, `weather_look_back_days` (8 days), because both weather processes need
+   the same window.
+3. Weather keeps no cause records. The design says "weather causes when a day is recomputed on request"; that is not
+   built, and the viewer says so for a day's field.
+4. A stage that steps by a month or a year is ordered and checked, but running one is refused: only a daily step is
+   built.
+
+### 18.5 Measured
+
+On the preview mesh one day costs 0.3 s once the first day is ready, which takes 1.1 s [MEASURED: tools in scratch,
+the default world with the step 8 data]. On day 200 there were 58 storms alive, 6 of them tropical cyclones.
+
+## 19. Step 9: the climate inside the history, and speed
+
+### 19.1 What was built
+
+- **The climate rerun inside the history** (`engine.py`): with `climate_rerun_every_rounds` set, the climate stage runs
+  again after every so many geological rounds (keeping no causes; the world's own climate, after the history, keeps
+  them), and FluvialErosion reads that climate's runoff. A stored history carries the climate its last rounds read, so
+  that a continued history equals one long run. Of the profiles only `high_fidelity` sets it (every 25 rounds).
+- **Processes outside the loop run once**: a process of the climate stage whose output nothing in the stage reads from
+  the last round, directly or through another process, now runs once after the stage has settled (`Engine._tail`).
+  Today these are StormClimatology and WeatherStatistics. The preview build went from 155 to 133 s, both beside other
+  jobs [MEASURED]; the final preview build, alone on the machine, took 68.5 s with 19 climate rounds.
+
+### 19.2 Conditions
+
+| Condition | Result |
+|---|---|
+| The hours profile completes inside its limit | Not run. It holds four times the cells of the standard profile, which peaked at 6.74 GB; about 27 GB would be needed and the build machine has 15 GB [INFERRED] |
+| What the standard profile can afford | [MEASURED, beside two other jobs] 4,660 s for one build (limit 1,800 s), peak memory 6.74 GB: geology 930 s (SeaLevel 411, Tectonics 333), climate 30 rounds in 3,725 s (EnergyBalance 1,734, Moisture 1,470, Circulation 214). Alone it would take perhaps half [INFERRED], still over the limit. One rerun of the climate costs as much as the whole climate: the standard profile cannot afford them, and keeps them off |
+| Every process meets its condition on the 30 km mesh; the crust trial passes there | Not done: no 30 km world was built |
+| The bit-for-bit test of step 3 with the climate rerun inside the history | Passes (`tests/test_history.py`, with a toy climate whose runoff grows with height, rerun every 2 rounds: 8 then 16 My against 16 My) |
+
+**What the coupling does to the default world** [MEASURED, preview, reruns every 25 rounds]: the climate's runoff is
+lower than the 300 mm a year that the erosion constant was set for over most land (a median of 140 mm), and
+almost nothing runs off dry or frozen ground, so the land rises: mean land height 1,203 m at the end, against 523 m
+without the reruns. With the melt of step 6 the world ends at 8.9 °C with 0.158 of the planet under snow and ice, its
+own climate settled in 53 rounds, and only the rerun after round 25 failed to settle in 60. Before that melt it ended
+at −8.0 °C with 0.471 under snow and ice and no climate settled: a feedback in which ice ends erosion, mountains grow
+and the cold spreads, with nothing like glacial erosion to break it. The build took 670 s.
+
+Why EnergyBalance is the largest cost: it factors three matrices again in nearly every round, because the stirred depth
+that sets the sea's heat capacity crosses a 5 m step somewhere every round. Reusing a factorization across rounds would
+make a round's answer depend on the rounds before it, which the engine's rule (the same output for the same input)
+forbids; that cost stays [INFERRED].
+
+## 20. Step 10: planets unlike Earth
+
+### 20.1 What was done
+
+ExoPlaSim 3.4.2, a general circulation model extended for other rocky planets, was installed on the build machine with
+gfortran and Open MPI. It ran aquaplanets (sea everywhere, a mixed layer of 50 m, Earth's sunlight and tilt) at T21
+with rotation periods of 24 and 12 hours. `tools/gcm_compare.py` builds the engine's own aquaplanet (a flat sea floor read
+as the twin reads Earth's relief) at the same period and compares the year's zonal means. One model year took about
+24 minutes on two cores; 16 years were run for each. The runs had not settled: the global mean still rose 0.33 K a year
+(24 h) and 0.53 K a year (12 h) over the last years [MEASURED: from −7.9 °C in year 1 to 9.9 °C in year 16 at 24 h].
+
+### 20.2 Measured (years 15 and 16 of the model against the engine's settled aquaplanet)
+
+| | Engine, 24 h | ExoPlaSim, 24 h | Engine, 12 h | ExoPlaSim, 12 h |
+|---|---|---|---|---|
+| Edge of the trade winds | 30.4° | 26.7° N, 27.5° S | 23.0° | 22.8° N, 23.9° S |
+| Westerlies strongest at | 48° | 41.5° | 40° | 30.5° |
+| Equator | 32.6 °C | 28.0 °C | 33.2 °C | 35.3 °C |
+| Drop from the equator to 60° | 31 K | 44 K | 32 K | 54 K |
+
+The edge of the trade winds, which the engine scales with the spin (Lu, Vecchi and Reichler 2007), lies within 4° of the
+model's at both periods. The westerlies lie 6 to 10° too far toward the poles. The temperature contrast does not follow
+the spin at all in the engine (31 to 32 K) where the model's grows by 10 K at the faster spin: the engine's spreading of
+heat is one constant. At 12 hours the engine's climate did not settle within 60 rounds.
+
+### 20.3 What this means for the design's condition
+
+No wider model was built and no expected range was widened. The design asks that a widened model match the comparison
+runs within a recorded tolerance; no tolerance was fixed before these runs, and I did not choose one after seeing them.
+The comparison shows what to look for next: a published scaling of the heat that eddies carry against the spin, for
+EnergyBalance. High tilt, a planet that always shows one face to its star, and air unlike Earth's were not attempted.
+
+## 21. Step 11: finer detail
+
+### 21.1 What was built
+
+`src/worldengine/detail.py`, with its constants in `data/detail.yaml`, and `python -m worldengine detail STORE --lat
+--lon --radius-km`. A region is the set of whole world cells whose centres lie within a distance of a point. Each
+world cell is split into the cells of mesh level + 2, about 16 to a cell.
+
+- **Heights.** A smooth surface through the world's heights carries waves drawn once from the world seed and tied to
+  the sphere. Their size follows the spread of the heights around the cell. Eight smooth passes, then a last
+  correction cell by cell, keep each world cell's mean height.
+- **Sea and lakes.** Fine cells below the sea level, near the world's sea, are sea. Fine cells below a world lake's
+  level are lake.
+- **Rivers.** Inside each world cell the water runs to the fine cell nearest the world cell's receiver, by a priority
+  flood. The rivers of the cells upstream enter at the fine cell nearest them, with the world's flow.
+- **Climate.** Temperature is reduced to sea level, spread smoothly and moved back by the lapse rate. Rain is spread
+  by the way the slopes face the year's wind. Each keeps every world cell's mean.
+
+### 21.2 Conditions
+
+| Condition | Result [MEASURED, preview world, region of 43 cells at the highest ground, 680 fine cells] |
+|---|---|
+| Averaged back, the region agrees with the world | Mean height, temperature and rain of every world cell equal the world's to rounding (largest gaps 9e-13 m, 2e-13 K, 4e-14 mm) |
+| Its rivers leave the region where the world's rivers do | Yes. Each leaves at the fine outlet of the world cell that drains out, with the world's flow within 6.3 %. Inland cells pass on 0.94 to 1.06 of the world's flow. On coasts the water reaches the sea through several mouths |
+| Two regions that overlap agree on their shared cells | Bit for bit (144 shared cells, every field) |
+| One region asked for twice is identical | Bit for bit |
+
+### 21.3 Departures and limits
+
+1. Detail is computed on request beside the world, not as a stage of stages.yaml, and the store keeps nothing of it.
+2. Rivers stay inside their world cell until they leave toward the world's receiver, so no divide moves.
+3. The mean is kept by a last correction cell by cell. It leaves steps at the edges of the world cells: the median
+   height step between fine neighbours is 583 m across an edge, against 408 m inside a cell [MEASURED].
+4. The roughness and the rule for rain on slopes are [PROVISIONAL].

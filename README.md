@@ -7,12 +7,16 @@ checking changed, where the build departs from the design and where its worlds a
 [docs/BUILD_NOTES.md](docs/BUILD_NOTES.md). Read its sections 4, 6 and 8 before trusting a map.
 
 Built so far: the skeleton (build step 0), the smallest end-to-end slice (step 1: terrain,
-temperature, wind, rainfall and biomes, with a viewer), the water on land (step 2: drainage,
-snow, soil water, rivers, lakes, and the water that land gives back to the air) and deep time
-(step 3: 250 My of moving plates, with subduction, collision, spreading and rifting, rivers that cut
-the land as it rises, the rock at the surface and the age of each surface, and a film of the history
-in the viewer). Ocean currents, soils, storms and daily weather are designed and not built. What step 3
-measured, and what it did not do, is in docs/BUILD_NOTES.md, section 12.
+temperature, wind, rainfall and biomes, with a viewer), the water on land (step 2), deep time (step 3:
+250 My of moving plates, rivers that cut the land as it rises, the rock at the surface and the age of
+each surface, and a film of the history), the wind-driven ocean and its heat (step 4), wind that carries
+heat and a rising branch that follows warm land (step 5), sea ice, lasting ice and frozen ground (step 6),
+soils and the BIOME1 biomes (step 7), storm maps, single storms and the weather of any day, with a clock
+that steps through dates (step 8), the climate rerun inside the history (step 9), a first comparison with
+a full circulation model (step 10) and finer detail over a region (step 11). What steps 4 to 11 measured,
+what they did not do and where the worlds are wrong is in docs/BUILD_NOTES.md, sections 13 to 21. Read
+section 13 first: the northern continents of the Earth twin are still far too cold in summer, and the
+standard build takes longer than its profile allows.
 
 ## Install
 
@@ -35,11 +39,13 @@ test of its own.
 ## Use
 
     python -m worldengine order                                  # the running order computed from the declarations
-    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; a minute and a half where it was built
-    python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 10 to 20 minutes where it was built
+    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; about two minutes where it was built
+    python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 40 to 80 minutes where it was built
     python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/
     python -m worldengine explain worlds/first.zarr --lat 18 --lon -102 --field biome
     python -m worldengine info worlds/first.zarr
+    python -m worldengine weather worlds/first.zarr --day 180 --days 7 --lat 50 --lon 10   # a place's days, worked out on request
+    python -m worldengine detail worlds/first.zarr --lat 45 --lon 10 --radius-km 500      # finer cells over one region
 
     python -m worldengine build --profile preview --history-my 500 --continue-from worlds/first.zarr --out worlds/later.zarr
                                                                   # the same history, run on from 250 to 500 My
@@ -51,7 +57,7 @@ The archive that was handed over comes with `worlds/first.zarr`, the default wor
 mesh, so `serve` works at once. A clone of the repository does not hold it (`worlds/` is not under
 version control): the second command above builds it. The times are from two-core cloud machines whose
 speed changes within a day by a factor of two (docs/BUILD_NOTES.md, section 4.7); nothing was
-timed on a laptop. The standard build holds more than 5 GB of memory at its peak.
+timed on a laptop. The standard build holds 6.7 GB of memory at its peak.
 
 The same seed and parameters always give the same world, bit for bit, on one machine with the pinned
 versions. With numpy's AVX-512 code switched off the last digits differ, so on another kind of
@@ -61,7 +67,9 @@ once and never changed.
 
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, switch to the flat map, play
 the months, and click a cell for its values and its "why" answer. For elevation, ocean_mask, plate_id
-and crust_type a second slider plays the geological history as a film, one picture every 10 My.
+and crust_type a second slider plays the geological history as a film, one picture every 10 My. The fields
+of a day (weather temperature, rain, pressure, wind and storm influence) are in the list under "Storms and weather
+(one day)": a day slider and a play button step through the days, which the server works out on request.
 
 ### A "why" answer
 
@@ -141,6 +149,8 @@ Extra checks that are not part of the test run:
     python handoff/step3/relief_report.py worlds/first.zarr [older.zarr]   # relief, ocean floor, rivers and lakes
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
     python tools/why_scan.py worlds/first.zarr     # reads the "why" answers of every cell against the numbers of the cell
+    python tools/earth_climate_patterns.py         # the patterns of steps 4 and 5 on the Earth twin, beside Earth
+    python tools/gcm_compare.py RUN.json           # the engine's aquaplanet against an ExoPlaSim run (build step 10)
     python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks in a headless browser
     python tools/refusal_audit.py                  # is every refusal of the engine held by a test? A quarter of an hour
                                                    # where it was built
@@ -173,7 +183,8 @@ refuses an option it does not know.
                           that prints on any system
       testing.py          the harness that runs one process alone
       library/            shared mathematics: mesh operators, flooding, transport, orbit, noise, drainage, snow,
-                          soil water, the demand for water, lakes
+                          soil water, the demand for water, lakes, the ocean's loops, days, the Koppen classes
+      detail.py           finer cells over one region of a finished world (build step 11)
       library/plates.py   the seeded start and the reading of plate boundaries that both Tectonics implementations share
       processes/          one file per implementation of a slot; each file's first lines name the model,
                           what it ignores and where it is wrong
