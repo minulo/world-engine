@@ -189,6 +189,23 @@ def _write(world, engine, path):
     g = root.create_group("fields")
     for name in sorted(world.fields):
         _put(g, name, world.fields[name], months, cells)
+    h = root.create_group("history")                    # the pictures of the geological history, for the viewer's film
+    h.attrs.update({"rounds": [s["round"] for s in world.snapshots], "times_my": [s["time_my"] for s in world.snapshots]})
+    for f in sorted(world.snapshots[0]["fields"]) if world.snapshots else []:
+        _put(h, f, np.stack([s["fields"][f] for s in world.snapshots]))
+    c = root.create_group("carry")                      # what the geological clock carries, to continue the history
+    geo = next((s for s in engine.stage_list if engine.clocks[s] == "geological"), None)
+    state = engine.carry_state(geo) if geo else {"round": 0}
+    c.attrs["round"] = state["round"]
+    for key in ("tables", "lagged_tables", "group_lagged", "group_now", "lagged"):
+        kg = c.create_group(key)
+        for name, value in sorted((state.get(key) or {}).items()):
+            if isinstance(value, dict):
+                sg = kg.create_group(name)
+                for col, arr in sorted(value.items()):
+                    _put(sg, col.replace(":", "~"), np.asarray(arr))
+            else:
+                _put(kg, name, np.asarray(value))
     g = root.create_group("tables")
     for t in sorted(world.tables):
         tg = g.create_group(t)
@@ -325,6 +342,39 @@ class StoreView(WorldView):
 
     def field_names(self):
         return sorted(self._root["fields"].array_keys())
+
+    def history(self) -> dict:
+        """The pictures of the geological history: rounds, times and the names of the fields kept."""
+        if "history" not in self._root:
+            return {"rounds": [], "times_my": [], "fields": []}
+        h = self._root["history"]
+        return {"rounds": list(h.attrs.get("rounds", [])), "times_my": list(h.attrs.get("times_my", [])),
+                "fields": sorted(h.array_keys())}
+
+    def history_field(self, name) -> np.ndarray:
+        return self._keep(("history", name), lambda: self._root["history"][name][...])
+
+    def snapshots(self) -> list:
+        h = self.history()
+        arrays = {f: self.history_field(f) for f in h["fields"]}
+        return [{"round": r, "time_my": t, "fields": {f: np.array(a[i]) for f, a in arrays.items()}}
+                for i, (r, t) in enumerate(zip(h["rounds"], h["times_my"]))]
+
+    def carry(self) -> dict:
+        if "carry" not in self._root:
+            raise KeyError("this world store holds no state of its geological history to continue from")
+        c = self._root["carry"]
+        out = {"round": int(c.attrs["round"])}
+        for key in ("tables", "lagged_tables", "group_lagged", "group_now", "lagged"):
+            kg = c[key]
+            out[key] = {name: {col.replace("~", ":"): kg[name][col][...] for col in kg[name].array_keys()}
+                        for name in kg.group_keys()}
+            out[key].update({name: kg[name][...] for name in kg.array_keys()})
+        for key in ("tables", "lagged_tables", "group_lagged", "group_now", "lagged"):
+            for v in out[key].values():
+                for a in (v.values() if isinstance(v, dict) else [v]):
+                    a.flags.writeable = False
+        return out
 
     def driver(self, field, term):
         return self._keep(("driver", field, term), lambda: self._root["causes/drivers"][field][term][...])

@@ -1,0 +1,19 @@
+# step 3 world (left) beside the step 2 world built from commit ee7e52b (right), preview mesh, seed 20261004
+land_share                                                                        0.277           0.344
+continental_crust_share                                                           0.403           0.400
+mean_land_height_m                                                                  523             675
+highest_m                                                                          5045            6435
+mean_sea_depth_m                                                                   3619            3990
+ocean_floor_mean_age_my                                                             121             126
+ocean_floor_oldest_my                                                               430             180
+ocean_floor_share_at_or_over_180_my                                               0.241           0.505
+height_peaks_m (bins of 500 m holding over 3 % of the surface)           [-5250, -2750, -250]  [-5250, -1250, 250]
+high_land_share_of_land (over 1.5 km)                                             0.078           0.080
+share_of_high_land_in_a_closing_zone_or_young_belt                                0.930           1.000
+share_of_all_land_in_a_closing_zone_or_young_belt                                 0.574           0.199
+land_draining_into_closed_hollows                                                 0.192           0.468
+land_under_lakes                                                                  0.035           0.089
+mean_erosion_rate_on_land_mm_per_yr                                               0.054               -
+slope_area_power (land with erosion over 0.01 mm/yr)                             -0.595               -
+cells_in_that_fit                                                                  2230               -
+hack_power (river length against basin area, larger half of the basins)           0.546               -

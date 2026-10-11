@@ -1,0 +1,169 @@
+{
+ "history_my": 2500.0,
+ "every_my": 250.0,
+ "mesh_level": 5,
+ "seed": 20261004,
+ "seconds": 573.7,
+ "rows": [
+  {
+   "time_my": 2.0,
+   "continental_volume_km3": 7461188526.883328,
+   "continental_area_share": 0.3999992465385823,
+   "land_share": 0.3397043092629642,
+   "plates": 14,
+   "mean_land_height_m": 507.12875127440475,
+   "mean_continental_thickness_m": 36569.899454414604,
+   "patch_left_share": 1.0,
+   "patch_stray_cells": 0.0,
+   "patch_plates": {
+    "12": 61.0
+   }
+  },
+  {
+   "time_my": 250.0,
+   "continental_volume_km3": 6745534679.101249,
+   "continental_area_share": 0.403009942706126,
+   "land_share": 0.27669346307193654,
+   "plates": 20,
+   "mean_land_height_m": 523.1970723947435,
+   "mean_continental_thickness_m": 32815.236937835914,
+   "patch_left_share": 0.5819805546141408,
+   "patch_stray_cells": 0.4174679199606385,
+   "patch_plates": {
+    "10": 35.43
+   }
+  },
+  {
+   "time_my": 500.0,
+   "continental_volume_km3": 7255672952.360555,
+   "continental_area_share": 0.44763494060592124,
+   "land_share": 0.223644708302719,
+   "plates": 17,
+   "mean_land_height_m": 425.4092140395977,
+   "mean_continental_thickness_m": 31778.152592796974,
+   "patch_left_share": 0.5722917968059817,
+   "patch_stray_cells": 0.3240464474317096,
+   "patch_plates": {
+    "30": 34.91
+   }
+  },
+  {
+   "time_my": 750.0,
+   "continental_volume_km3": 8749296112.011227,
+   "continental_area_share": 0.5207973072412365,
+   "land_share": 0.2108385132013628,
+   "plates": 13,
+   "mean_land_height_m": 565.1452604339761,
+   "mean_continental_thickness_m": 32936.641355717235,
+   "patch_left_share": 0.5926342369793361,
+   "patch_stray_cells": 0.28288241788090707,
+   "patch_plates": {
+    "32": 26.45,
+    "33": 0.68,
+    "38": 9.02
+   }
+  },
+  {
+   "time_my": 1000.0,
+   "continental_volume_km3": 10563241070.536242,
+   "continental_area_share": 0.5985443904817032,
+   "land_share": 0.20944419879792725,
+   "plates": 10,
+   "mean_land_height_m": 897.8518367900201,
+   "mean_continental_thickness_m": 34599.97237541349,
+   "patch_left_share": 0.6531495029922139,
+   "patch_stray_cells": 0.21384364256158409,
+   "patch_plates": {
+    "32": 39.54
+   }
+  },
+  {
+   "time_my": 1250.0,
+   "continental_volume_km3": 11900992639.59899,
+   "continental_area_share": 0.6939651632307959,
+   "land_share": 0.21885191746255983,
+   "plates": 9,
+   "mean_land_height_m": 381.8638378677892,
+   "mean_continental_thickness_m": 33621.75992879266,
+   "patch_left_share": 0.6491224331361328,
+   "patch_stray_cells": 0.17649663808540358,
+   "patch_plates": {
+    "32": 39.09,
+    "49": 0.51
+   }
+  },
+  {
+   "time_my": 1500.0,
+   "continental_volume_km3": 13539716213.176197,
+   "continental_area_share": 0.7364696944810589,
+   "land_share": 0.25130199434493133,
+   "plates": 9,
+   "mean_land_height_m": 561.4925594710797,
+   "mean_continental_thickness_m": 36043.71999110582,
+   "patch_left_share": 0.6704358982024585,
+   "patch_stray_cells": 0.16776129867043826,
+   "patch_plates": {
+    "55": 40.27,
+    "56": 0.62
+   }
+  },
+  {
+   "time_my": 1750.0,
+   "continental_volume_km3": 14838258087.141556,
+   "continental_area_share": 0.7842014905345426,
+   "land_share": 0.27894186079861494,
+   "plates": 12,
+   "mean_land_height_m": 432.0878179974404,
+   "mean_continental_thickness_m": 37096.26480519876,
+   "patch_left_share": 0.6047516452228928,
+   "patch_stray_cells": 0.1501487342281026,
+   "patch_plates": {
+    "65": 36.67
+   }
+  },
+  {
+   "time_my": 2000.0,
+   "continental_volume_km3": 16475165544.318207,
+   "continental_area_share": 0.8121838055420252,
+   "land_share": 0.20671052740408394,
+   "plates": 13,
+   "mean_land_height_m": 271.8392891541587,
+   "mean_continental_thickness_m": 39769.52347901641,
+   "patch_left_share": 0.6095717593013241,
+   "patch_stray_cells": 0.10996017150851675,
+   "patch_plates": {
+    "80": 37.09
+   }
+  },
+  {
+   "time_my": 2250.0,
+   "continental_volume_km3": 19089507101.718723,
+   "continental_area_share": 0.8782767192209744,
+   "land_share": 0.09626414770469022,
+   "plates": 11,
+   "mean_land_height_m": 372.05016939901543,
+   "mean_continental_thickness_m": 42612.623193794265,
+   "patch_left_share": 0.5346927748567619,
+   "patch_stray_cells": 0.08623326183168685,
+   "patch_plates": {
+    "91": 32.34
+   }
+  },
+  {
+   "time_my": 2500.0,
+   "continental_volume_km3": 20948732388.60112,
+   "continental_area_share": 0.9132452959937115,
+   "land_share": 0.03879645571742012,
+   "plates": 11,
+   "mean_land_height_m": 594.6543890675068,
+   "mean_continental_thickness_m": 44972.31363786003,
+   "patch_left_share": 0.5113286180585748,
+   "patch_stray_cells": 0.06936622043403987,
+   "patch_plates": {
+    "108": 5.31,
+    "114": 24.74,
+    "115": 1.14
+   }
+  }
+ ]
+}

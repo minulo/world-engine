@@ -7,9 +7,12 @@ checking changed, where the build departs from the design and where its worlds a
 [docs/BUILD_NOTES.md](docs/BUILD_NOTES.md). Read its sections 4, 6 and 8 before trusting a map.
 
 Built so far: the skeleton (build step 0), the smallest end-to-end slice (step 1: terrain,
-temperature, wind, rainfall and biomes, with a viewer) and the water on land (step 2: drainage,
-snow, soil water, rivers, lakes, and the water that land gives back to the air). Erosion, moving
-plates, ocean currents, soils, storms and daily weather are designed and not built.
+temperature, wind, rainfall and biomes, with a viewer), the water on land (step 2: drainage,
+snow, soil water, rivers, lakes, and the water that land gives back to the air) and deep time
+(step 3: 250 My of moving plates, with subduction, collision, spreading and rifting, rivers that cut
+the land as it rises, the rock at the surface and the age of each surface, and a film of the history
+in the viewer). Ocean currents, soils, storms and daily weather are designed and not built. What step 3
+measured, and what it did not do, is in docs/BUILD_NOTES.md, section 12.
 
 ## Install
 
@@ -32,12 +35,14 @@ test of its own.
 ## Use
 
     python -m worldengine order                                  # the running order computed from the declarations
-    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; half a minute where it was built
+    python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; a minute and a half where it was built
     python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 10 to 20 minutes where it was built
     python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/
     python -m worldengine explain worlds/first.zarr --lat 18 --lon -102 --field biome
     python -m worldengine info worlds/first.zarr
 
+    python -m worldengine build --profile preview --history-my 500 --continue-from worlds/first.zarr --out worlds/later.zarr
+                                                                  # the same history, run on from 250 to 500 My
     python -m worldengine build --profile preview --seed 7 --out worlds/other.zarr
     python -m worldengine build --profile preview --interventions data/examples/frozen_region.yaml --out worlds/frozen.zarr
     python -m worldengine build --profile preview --interventions data/examples/place_label.yaml --out worlds/forest.zarr
@@ -55,7 +60,8 @@ store carries its fingerprints, so a difference shows. A world store is written
 once and never changed.
 
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, switch to the flat map, play
-the months, and click a cell for its values and its "why" answer.
+the months, and click a cell for its values and its "why" answer. For elevation, ocean_mask, plate_id
+and crust_type a second slider plays the geological history as a film, one picture every 10 My.
 
 ### A "why" answer
 
@@ -63,28 +69,30 @@ Every process records the terms that made its result, and `explain` walks back t
 planet parameter, a seeded start or a push. For the mouth of the largest river of the default world
 (shortened):
 
-    python -m worldengine explain worlds/first.zarr --lat 27.1 --lon -166.1 --field river_discharge
+    python -m worldengine explain worlds/first.zarr --lat 68.2 --lon 98.5 --field river_discharge
 
-    Why is river_discharge like this at 27.1° N, 166.1° W (cell 7516)?
-    1. This cell is sea. The rivers that end here deliver 100694 m³/s on the year's average: 100694 m³/s
-       arrive from upstream, where the largest single source is cell 456, at 23.3° N, 166.1° E.
-    2. At 23.3° N, 166.1° E (cell 456), where the cause lies: Runoff here averages 125.9 mm/month: ice
-       leaving ground where snow never melts away gives 88.9 mm/month; rain that the soil could not hold
-       gives 33.4 mm/month; melted snow that the soil could not hold gives 3.71 mm/month.
-    3. [...] The snow on the ground here holds 1085 mm of water on the year's average, and lies all
-       year: more snow falls in a year than the year can melt. [...]
-    5. [...] Precipitation here averages 125.9 mm/month: moist air rains 92.1 mm/month; air forced up
-       rising ground adds 70.4 mm/month; sinking air changes it by -36.5 mm/month.
+    Why is river_discharge like this at 68.2° N, 98.5° E (cell 4999)?
+    1. This cell is sea. The rivers that end here deliver 57378 m³/s on the year's average: 57378 m³/s
+       arrive from upstream, where the largest single source is cell 9508, at 48.4° N, 135.3° E.
+    2. At 48.4° N, 135.3° E (cell 9508), where the cause lies: Runoff here averages 52.0 mm/month: ice
+       leaving ground where snow never melts away gives 26.3 mm/month; melted snow that the soil could not
+       hold gives 15.3 mm/month; rain that the soil could not hold gives 10.3 mm/month.
+    3. [...] The snow on the ground here holds 427.6 mm of water on the year's average, and lies all
+       year: more snow falls in a year than the year can melt. Of the 41.6 mm/month that fall on the
+       year's average, 15.3 mm/month melt and 26.3 mm/month leave as ice. [...]
+    5. [...] Precipitation here averages 52.0 mm/month: moist air rains 49.1 mm/month; air forced up
+       rising ground adds 2.91 mm/month.
     ...
-    11. [...] The temperature here averages -2.5 °C over the year: sunlight absorbed against heat lost
-        to space would give -27.3 °C; heat spread from neighbouring cells changes it by +48.5 °C; its
-        height changes it by -23.7 °C.
-    12. [...] Sunlight at the top of the air averages 384.9 W/m² over the year here.
-    13. [...] The chain ends here, at planet parameters: the latitude of 23.3° north, the axial tilt of
+    11. [...] The temperature here averages -5.3 °C over the year: sunlight absorbed against heat lost
+        to space would give -44.3 °C; heat spread from neighbouring cells changes it by +44.1 °C; its
+        height changes it by -5.1 °C.
+    12. [...] Sunlight at the top of the air averages 291.7 W/m² over the year here.
+    13. [...] The chain ends here, at planet parameters: the latitude of 48.4° north, the axial tilt of
         23.44 degrees and the star output of 1361.0 W/m².
 
-The answer is true of the world and shows one of its known errors at work: snow that never melts on a
-mountain at 23° north (docs/BUILD_NOTES.md, section 8).
+The answer is true of the world and shows one of its known errors at work: snow that never melts at 48°
+north, where half of what the ground sheds is ice leaving a store that the summers cannot empty
+(docs/BUILD_NOTES.md, sections 4.9 and 8).
 
 ## Earth, as a yardstick
 
@@ -116,10 +124,10 @@ in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 864 tests, about 10 minutes where it was built
+    python -m pytest                    # 890 tests; with the Earth data, three quarters of an hour where it was built
 
-35 of them are expected failures: patterns of Earth, and two conditions of the design (the dry
-belt of the north and the closed Caspian), that the engine is known to miss, each with the number
+37 of them are expected failures: patterns of Earth, and conditions of the design (the dry belts of
+the north and the south and the closed Caspian), that the engine is known to miss, each with the number
 measured. `python -m pytest -rx` prints them. They are not the whole list of known errors: the
 notes' sections 4.4, 4.6 and 8 name misses that no test states. Without the Earth data the
 102 tests that need it are skipped.
@@ -129,6 +137,8 @@ Extra checks that are not part of the test run:
     python trials/crust_points_trial.py            # the trial of crust carried on moving points (docs/BUILD_NOTES.md, 3.2)
     python trials/crust_points_trial.py seeds      # the same on ten other seeds
     python trials/climate_round_cost.py standard   # what a climate round costs on this machine
+    python trials/long_history_trial.py            # 2,500 My of plates on the preview mesh, measured every 250 My
+    python handoff/step3/relief_report.py worlds/first.zarr [older.zarr]   # relief, ocean floor, rivers and lakes
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
     python tools/why_scan.py worlds/first.zarr     # reads the "why" answers of every cell against the numbers of the cell
     python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks in a headless browser
@@ -164,6 +174,7 @@ refuses an option it does not know.
       testing.py          the harness that runs one process alone
       library/            shared mathematics: mesh operators, flooding, transport, orbit, noise, drainage, snow,
                           soil water, the demand for water, lakes
+      library/plates.py   the seeded start and the reading of plate boundaries that both Tectonics implementations share
       processes/          one file per implementation of a slot; each file's first lines name the model,
                           what it ignores and where it is wrong
     src/earth_reference/  readers of the Earth data, Earth on the mesh, the Earth twin. Not part of the engine:

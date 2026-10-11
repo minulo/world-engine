@@ -5,8 +5,7 @@ stages:
   - name: geological
     clock: geological
     round_length_my: 2.0           # the step of Cortial et al. 2019
-    history_length_my: 2.0         # ONE round while Tectonics is a single snapshot (build step 1).
-                                   # The designed default of 250 My returns with the full plate model in step 3.
+    history_length_my: 250.0       # the designed default: 125 rounds of moving plates (build step 3)
   - name: climate
     clock: climate
   - name: weather

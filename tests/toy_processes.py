@@ -660,3 +660,14 @@ class Pointer(Process):
         ctx.driver("pointed", "to_cell", to_cell)
         ctx.driver("pointed", "to_row", np.zeros(n, dtype=np.int32))
         ctx.driver("pointed", "span", np.full(n, 3.0e6))
+
+
+class UniformRunoff(Process):
+    """A climate that only sheds a set depth of water from every place: the runoff that FluvialErosion reads, for worlds
+    built to test the geological history without the cost of the climate."""
+    stage = "climate"
+    writes = ("runoff_annual",)
+    model = "the same runoff everywhere"
+
+    def run(self, ctx):
+        ctx.write("runoff_annual", np.full(ctx.mesh.n, ctx.const["mm_per_year"]))

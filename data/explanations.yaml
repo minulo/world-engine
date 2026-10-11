@@ -11,15 +11,15 @@ PlanetGeometry:
 Tectonics:
   plate_id:
     says: "This cell rides on plate {value}."
-    ends: "The chain ends here, at a seeded starting condition: the outlines and motions of the plates are drawn from the world seed."
+    ends: "The chain ends here, at the history of the plates: their seeded start, and the splits and welds of the table of tectonic events."
   crust_type:
     says: "The crust here is {value}."
     ends: "The chain ends here, at a seeded starting condition: which crust each plate carries is drawn from the world seed."
   convergence_rate:
     says: "The nearest boundary of this cell's plate closes at {value} (a negative value means it opens)."
-    ends: "The chain ends here, at a seeded starting condition: the motions of the plates are drawn from the world seed."
+    ends: "The chain ends here, at the motions of the plates: drawn from the world seed at the start, then turned by slab pull and set anew where a plate split (the table of plates and the table of tectonic events)."
   ocean_crust_age:
-    says: "The ocean floor here is {value} old: its distance from the plate's nearest spreading ridge, at half the opening speed there."
+    says: "The ocean floor here is {value} old: it formed at a spreading ridge and has ridden with its plate since (floor of the seeded start was given the age of its distance from the nearest ridge, at half the opening speed there)."
     says_missing: "There is no ocean floor here, so its age has no value: the crust is continental."
     follows: [convergence_rate]
     follows_missing: [crust_type]
@@ -27,15 +27,15 @@ Tectonics:
     says: "The crust here is {value} thick:"
     form: sum
     drivers:
-      normal_thickness: {base: true, says: "crust of its type is normally {v} thick", follows: [crust_type]}
-      seeded_variation:
-        says: "the seeded starting condition varies it by {v}"
-        ends: "The chain ends here, at a seeded starting condition: how the thickness of the crust varies from place to place is drawn from the world seed."
-      thickened_by_plates: {says: "plates closing nearby have thickened it by {v}", follows: [convergence_rate]}
+      formed_thickness: {base: true, says: "it formed {v} thick, at the seeded start or at a spreading ridge", follows: [crust_type]}
+      thickened_by_plates: {says: "plates closing nearby have since thickened it by {v}", follows: [convergence_rate]}
+      removed_by_erosion:
+        says: "erosion has since changed it by {v}"
+        ends: "The chain ends here, at the history of erosion: what rivers and hillside creep wore away in each round, a round's wear set by the slope, the water and the rock of that time (FluvialErosion)."
       event:
         row_of: tectonic_events
-        values: {kind: {1: "a trench where one plate dives under the other", 2: "a collision of continents", 4: "a spreading ridge"}}
-        says: "the event behind the thickening is {kind}, between plates {plate_a} and {plate_b} (row {row} of the table of tectonic events)"
+        values: {kind: {1: "a trench where one plate dives under the other", 2: "a collision of continents", 3: "the split of a plate", 4: "a spreading ridge"}}
+        says: "the last event that thickened it is {kind}, between plates {plate_a} and {plate_b}, {time_my} My into the history (row {row} of the table of tectonic events)"
 
 Isostasy:
   elevation:
@@ -44,6 +44,22 @@ Isostasy:
     drivers:
       from_crust_thickness: {says: "continental crust floating on denser rock gives {v}", follows: [crust_thickness]}
       from_ocean_floor_age: {says: "the age of the ocean floor gives {v}", follows: [ocean_crust_age]}
+
+Lithology:
+  rock_type:
+    says: "The rock at the surface here is {value}, from the tectonic setting (the rule table of Lithology):"
+    follows: [crust_type, orogeny_age, volcanism]
+  erodibility:
+    says: "Running water wears this rock at {value} times the rate of an average rock."
+    follows: [rock_type]
+
+FluvialErosion:
+  erosion_rate:
+    says: "Rock is worn away here at {value}:"
+    form: sum
+    drivers:
+      rivers: {says: "rivers cutting down toward the sea take {v}", follows: [elevation]}
+      creep: {says: "hillsides creeping downhill take {v}"}
 
 SeaLevel:
   ocean_mask:
@@ -396,3 +412,8 @@ Biomes:
                 "it is a tropical climate: the coldest month is 18 °C or warmer", "it is a temperate climate",
                 "it is a cold climate: the coldest month is at or below 0 °C", "it is a polar climate: the warmest month is 10 °C or colder"]
         says: "{v}"
+
+SurfaceAge:
+  surface_age:
+    says: "The ground here was last renewed {value} ago (counted from the start of the history), by new ocean floor, lava, deep erosion or rising from the sea."
+    follows: [volcanism, erosion_rate, ocean_mask]

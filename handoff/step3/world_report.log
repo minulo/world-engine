@@ -1,0 +1,36 @@
+world: 10242 cells, profile preview, seed 20261004, 85 s, climate rounds 19, settled True
+notices: none
+land share 0.277; mean sea depth 3619 m; mean land height 523 m; highest 5045 m; land below sea level 0.015 of land; sea level -237 m; bodies of water 1
+temperature: global mean 14.6 C; north pole -16.0, south pole -12.6; equator (within 5 degrees) 30.2
+  half the yearly swing at 40-60 degrees: land 5.4, sea 2.6; largest 8.7
+  mean albedo 0.332
+  land under snow in every month 0.23 of land, in some month 0.37; land whose warmest month is below freezing 0.20; sea under ice 0.059 of the sea
+  half the yearly swing over land by latitude: 20-40 4.4, 40-50 5.4, 50-60 5.4, 60-70 4.9
+wind toward the east by band, south to north: [-2.5 -3.7 -1.1  2.8  5.1  3.7 -1.1 -5.8 -6.9 -1.6 -7.1 -5.5 -1.   4.1
+  5.1  2.1 -1.  -3.2 -2.8]
+wind toward the north by band: [ 0.3  0.4  0.1 -0.4 -0.8 -0.7  0.3  2.   4.8 -0.7 -5.  -1.9 -0.3  0.7
+  0.8  0.3 -0.1 -0.4 -0.3]
+rain: global 1135 mm/yr; land 853; sea 1243; evaporation (sea and land) over rain 1.000005
+  driest land band, north: 58 degrees, 309 mm/yr; equatorward of 50: 49 degrees, 595 mm/yr; land of the storm belt at 40 to 55: 595 mm/yr
+  driest land band, south: 58 degrees, 458 mm/yr; equatorward of 50: 29 degrees, 487 mm/yr; land of the storm belt at 40 to 55: 804 mm/yr
+  wettest cell 5416 mm/yr (sea); wettest land cell 5253; rain of rising ground: 50 mm/yr over land, 0.012 of all rain
+  rain by 10-degree band, south to north: [ 208.  240.  383.  608.  902.  931.  673.  947. 1895. 3463. 1739.  934.
+  710.  949.  830.  484.  294.  228.  183.]
+  wettest 10-degree band 3463 mm/yr; land under 250 mm: 0.16 of land; land over 1500 mm: 0.13
+biomes, share of the surface: {'ocean': 0.683, 'ice': 0.095, 'tropical_seasonal_forest_savanna': 0.062, 'subtropical_desert': 0.027, 'temperate_rainforest': 0.001, 'tropical_rainforest': 0.011, 'woodland_shrubland': 0.05, 'tundra': 0.004, 'boreal_forest': 0.025, 'temperate_grassland_desert': 0.011, 'temperate_seasonal_forest': 0.031}
+  sea under ice: 0.040 of the surface
+climate classes, share of the land: {'A': 0.224, 'BS': 0.071, 'BW': 0.036, 'C': 0.286, 'D': 0.018, 'E': 0.365}
+water on land, mm/yr: rain 853; back to the air 598 (0.701 of the rain); the air's demand 883; runoff 249
+  rivers reaching the sea 36.0 thousand km3 a year; rain less evaporation over land 36.0; ratio 1.000000
+  largest rivers at the coast (m3/s at lat, lon): [(57378, 66.7, 102.1), (48534, 41.3, 106.4), (36176, 68.3, 61.6), (33257, -5.1, -172.0), (25532, 4.0, -166.3)]
+  closed hollows: 22 with one bottom, 3 made of two; 0.192 of the land drains into one
+  exact ties: of 2807 land cells with a lower neighbour, 649 have several equally low: the lower bed settles 632, the wider way 17, the cell numbers 0; 0 land cells lie on level ground
+  lakes: 17, of which 15 overflow; 0.035 of the land under water; largest (km2): [2603651, 686548, 435073, 297722, 197086]; closed lakes take 0.07 thousand km3 a year
+  river basins with every hollow full: 943; the largest drains 0.054 of the land
+  snow: on the ground all year on 0.235 of the land, in some month on 0.373; deepest store of a cell that loses its snow 1069 mm
+  soil: 0.58 full on average; rounds 19
+  land rain by 10-degree band, south to north: [ 160.  133.  178.  519.  856.  887.  526.  748. 1444. 2809. 1371.  806.
+  608.  763.  645.  343.  215.  191.    0.]
+  land evaporation by 10-degree band:         [   0.    0.    0.   56.  405.  692.  519.  743. 1184. 1666. 1219.  794.
+  587.  549.  236.   18.    0.    0.    0.]
+timings (s): {'Tectonics': 23.5, 'SurfaceAge': 2.6, 'Isostasy': 1.5, 'FluvialErosion': 2.0, 'SeaLevel': 18.2, 'Drainage': 2.0, 'EnergyBalance': 1.2, 'Circulation': 3.9, 'Moisture': 25.6, 'Biomes': 1.1, 'Hydrology': 2.6}

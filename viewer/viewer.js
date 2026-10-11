@@ -11,6 +11,7 @@ const NOTHING_AT_SEA = [70, 86, 108];      // so land and sea each get a plain o
 const state = {
   world: null, field: null, part: "", month: 1, flat: false, lon0: 0, lat0: 20, zoom: 0.92, panX: 0, panY: 0,
   idmap: null, idW: 0, idH: 0, data: null, stats: null, selected: -1, playing: null, cache: new Map(), sea: null,
+  frame: -1, filming: null,                // frame: a picture of the geological history, or -1 for the world as it ends
 };
 
 // ---------------------------------------------------------------- colour
@@ -197,9 +198,16 @@ async function getJSON(url) { const r = await fetch(url); const j = await r.json
 async function getBuffer(url) { const r = await fetch(url); if (!r.ok) throw new Error((await r.json()).error || r.statusText); return r.arrayBuffer(); }
 function spec() { return state.world.fields[state.field]; }
 function isMonthly() { return spec().shape === "month_cell"; }
+function inHistory() { const h = state.world.history; return !!h && h.fields.includes(state.field); }
+function framed() { return inHistory() && state.frame >= 0 && state.frame < state.world.history.rounds.length; }
 async function loadField() {
-  const s = spec(), key = `${state.field}|${isMonthly() ? state.month : 0}|${state.part}`;
+  const s = spec(), key = `${state.field}|${isMonthly() ? state.month : 0}|${state.part}|${framed() ? state.frame : -1}`;
   let arr = state.cache.get(key);
+  if (!arr && framed()) {
+    arr = new Float32Array(await getBuffer("/api/history?" + new URLSearchParams({ name: state.field, index: state.frame })));
+    if (state.cache.size > 80) state.cache.clear();
+    state.cache.set(key, arr);
+  }
   if (!arr) {
     const q = new URLSearchParams({ name: state.field });
     if (isMonthly()) q.set("month", state.month);
@@ -234,6 +242,8 @@ async function selectField() {
   const s = spec(), cat = s.kind === "category" || s.kind === "boolean", names_a_thing = s.kind === "index";
   $("fielddesc").textContent = s.description || "";
   $("partrow").hidden = s.kind !== "direction";
+  $("historyrow").hidden = !inHistory();
+  if (!inHistory() && state.filming) toggleFilm();
   $("monthrow").style.opacity = isMonthly() ? 1 : 0.4; $("month").disabled = $("play").disabled = !isMonthly();
   if (!isMonthly() && state.playing) togglePlay();
   const [mapName, split0, scale] = FIELD_MAP[state.field] || ["viridis", false];
@@ -342,6 +352,23 @@ function togglePlay() {
   state.playing = setInterval(async () => { state.month = state.month % state.world.meta.months + 1; $("month").value = state.month;
     $("monthlabel").textContent = state.month; await loadField(); }, 700);
 }
+function frameLabel() {
+  const h = state.world.history, n = h.rounds.length;
+  $("framelabel").textContent = state.frame < 0 || state.frame >= n ? "the end of the history"
+    : `${h.times_my[state.frame].toFixed(0)} My into the history`;
+}
+async function showFrame(i) {
+  const n = state.world.history.rounds.length;
+  state.frame = i >= n ? -1 : i; $("frame").value = i >= n || i < 0 ? n : i; frameLabel(); await loadField();
+}
+function toggleFilm() {
+  const b = $("playhist");
+  if (state.filming) { clearInterval(state.filming); state.filming = null; b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); return; }
+  b.textContent = "Pause"; b.setAttribute("aria-pressed", "true");
+  const n = state.world.history.rounds.length;
+  if (state.frame < 0) state.frame = n;
+  state.filming = setInterval(async () => { await showFrame(state.frame < 0 ? 0 : (state.frame + 1) % (n + 1)); }, 450);
+}
 function setView(flat) {
   state.flat = flat; state.zoom = flat ? 1 : 0.92; state.panX = state.panY = 0;
   $("viewflat").setAttribute("aria-pressed", String(flat)); $("viewglobe").setAttribute("aria-pressed", String(!flat)); draw();
@@ -352,6 +379,8 @@ function wire() {
   $("month").addEventListener("input", async (e) => { state.month = +e.target.value; $("monthlabel").textContent = state.month; await loadField();
     if (state.selected >= 0) showCell(state.selected); });
   $("play").addEventListener("click", togglePlay);
+  $("frame").addEventListener("input", (e) => showFrame(+e.target.value));
+  $("playhist").addEventListener("click", toggleFilm);
   $("viewglobe").addEventListener("click", () => setView(false)); $("viewflat").addEventListener("click", () => setView(true));
   let drag = null;
   canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; canvas.setPointerCapture(e.pointerId); canvas.classList.add("dragging"); });
@@ -393,6 +422,11 @@ async function start() {
   if (asked.has("lon")) state.lon0 = +asked.get("lon");
   if (asked.has("month")) { state.month = Math.max(1, Math.min(m.months, +asked.get("month"))); $("month").value = state.month; $("monthlabel").textContent = state.month; }
   if (asked.get("view") === "flat") setView(true);
+  const hist = w.history || { rounds: [], times_my: [], fields: [] };
+  w.history = hist;
+  $("frame").max = hist.rounds.length; $("frame").value = hist.rounds.length;
+  if (asked.has("frame")) { const f = +asked.get("frame"); state.frame = f >= 0 && f < hist.rounds.length ? f : -1; $("frame").value = state.frame < 0 ? hist.rounds.length : state.frame; }
+  if (hist.rounds.length) frameLabel();
   const want = asked.get("field");
   state.field = want && w.fields[want] ? want : ["biome", "elevation", "latitude"].find((n) => w.fields[n]) || Object.keys(w.fields)[0];
   sel.value = state.field;

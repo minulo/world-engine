@@ -80,7 +80,8 @@ class WorldService:
         return {"meta": a["meta"], "planet": a["planet"], "seed": a["seed"],
                 "fields": {n: a["fields"][n] for n in stored}, "lineage": a["lineage"], "models": a.get("models", {}),
                 "notices": notices, "warnings": self.warnings(), "colors": a.get("category_colors", {}),
-                "engine_version": a.get("engine_version")}
+                "engine_version": a.get("engine_version"),
+                "history": self.view.history() if hasattr(self.view, "history") else {"rounds": [], "times_my": [], "fields": []}}
 
     def idmap(self, width: int) -> bytes:
         """For a flat grid of longitude and latitude, the cell nearest to each point (unsigned 32-bit, row 0 in the north)."""
@@ -115,6 +116,16 @@ class WorldService:
             else:
                 a = np.linalg.norm(a, axis=-1)
         return a
+
+    def history_field(self, name, index) -> bytes:
+        """One picture of the geological history of a field."""
+        h = self.view.history()
+        if name not in h["fields"]:
+            raise KeyError(f"the history holds no pictures of {name}")
+        a = self.view.history_field(name)
+        if not (0 <= index < a.shape[0]):
+            raise IndexError(f"picture {index} is outside 0 to {a.shape[0] - 1}")
+        return np.ascontiguousarray(a[index], dtype="<f4").tobytes()
 
     def field(self, name, month=None, part=None) -> bytes:
         return np.ascontiguousarray(self._plane(name, month, part), dtype="<f4").tobytes()
@@ -210,6 +221,8 @@ class _Handler(BaseHTTPRequestHandler):
             if url.path == "/api/field":
                 month = _asked(q, "month", int) - 1 if "month" in q else None
                 return self._send(200, s.field(_asked(q, "name"), month, q.get("part")), "application/octet-stream")
+            if url.path == "/api/history":
+                return self._send(200, s.history_field(_asked(q, "name"), _asked(q, "index", int)), "application/octet-stream")
             if url.path == "/api/stats":
                 return self._json(s.stats(_asked(q, "name")))
             if url.path == "/api/cell":

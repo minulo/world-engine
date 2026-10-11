@@ -55,6 +55,22 @@ fields:
     {family: Crust and plates, unit: 0 to 1, shape: cell, kind: number, range: [0, 1],
      description: "Volcanic activity index: high above sinking plates and along ridges."}
   # ---------------------------------------------------------------- Rock and relief
+  rock_type:
+    {family: Rock and relief, unit: category, shape: cell, kind: category,
+     categories: [ocean_floor_basalt, volcanic_arc, young_fold_belt, rift_basin, old_mountain_roots, stable_platform],
+     description: "The family of rock at the surface, from the tectonic setting that made it."}
+  erodibility:
+    {family: Rock and relief, unit: factor, shape: cell, kind: number, range: [0, 10],
+     description: "How easily running water wears this rock away, relative to an average rock."}
+  erosion_rate:
+    {family: Rock and relief, unit: mm/yr, shape: cell, kind: number, range: [0, 100],
+     description: "Rock worn away by rivers and hillside creep, averaged over the last geological round."}
+  erosion_thinning:
+    {family: Rock and relief, unit: m per round, shape: cell, kind: number, range: [-100000, 0],
+     description: "The thinning of the crust by erosion in the last round, handed to Tectonics (negative: thinner)."}
+  surface_age:
+    {family: Rock and relief, unit: My, shape: cell, kind: number, range: [0, 5000],
+     description: "Time since the ground here was last renewed by lava, by deep erosion or by rising from the sea, counted from the start of the history."}
   elevation:
     {family: Rock and relief, unit: m, shape: cell, kind: number, range: [-20000, 20000],
      description: "Height of the solid surface above the reference level, which is where continental crust of normal thickness stands; negative below it."}

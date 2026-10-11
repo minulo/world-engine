@@ -35,6 +35,15 @@
       </div>
     </div>
 
+    <div id="historyrow" hidden>
+      <label for="frame">Geological time <output id="framelabel">today</output></label>
+      <div class="row">
+        <input id="frame" type="range" min="0" max="0" value="0" step="1">
+        <button id="playhist" type="button" aria-pressed="false">Play</button>
+      </div>
+      <p class="muted small">The history of the plates, one picture every few rounds.</p>
+    </div>
+
     <label>View</label>
     <div class="row seg" role="group" aria-label="View">
       <button id="viewglobe" type="button" aria-pressed="true">Globe</button>

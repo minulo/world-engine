@@ -9,10 +9,14 @@ tables:
     description: "One row per crust point, a sample point that rides on a plate and carries the crust: its plate, its position, crust type, thickness, ocean-floor age, mountain-building age, the running totals kept for the cause record, and the older points it was filled from, with their weights."
     columns: {plate: int32, x: float64, y: float64, z: float64, crust_type: int16, thickness_m: float32,
               ocean_age_my: float32, orogeny_age_my: float32, thickened_by_plates_m: float32, removed_by_erosion_m: float32,
+              formed_m: float32, last_event: int32,
               source_a: int32, source_b: int32, source_c: int32, weight_a: float32, weight_b: float32, weight_c: float32}
   tectonic_events:
-    description: "One row per event: time, kind (1 subduction, 2 collision, 3 split, 4 spreading), plates, cells affected."
+    description: "One row per event: time, kind (1 subduction, 2 collision or a weld, 3 split, 4 spreading), plates, cells affected."
     columns: {time_my: float32, kind: int16, plate_a: int32, plate_b: int32, cells: int32}
+  surface_age_points:
+    description: "One row per crust point, in the order of the table of crust points: how long ago its surface was last renewed, and whether it lay under the sea in the round before."
+    columns: {age_my: float32, was_sea: bool}
   seas:
     description: "One row per body of water that the poured volume left: the height of its surface, its area and its volume. The first row is the main sea, the body with the largest area; its surface is the sea level."
     columns: {surface_m: float64, area_m2: float64, volume_m3: float64, cells: int32, lowest_cell: int32}
