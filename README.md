@@ -80,27 +80,27 @@ planet parameter, a seeded start or a push. For the mouth of the largest river o
     python -m worldengine explain worlds/first.zarr --lat 68.2 --lon 98.5 --field river_discharge
 
     Why is river_discharge like this at 68.2° N, 98.5° E (cell 4999)?
-    1. This cell is sea. The rivers that end here deliver 57378 m³/s on the year's average: 57378 m³/s
-       arrive from upstream, where the largest single source is cell 9508, at 48.4° N, 135.3° E.
-    2. At 48.4° N, 135.3° E (cell 9508), where the cause lies: Runoff here averages 52.0 mm/month: ice
-       leaving ground where snow never melts away gives 26.3 mm/month; melted snow that the soil could not
-       hold gives 15.3 mm/month; rain that the soil could not hold gives 10.3 mm/month.
-    3. [...] The snow on the ground here holds 427.6 mm of water on the year's average, and lies all
-       year: more snow falls in a year than the year can melt. Of the 41.6 mm/month that fall on the
-       year's average, 15.3 mm/month melt and 26.3 mm/month leave as ice. [...]
-    5. [...] Precipitation here averages 52.0 mm/month: moist air rains 49.1 mm/month; air forced up
-       rising ground adds 2.91 mm/month.
+    1. This cell is sea. The rivers that end here deliver 51634 m³/s on the year's average: 51634 m³/s
+       arrive from upstream, where the largest single source is cell 1282, at 50.7° N, 96.8° E.
+    2. At 50.7° N, 96.8° E (cell 1282), where the cause lies: Runoff here averages 37.4 mm/month: melted
+       snow that the soil could not hold gives 28.9 mm/month; ice leaving ground where snow never melts
+       away gives 7.32 mm/month; rain that the soil could not hold gives 1.18 mm/month.
+    3. [...] The snow on the ground here holds 173.5 mm of water on the year's average, and lies all
+       year: more snow falls in a year than the year can melt. Of the 36.2 mm/month that fall on the
+       year's average, 28.9 mm/month melt and 7.32 mm/month leave as ice. [...]
+    5. [...] Precipitation here averages 37.4 mm/month: moist air rains 26.0 mm/month; air forced up
+       rising ground adds 11.4 mm/month.
     ...
-    11. [...] The temperature here averages -5.3 °C over the year: sunlight absorbed against heat lost
-        to space would give -44.3 °C; heat spread from neighbouring cells changes it by +44.1 °C; its
-        height changes it by -5.1 °C.
-    12. [...] Sunlight at the top of the air averages 291.7 W/m² over the year here.
-    13. [...] The chain ends here, at planet parameters: the latitude of 48.4° north, the axial tilt of
+    11. [...] The temperature here averages -14.1 °C over the year: sunlight absorbed against heat lost
+        to space would give -46.3 °C; heat spread from neighbouring cells changes it by +35.9 °C; its
+        height changes it by -14.2 °C; heat the wind carries in changes it by +10.5 °C.
+    12. [...] Sunlight at the top of the air averages 280.6 W/m² over the year here.
+    13. [...] The chain ends here, at planet parameters: the latitude of 50.7° north, the axial tilt of
         23.44 degrees and the star output of 1361.0 W/m².
 
-The answer is true of the world and shows one of its known errors at work: snow that never melts at 48°
-north, where half of what the ground sheds is ice leaving a store that the summers cannot empty
-(docs/BUILD_NOTES.md, sections 4.9 and 8).
+The answer is true of the world and shows one of its known errors at work: snow that never melts at 51°
+north, on ground 14 °C below freezing over the year, where a fifth of what the ground sheds is ice leaving
+a store that the summers cannot empty (docs/BUILD_NOTES.md, sections 4.9, 8 and 13).
 
 ## Earth, as a yardstick
 

@@ -29,7 +29,9 @@ Tectonics:
     drivers:
       formed_thickness: {base: true, says: "it formed {v} thick, at the seeded start or at a spreading ridge", follows: [crust_type]}
       thickened_by_plates: {says: "plates closing nearby have since thickened it by {v}", follows: [convergence_rate]}
-      removed_by_erosion: {says: "erosion has since changed it by {v}"}
+      removed_by_erosion:
+        says: "erosion has since changed it by {v}"
+        ends: "The chain ends here, at the history of erosion: what rivers and hillside creep wore away in each round, a round's wear set by the slope, the water and the rock of that time (FluvialErosion)."
       event:
         row_of: tectonic_events
         values: {kind: {1: "a trench where one plate dives under the other", 2: "a collision of continents", 3: "the split of a plate", 4: "a spreading ridge"}}

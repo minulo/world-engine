@@ -7,7 +7,7 @@
   reason: "The Whispering Forest"
   region:
     circle: {lat: -50.0, lon: 105.0, radius_km: 1500}
-    where: {field: biome, is_one_of: [temperate_seasonal_forest, temperate_rainforest, boreal_forest]}
+    where: {field: biome, is_one_of: [temperate_deciduous_forest, cool_mixed_forest, cool_conifer_forest, cold_mixed_forest, taiga]}
   pushes:
     - field: place_label
       set: whispering_forest
