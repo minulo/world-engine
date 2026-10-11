@@ -20,12 +20,12 @@ def text(name):
     return yaml.safe_load((DATA / name).read_text(encoding="utf-8"))
 
 
-def geology_engine(history_my, seed=None, every=2):
+def geology_engine(history_my, seed=None, every=2, rerun=None, runoff="UniformRunoff"):
     """The default world's setup and geological stages, with a history of the given length and a picture every
-    `every` rounds."""
+    `every` rounds; with `rerun`, the toy climate is rerun inside the history every so many rounds (build step 9)."""
     models = text("models.yaml")
     models["slots"] = {k: v for k, v in models["slots"].items() if k in GEOLOGY}
-    models["slots"]["Runoff"] = {"implementation": "toy_processes:UniformRunoff", "standing": "Test", "model": "uniform runoff",
+    models["slots"]["Runoff"] = {"implementation": f"toy_processes:{runoff}", "standing": "Test", "model": "uniform runoff",
                                  "ignores": "the climate", "wrong_where": "everywhere", "writes": ["runoff_annual"],
                                  "constants": {"mm_per_year": 300.0}}
     stages = text("stages.yaml")
@@ -34,6 +34,7 @@ def geology_engine(history_my, seed=None, every=2):
             s["history_length_my"] = float(history_my)
     profiles = text("profiles.yaml")
     profiles["profiles"]["preview"]["snapshot_every_rounds"] = every
+    profiles["profiles"]["preview"]["climate_rerun_every_rounds"] = rerun
     return Engine(DATA, profile="preview", seed=seed, overrides={"models": models, "stages": stages, "profiles": profiles})
 
 
@@ -198,3 +199,31 @@ def test_surface_age_grows_and_resets_under_lava_deep_erosion_and_where_land_ris
     assert age[0] == 0.0 and age[1] == 0.0 and age[2] == 0.0 and age[3] == 0.0     # new floor, lava, deep erosion, risen land
     assert np.all(age[4:] == 12.0)                                                  # elsewhere one step older
     assert list(out.drivers["surface_age"]["renewed_by"][:4]) == [1, 2, 3, 4]
+
+
+# ---------------------------------------------------------------------------------- the climate inside the history (step 9)
+@pytest.fixture(scope="module")
+def reruns(tmp_path_factory):
+    """With a climate whose runoff grows with height, rerun every 2 rounds: 8 My kept and continued to 16 My, and
+    16 My in one run; and 16 My without the rerun."""
+    d = tmp_path_factory.mktemp("reruns")
+    e8 = geology_engine(8, rerun=2, runoff="RunoffFromHeight")
+    store.save(e8.build(), e8, d / "a8.zarr")
+    continued = geology_engine(16, rerun=2, runoff="RunoffFromHeight").build(continue_from=store.StoreView(d / "a8.zarr"))
+    whole = geology_engine(16, rerun=2, runoff="RunoffFromHeight").build()
+    plain = geology_engine(16, runoff="RunoffFromHeight").build()
+    return continued, whole, plain
+
+
+def test_with_the_climate_rerun_inside_the_history_a_continued_history_equals_one_run(reruns):
+    """The bit-for-bit condition of step 3, again with the climate rerun inside the history (design, build step 9). The
+    stored world carries the climate its last rounds read, so the rounds after it read what one long run read."""
+    continued, whole, _ = reruns
+    assert continued.fingerprints() == whole.fingerprints()
+    assert continued.climate_reruns == whole.climate_reruns == [2, 4, 6]       # none after the last round: the world's own climate follows
+
+
+def test_the_rerun_climate_reaches_the_land(reruns):
+    _, whole, plain = reruns
+    assert not np.array_equal(whole.fields["elevation"], plain.fields["elevation"])
+    assert plain.climate_reruns == []

@@ -33,17 +33,31 @@ on the default preview world: with 0.2 years in place of 1, up to 0.8 K in tempe
 The two cases meet without a jump: as the year's net snowfall falls to nothing, so do the ice
 that leaves and the snow that outlasts the summer.
 
-Ignores: days warmer or colder than their month's mean (a month just below freezing melts
-nothing here), rain falling on snow, snow blown by wind, and snow lost straight to the air.
+The days of a month may be given a spread around its mean (build step 6), so that a month just below freezing
+melts some snow on its warmer days; with no spread a month just below freezing melts nothing.
+
+Ignores: rain falling on snow, snow blown by wind, and snow lost straight to the air.
 """
 import numpy as np
+from scipy.special import ndtr
 
 STEEP = 1.0e-6                 # in _mean_cover: a month's change smaller than this share of the store counts as none
 
 
-def degree_day_melt(temperature_k: np.ndarray, freezing_k: float, factor_mm_per_day_k: float, month_days: float) -> np.ndarray:
-    """What a month could melt (mm of water): the factor times the degrees above freezing times the days of the month."""
-    return factor_mm_per_day_k * month_days * np.maximum(temperature_k - freezing_k, 0.0)
+def degree_day_melt(temperature_k: np.ndarray, freezing_k: float, factor_mm_per_day_k: float, month_days: float,
+                    daily_spread_k: float = 0.0) -> np.ndarray:
+    """What a month could melt (mm of water): the factor times the degrees above freezing times the days of the month.
+    With a daily spread, the days of the month scatter around its mean as a normal distribution of that standard
+    deviation, and the degrees above freezing are those the days have on average: s phi(x / s) + x Phi(x / s), x the
+    month's mean above freezing [INFERRED: the expected positive part of a normal distribution; using it for the
+    positive degree-days of a month is, as I recall, the method of Reeh 1991 and Calov and Greve 2005, UNVERIFIED]. A
+    month just below freezing then melts some snow on its warmer days."""
+    x = temperature_k - freezing_k
+    if daily_spread_k <= 0.0:
+        return factor_mm_per_day_k * month_days * np.maximum(x, 0.0)
+    z = x / daily_spread_k
+    warm = daily_spread_k * np.exp(-0.5 * z * z) / np.sqrt(2.0 * np.pi) + x * ndtr(z)
+    return factor_mm_per_day_k * month_days * warm
 
 
 def _mean_cover(start, rate, full):

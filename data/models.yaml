@@ -11,6 +11,9 @@ shared:
                                                # [DOCUMENTED: North, Cahalan and Coakley 1981, eq. 15 and p. 102, put the edge of
                                                #  their ice cap at "the mean annual -10 C isotherm"; INFERRED: applying it to the
                                                #  sea only is my reading]
+  weather_look_back_days: 8                    # the window of days that the weather of a day is drawn from: no storm lives longer,
+                                               # and wet and dry spells remember no further back [PROVISIONAL: mid-latitude storms
+                                               # live a few days to a week, UNVERIFIED]
 
 slots:
   PlanetGeometry:
@@ -221,27 +224,43 @@ slots:
       samples_per_month: 8                     # moments averaged for each monthly mean
 
   Albedo:
-    implementation: worldengine.processes.albedo_surface_table:SurfaceTableAlbedo
+    # The first version, which decides snow and ice itself, is still there: worldengine.processes.albedo_surface_table:SurfaceTableAlbedo
+    implementation: worldengine.processes.albedo_cover_table:CoverTableAlbedo
     standing: Rule
-    model: "A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection at low sun angles. Ice lies on the sea where the year's mean temperature is below -10 C (North, Cahalan and Coakley 1981). Snow lies on land where Hydrology's snow store held snow in the last round: land is white by the share of the ground under snow on the month's average."
-    ignores: "Where clouds actually form, plant cover, dust, sea ice that comes and goes with the seasons, the darkening of old snow and of snow under trees."
-    wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics: every sky has the same share of cloud. Too much land is white all year: a fifth of the default world's, and a third of the Earth twin's [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8], where a tenth of Earth's land lies under ice [DOCUMENTED: National Snow and Ice Data Center, Glacier Quick Facts]. EnergyBalance gives the land summers too weak to melt the snow, and snow that outlasts a summer reflects the next one's sunlight; the two have not been told apart [INFERRED]. A planet can still freeze over, more easily than in fuller models [UNVERIFIED: recalled]; the process says so in a note when snow and ice cover more than a third of the surface."
+    model: "A table sets reflection by surface type (sea, bare ground, ground under plants, snow and ice), with a constant share for cloud and more reflection at low sun angles (North, Cahalan and Coakley 1981). Snow and ice are where Cryosphere put them in the last round; plants come from the last round's Biomes, and hide part of the snow beneath them."
+    ignores: "Where clouds actually form, dust, the darkening of old snow."
+    wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics: every sky has the same share of cloud. A planet can still freeze over, more easily than in fuller models [UNVERIFIED: recalled]; the process says so in a note when snow and ice cover more than a third of the surface."
     writes: [albedo]
     constants:
-      cloud_share: 0.255                       # [INFERRED: set so that an ice-free planet with the table below reflects the 0.319 of North et al. 1981]
+      cloud_share: 0.255                       # [INFERRED: set so that an ice-free planet with the table of the first version reflects the 0.319 of North et al. 1981]
       low_sun_term: 0.202                      # times the second Legendre polynomial of sin(latitude) [DOCUMENTED: North, Cahalan and Coakley 1981, eq. 18]
       surface:
         sea: 0.07                              # [UNVERIFIED: typical value]
-        land: 0.20                             # [UNVERIFIED: typical value for ground with some plants]
+        bare_ground: 0.25                      # [UNVERIFIED: typical value for dry bare ground]
+        under_plants: 0.15                     # [UNVERIFIED: typical value for forest; half cover gives the 0.20 of the first version]
         ice: 0.658                             # [INFERRED: gives ice-covered cells the 0.62 of North et al. 1981]
-      ice_ramp_k: 2.0                          # width of the change from open to ice-covered sea around the limit, so that the rounds settle [INFERRED]
-      note_when_covered_above: 0.333           # a note is raised when snow and ice cover more than this share of the planet on the
-                                               # year's average [INFERRED: Earth today is near a tenth by my estimate, of its whole
-                                               #  surface, sea ice and seasonal snow counted; UNVERIFIED. That is another quantity
-                                               #  than the tenth of Earth's LAND under ice, which is DOCUMENTED]
+      snow_hidden_by_plants: 0.5               # the share of the snow's whiteness that full plant cover hides [PROVISIONAL]
+      note_when_covered_above: 0.333           # [INFERRED, as in the first version]
+
+  Cryosphere:
+    implementation: worldengine.processes.cryosphere_thresholds:ThresholdCryosphere
+    standing: Rule
+    model: "Sea ice in the months the sea lies below the freezing point of sea water; snow and lasting ice on land from the snow store of the last round; permafrost from the year's mean between two thresholds."
+    ignores: "Ice that flows, glaciers carving valleys, ice ages, the insulation of the ground by snow, sea ice blown by the wind."
+    wrong_where: "No fjords or glacial lakes; the edges of ice sheets and of the permafrost zone. The thresholds are not tested against a map of Earth's frozen ground: the reference data hold none. [INFERRED]"
+    writes: [snow_ice_cover, permafrost]
+    constants:
+      sea_freezes_below_k: 263.15              # -10 C of the air over the sea, month by month: the edge of the ice cap of North, Cahalan
+                                               #  and Coakley 1981 (p. 102), taken month by month [INFERRED]. The freezing point of sea
+                                               #  water (-1.8 C) put ice on 0.175 of the sea on the year's mean [MEASURED, step 6]: this
+                                               #  model's temperature is the air's, which over a winter sea falls far below the water's
+      sea_ice_ramp_k: 2.0                      # the change from open to covered sea is spread over this width, so that the rounds settle [INFERRED]
+      full_cover_mm: 15.0                      # the ground counts as fully covered once the snow store holds this much water: Hydrology's value
+      permafrost_full_below_k: 265.15          # -8 C on the year's mean: frozen ground throughout [UNVERIFIED: a common rule of thumb for continuous permafrost]
+      permafrost_none_above_k: 272.15          # -1 C: no permafrost above [UNVERIFIED: a common rule of thumb for the edge of discontinuous permafrost]
 
   EnergyBalance:
-    implementation: worldengine.processes.energy_balance_spreading:SpreadingEnergyBalance
+    implementation: worldengine.processes.energy_balance_wind:WindEnergyBalance
     standing: Adapted
     model: "The energy balance model of North, Cahalan and Coakley 1981: absorbed sunlight equals heat lost to space (A + B T) plus heat spread sideways, with land and sea differing in how slowly they warm. First version: spreading only."
     ignores: "The layers of the air, heat carried as water vapour, wind and ocean heat (folded into the spreading constant), sea ice as a lid on the sea, and the make-up of the air: every planet gets Earth's greenhouse effect."
@@ -250,18 +269,26 @@ slots:
     constants:
       loss_at_zero_celsius_w_m2: 203.3         # A [DOCUMENTED: North, Cahalan and Coakley 1981]
       loss_per_kelvin_w_m2_k: 2.09             # B [DOCUMENTED: the same]
-      spreading_constant_w_m2_k: 0.649         # D, on a sphere of the radius below [DOCUMENTED: the same]
+      spreading_constant_w_m2_k: 0.52          # D, on a sphere of the radius below [CALIBRATED: tools/fit_spreading.py on the preview
+                                               #  Earth twin with the ocean and the wind carrying heat (build steps 4 to 6): the fall
+                                               #  from the tropics to the polar caps equals CRU's 40.0 K at 0.520; the 0.649 of North,
+                                               #  Cahalan and Coakley 1981 was fitted with spreading as the only transport]
       spreading_constant_radius_m: 6.371e+6    # the radius D was fitted on; the spreading length of 3,550 km is kept on other planets [INFERRED]
       heat_capacity_land_j_m2_k: 1.055e+7      # 0.16 B years [DOCUMENTED: the same paper, p. 100], with B above and a year of 3.156e7 s
       heat_capacity_sea_j_m2_k: 3.10e+8        # 4.7 B years, an ocean mixed layer of 75 m [DOCUMENTED: the same]
       time_waves: 2                            # the yearly mean plus this many waves in time (yearly, half-yearly)
+      air_column_kg_m2: 2000.0                 # the mass of air whose temperature the surface wind carries, about the lowest 200 hPa [PROVISIONAL]
+      air_heat_capacity_j_kg_k: 1004.0         # [UNVERIFIED: textbook value for dry air]
+      wind_heat_passes: 3
+      sea_heat_capacity_j_m3_k: 4.13e+6        # the sea's heat capacity per cubic metre: 3.10e8 J/m2/K over the 75 m of North et al. 1981
+      mixed_layer_step_m: 5.0                  # the stirred depth is taken in whole steps of this, so that the solver is seldom prepared again                      # the wind's heat is worked out from the round's solution and solved again this many times
     expected_range:
       radius_m: [5.0e+6, 8.0e+6]
       axial_tilt_deg: [0.0, 54.0]              # above about 54 the poles get more yearly sunlight than the equator
       surface_water_volume_m3: [0.5e+18, 3.0e+18]
 
   Circulation:
-    implementation: worldengine.processes.circulation_belts:BeltCirculation
+    implementation: worldengine.processes.circulation_monsoon:SummerSinkingCirculation
     standing: Assembled
     model: "Pressure belts tied to the tropical overturning loop (edge from the scaling of Lu, Vecchi and Reichler 2007) and to the latitude of fastest storm growth; warm surfaces lower the pressure (Lindzen and Nigam 1987); surface wind from a balance of pressure, spin and drag; wind aloft from the thermal wind; storm growth from the Eady rate."
     ignores: "Single storms, including the ones that drive the westerlies; waves raised by mountain ranges; the turning aside of wind by high ground; how monsoons really work."
@@ -303,10 +330,47 @@ slots:
         sinking_width_deg: 9.0
         winter_loop_power: 1.5                 # the wider (winter) loop is stronger by this power of its width [INFERRED]
         branch_threshold: 0.05
+      monsoon:                                 # the rising branch per band of longitude [build step 5]
+        sector_deg: 20.0                       # width of a band of longitude [INFERRED: about the width of the Indian subcontinent]
+        smoothing_sectors: 3                   # the warmest latitude is smoothed over this many bands [INFERRED]
+        rising_limit_deg: 30.0                 # no farther from the equator than this, nor nearer the loop's edge than its margin [PROVISIONAL]
+        share: 1.0                             # how fully the branch follows its band rather than the zonal mean [PROVISIONAL]
+      summer_sinking:                          # the stand-in for descent west of heated land (Rodwell and Hoskins 2001) [build step 5]
+        heating_latitudes_deg: [10.0, 40.0]    # land warmer than its latitude between these latitudes counts as heated [PROVISIONAL]
+        reach_km: 3000.0                       # how far west of the heating the air sinks [PROVISIONAL: the Sahara lies about this far west of the Indian monsoon]
+        smoothing_km: 800.0                    # the heating is taken over this length [PROVISIONAL]
+        sinking_mm_s_per_k: 2.0                # sinking per kelvin of smoothed warmth [PROVISIONAL: puts its peak near the sinking of the overturning loop]
     expected_range:
       rotation_period_s: [43200.0, 172800.0]
       axial_tilt_deg: [0.0, 35.0]
       radius_m: [5.0e+6, 8.0e+6]
+
+  OceanCurrents:
+    implementation: worldengine.processes.ocean_wind_driven:WindDrivenOcean
+    standing: Established
+    model: "The wind-driven loops of one uniform layer over a flat floor: Sverdrup balance in mid-ocean, closed by a western boundary current through friction (Stommel 1948). Upwelling from the divergence of the wind-driven surface transport (Ekman), with friction near the equator. Heat carried by the loops and the drift, and taken by upwelled water."
+    ignores: "Deep overturning driven by density, eddies, layers in the sea, the shape of the sea floor, sea ice as a lid."
+    wrong_where: "Too little heat is carried poleward where deep overturning matters; channels that circle the globe have no coast to lean on; the western current is wider and slower than real ones, as it cannot be narrower than a few cells; straits narrower than a cell are lost. [INFERRED: the design's own list]"
+    writes: [ocean_current, upwelling, mixed_layer_depth, ocean_heat_convergence]
+    constants:
+      air_density_kg_m3: 1.2                   # [UNVERIFIED: textbook value near the surface]
+      drag_coefficient: 1.3e-3                 # of wind on the sea [UNVERIFIED: a common value]
+      sea_water_density_kg_m3: 1025.0          # [UNVERIFIED: textbook value]
+      sea_water_heat_capacity_j_kg_k: 3990.0   # [UNVERIFIED: textbook value]
+      layer_depth_m: 1000.0                    # the one layer that the loops move [PROVISIONAL]
+      heat_layer_depth_m: 300.0                # the part of the layer whose temperature is the surface's [PROVISIONAL]
+      drift_depth_m: 50.0                      # the surface layer that the wind drifts, for the current at the surface [UNVERIFIED: a common Ekman depth]
+      western_layer_cells: 2.0                 # the width of the western boundary layer, r / beta, in cells [INFERRED: the narrowest the mesh holds]
+      western_layer_set_at_deg: 30.0           # the latitude at which that width is set [INFERRED]
+      equatorial_friction_latitude_deg: 5.0    # the friction of the surface drift is the spin term at this latitude [PROVISIONAL]
+      upwelling_efficiency: 0.1                # the share of the upwelled water's coldness that reaches the surface [PROVISIONAL]
+      mixing_coefficient: 0.6                  # the Ekman depth scale, coefficient times u* / |f| [CALIBRATED on the preview Earth twin: the mean
+                                               #  miss of the sea's July-January swing in four bands against CRU 1961-1990 is 2.46 K at
+                                               #  0.4, 1.59 at 0.6, 2.30 at 0.8, 3.02 at 1.2 (build step 4). The form of the scale is recalled: UNVERIFIED]
+      mixing_spin_floor_deg: 10.0              # nearer the equator f is held at its value here [INFERRED]
+      mixed_layer_m: [20.0, 150.0]             # the stirred depth is kept between these [PROVISIONAL]
+      upwelling_cooling_limit_w_m2: 100.0      # soft limit of the cooling by upwelling [PROVISIONAL: about the largest seen off Peru, UNVERIFIED]
+      carried_heat_limit_w_m2: 250.0           # soft limit of the heat the loops and drift bring to a cell [PROVISIONAL: about the Gulf Stream's loss, UNVERIFIED]
 
   Moisture:
     implementation: worldengine.processes.moisture_one_layer:OneLayerMoisture
@@ -387,6 +451,9 @@ slots:
       snow:
         melt_mm_per_day_per_k: 4.0             # degree-day factor of snow melt [DOCUMENTED: Hock 2003, eq. 1 for the rule; her Table 1
                                                #  lists 2.5 to 5.5 mm a day per degree for snow at sites without glaciers. INFERRED: 4]
+        daily_spread_k: 5.0                    # the days of a month scatter around its mean by this much (one standard deviation), so
+                                               #  a month just below freezing melts on its warmer days [UNVERIFIED: about the 5 K that
+                                               #  Reeh 1991 took for Greenland, as I recall; build step 6]
         ice_after_years: 1.0                   # where more snow falls in a year than the year can melt, the store holds this many
                                                # years of the net snowfall and what is older leaves as ice [INFERRED: a stand-in
                                                #  for snow turning to glacier ice and flowing away. The ice that leaves is the year's
@@ -461,28 +528,89 @@ slots:
       surface_gravity_m_s2: [5.0, 20.0]
 
   Soils:
-    implementation: worldengine.processes.soils_uniform:UniformSoil
+    # The first version, one capacity everywhere, is still there: worldengine.processes.soils_uniform:UniformSoil
+    implementation: worldengine.processes.soils_jenny_rules:JennyRuleSoils
     standing: Rule
-    model: "Every soil holds the same depth of water, the field capacity of Manabe's bucket. A stand-in until the Soils process of build step 7."
-    ignores: "Everything that makes soils differ: rock, slope, climate, age, plants."
-    wrong_where: "Sand and bare rock, which hold far less; deep loams, which hold more [UNVERIFIED: recalled]. No other soil property is written yet."
-    writes: [soil_water_capacity]
+    model: "Soil depth from production that slows as the soil thickens (Heimsath et al. 1997), against erosion and the time since the ground was renewed; the order from a rule table over Jenny's five factors onto the USDA orders; water held and fertility from depth, rock and order."
+    ignores: "Everything finer than an order, farming, soil laid down by rivers, wind and ice."
+    wrong_where: "A classification, not a physical model; boundaries are sharper than in nature; surface ages count from the start of the history. The thresholds of the table are not tested against a soil map: the reference data hold none. [INFERRED]"
+    writes: [soil_order, soil_depth, soil_water_capacity, soil_fertility]
     constants:
-      capacity_mm: 150.0                       # [DOCUMENTED: the description of the GFDL model: "field capacity everywhere 0.15 m"]
+      wet_without_demand: 10.0                 # rain over demand where the air asks for nothing [INFERRED]
+      depth:
+        fastest_production_m_per_year: 7.7e-5  # P0 [UNVERIFIED: recalled from Heimsath et al. 1997, 77 mm per thousand years]
+        decline_depth_m: 0.5                   # h0, the depth over which production falls by e [UNVERIFIED: recalled from the same]
+        production_from_c: -5.0                # production grows with warmth from here ... [PROVISIONAL]
+        production_full_at_c: 25.0             # ... to here, and with rain over demand up to 1 [PROVISIONAL]
+        usual_warmth_and_water: 0.25           # warmth times water (each 0 to 1) at which production is P0 [PROVISIONAL: with 0.5 and a
+                                               #  ceiling of 2, 0.38 of the default world's land was bare rock; with these two, 0.26]
+        least_production_share: 0.1            # cold or dry ground still weathers at this share of P0 [PROVISIONAL]
+        most_production_share: 4.0             # hot, wet ground weathers at up to this share of P0 [PROVISIONAL]
+        deepest_m: 20.0
+        least_time_my: 1.0                     # ground renewed in the last round has weathered about half of it [INFERRED: a round is 2 My]
+      root_depth_m: 1.5                        # the water below this is out of reach [UNVERIFIED: a common rooting depth]
+      least_capacity_mm: 10.0                  # bare rock and thin soil still hold this much in cracks [PROVISIONAL]
+      water_per_metre_mm:                      # water held for plants per metre of soil, by the rock below [PROVISIONAL]
+        default: 150.0
+        rift_basin: 180.0
+        volcanic_arc: 170.0
+        old_mountain_roots: 110.0
+        young_fold_belt: 120.0
+      orders:                                  # in order; the first that matches wins [PROVISIONAL: thresholds mine, after the orders' definitions]
+        - {order: ice, where: {lasting_ice: [0.99, null]}}
+        - {order: bare_rock, where: {depth_m: [null, 0.1]}}
+        - {order: shifting_sand, where: {wet: [null, 0.1], plants: [null, 0.1]}}
+        - {order: gelisols, where: {permafrost: [0.5, null]}}
+        - {order: histosols, where: {wet: [2.0, null], mean_temperature_c: [null, 5.0], slope: [null, 0.002]}}
+        - {order: andisols, rock: [volcanic_arc], where: {age_my: [null, 50.0]}}
+        - {order: oxisols, where: {mean_temperature_c: [22.0, null], wet: [1.2, null], age_my: [50.0, null]}}
+        - {order: ultisols, where: {mean_temperature_c: [15.0, null], wet: [1.0, null], age_my: [20.0, null]}}
+        - {order: vertisols, rock: [rift_basin], where: {wet: [0.5, 1.2], mean_temperature_c: [15.0, null]}}
+        - {order: aridisols, where: {wet: [null, 0.5]}}
+        - {order: mollisols, biome: [warm_grass_shrub, cool_grass_shrub, xerophytic_woods_scrub], where: {wet: [0.5, 1.2]}}
+        - {order: spodosols, biome: [taiga, cool_conifer_forest, cool_mixed_forest, cold_mixed_forest], where: {wet: [1.0, null]}}
+        - {order: alfisols, where: {mean_temperature_c: [5.0, 22.0], wet: [0.8, 2.0], age_my: [5.0, null]}}
+        - {order: inceptisols, where: {age_my: [null, 5.0]}}
+        - {order: inceptisols, where: {slope: [0.01, null]}}
+        - {order: entisols}
+      fertility:                               # the share of the richest soil's nutrients, by order [PROVISIONAL]
+        mollisols: 0.9
+        andisols: 0.8
+        alfisols: 0.75
+        vertisols: 0.7
+        inceptisols: 0.6
+        histosols: 0.5
+        entisols: 0.45
+        aridisols: 0.4
+        gelisols: 0.3
+        ultisols: 0.3
+        spodosols: 0.25
+        oxisols: 0.2
 
   Biomes:
-    implementation: worldengine.processes.biomes_whittaker_koppen:WhittakerKoppen
+    # The first version, Whittaker's chart, is still there: worldengine.processes.biomes_whittaker_koppen:WhittakerKoppen
+    implementation: worldengine.processes.biomes_biome1:Biome1
     standing: Established
-    model: "Whittaker's chart of mean yearly temperature against yearly precipitation, with the Köppen-Geiger climate class of Peel, Finlayson and McMahon 2007 computed alongside."
-    ignores: "Seasons (the chart sees only yearly values), soils, fire, grazing, competition over time, and the level of carbon dioxide."
-    wrong_where: "The edges of savanna and grassland that fire sets, and climates with one very dry season [INFERRED: the chart knows the year's mean temperature and the year's rain alone; not measured against a map of biomes]. A climate off the chart takes the nearest biome on it."
+    model: "BIOME1 of Prentice et al. 1992: plant functional types admitted by the coldest and warmest months, growing degree-days and a drought index; the dominant ones name the biome. The Köppen-Geiger class of Peel, Finlayson and McMahon 2007 alongside."
+    ignores: "Fire, grazing, competition over time, the level of carbon dioxide."
+    wrong_where: "The edges of savanna and grassland that fire sets; degree-days from monthly means fall short where months straddle the base. [INFERRED]"
     writes: [climate_class, biome, vegetation_cover]
     constants:
-      chart: {from_file: {file: biomes, key: biomes}}        # outlines of the chart, with each biome's plant cover
-      chart_scale: {temperature_c: 45.0, precipitation_cm: 450.0}   # spans of the chart, to judge "nearest" off the chart [INFERRED]
-      mm_per_cm: 10.0
-      limited_by_cold: [tundra, ice]
-      limited_by_dryness: [subtropical_desert, temperate_grassland_desert, woodland_shrubland]
+      plant_types: {from_file: {file: biomes, key: plant_types}}
+      biomes: {from_file: {file: biomes, key: biome1}}
+      without_plants:                          # the engine's own classes, outside the table
+        - {name: ocean, cover: 0.0}
+        - {name: ice, cover: 0.0}
+      gdd_bases_c: {gdd5: 5.0, gdd0: 0.0}
+      supply_mm_per_day: 5.0                   # the most the soil can give the air, times its relative moisture [UNVERIFIED: recalled]
+      lasting_ice_cover: 0.99                  # land covered by ice in every month at least this much is ice
+      sea_ice_biome_above: 0.5                 # sea under ice for more than this share of the year is shown as ice
+      growth_from_c: 0.0                       # the plant cover of a seasonal biome is least below this ... [PROVISIONAL]
+      full_growth_at_c: 10.0                   # ... and full above this [PROVISIONAL]
+      dormant_share: 0.2                       # the share of its cover a seasonal biome keeps in the cold months [PROVISIONAL]
+      poor_soil_effect: 0.3                    # cover on the poorest soil is this share less than on the richest [PROVISIONAL]
+      limited_by_cold: [tundra, polar_desert, ice]
+      limited_by_dryness: [hot_desert, semi_desert, warm_grass_shrub, xerophytic_woods_scrub]
       koppen:                                  # [DOCUMENTED: Peel, Finlayson and McMahon 2007, Table 1; temperatures in C, precipitation in mm]
         months: 12
         summer_months_north: [4, 5, 6, 7, 8, 9]    # summer is the warmer of April-September and October-March
@@ -506,3 +634,89 @@ slots:
         warm_summer_months: 4
         severe_winter_c: -38.0
         frost_warmest_c: 0.0
+
+  StormClimatology:
+    implementation: worldengine.processes.storm_climatology:StormMaps
+    standing: Adapted
+    model: "Mid-latitude storm tracks as the storm growth rate (Eady) carried downwind by the steering wind and fading over a storm's life; the genesis potential index of tropical cyclones of Emanuel and Nolan, as in Camargo et al. 2007, with potential intensity from the sea's temperature after DeMaria and Kaplan 1994."
+    ignores: "Thunderstorms, storms acting on each other, and the heights at which the published index reads its terms."
+    wrong_where: "Counts of storms: read the maps as where and when, not how many. The humidity and the shear of the index come from a one-layer air and stand in for those at their heights. [INFERRED]"
+    writes: [storm_track_density, tc_genesis_potential, potential_intensity]
+    constants:
+      storm_life_days: 4.0                     # what a storm's growth carries fades over this time [UNVERIFIED: mid-latitude storms
+                                               #  live a few days]
+      saturation:                              # Moisture's numbers: the formula of Bolton 1980 [UNVERIFIED, as recalled there]
+        pressure_at_zero_pa: 611.2
+        exponent_factor: 17.67
+        exponent_offset_k: 29.65
+        vapour_gas_constant_j_kg_k: 461.5
+        lowest_temperature_k: 150.0
+      vapour_scale_height_m: 2500.0            # as Moisture's: turns what air can hold at the surface into what a column can hold
+      intensity_a_m_s: 28.2                    # potential intensity = A + B exp(C (T - T0)), T the sea's temperature in C
+      intensity_b_m_s: 55.8                    #  [UNVERIFIED: the form and the four numbers are recalled from DeMaria and Kaplan
+      intensity_c_per_k: 0.1813                #  1994, a fit over the Atlantic]
+      intensity_t0_c: 30.0
+      warm_enough_c: 20.0                      # below this the relation is not used and the intensity is zero [PROVISIONAL]
+      intensity_cap_m_s: 90.0                  # [PROVISIONAL: about the strongest winds measured in cyclones, UNVERIFIED]
+      gpi:                                     # |1e5 eta|^1.5 (H/50)^3 (V/70)^3 (1 + 0.1 S)^-2 [UNVERIFIED: recalled, Emanuel and Nolan 2004]
+        vorticity_scale: 1.0e+5
+        vorticity_power: 1.5
+        humidity_ref: 50.0
+        humidity_power: 3.0
+        intensity_ref: 70.0
+        intensity_power: 3.0
+        shear_factor: 0.1
+        shear_power: -2.0
+
+  WeatherStatistics:
+    implementation: worldengine.processes.weather_statistics:MixingLengthWeather
+    standing: Assembled
+    model: "How far a day's temperature strays: the temperature contrast across a mixing length of about 900 km (Schneider, Bischoff and Plotka 2015). The share of wet days from the month's rain to the power 0.45 (New, Hulme and Jones 2000)."
+    ignores: "The difference between day and night; spells held in place when storm tracks stall; swings caused by cloud or thunderstorms."
+    wrong_where: "The spread is too small in the tropics and wherever swings come from cloud or thunderstorms. One scale for the whole planet cannot tell a drizzle climate from one of rare downpours. Neither field is tested against daily data for Earth: the reference data hold none. [INFERRED]"
+    writes: [daily_temperature_spread, wet_day_fraction]
+    constants:
+      mixing_length_km: 900.0                  # [DOCUMENTED in the design: Schneider, Bischoff and Plotka 2015, near the surface in
+                                               #  mid-latitudes]
+      dense_tracks_percentile: 90.0            # the track density counted as dense, in each month [PROVISIONAL]
+      thin_track_share: 0.3                    # where storm tracks are thin the length shrinks to this share [PROVISIONAL]
+      sea_damping: 0.5                         # the sea's heat damps the day-to-day spread by this share [PROVISIONAL]
+      wet_day_scale: 0.3                       # wet-day share at 1 mm of rain a day [PROVISIONAL: one scale for the whole planet]
+      wet_day_power: 0.45                      # [DOCUMENTED in the design: New, Hulme and Jones 2000, equation 4]
+
+  SynopticStorms:
+    implementation: worldengine.processes.synoptic_storms:StormTracks
+    standing: Adapted
+    model: "Storms born at random where the storm maps are high, each keyed by its birth date; mid-latitude storms carried by the steering wind, tropical cyclones by the steering wind and a drift toward the pole and the west (beta-and-advection, Emanuel et al. 2006)."
+    ignores: "Storms acting on each other, and weather fronts."
+    wrong_where: "Each path is a plausible sample, not a prediction; the numbers born are set here, not drawn from the maps, which are not counts. [INFERRED]"
+    writes: [storm_influence, "table:storms"]
+    constants:
+      midlatitude_births_per_day: 6.0          # over the whole planet [PROVISIONAL: UNVERIFIED for Earth]
+      tropical_births_per_day: 0.25            # about 90 a year [UNVERIFIED: the order of Earth's yearly count of tropical cyclones]
+      beta_drift_m_s: 2.0                      # [UNVERIFIED: a few metres a second, recalled]
+      beta_poleward_share: 0.5                 # the drift heads as much toward the pole as toward the west [INFERRED]
+      tropical_needs_sea_c: 26.0               # a tropical cyclone holds its strength only over sea at least this warm [UNVERIFIED:
+                                               #  the usual threshold, recalled]
+      tropical_daily_decay: 0.5                # off warm sea it keeps this share of its strength each day [PROVISIONAL]
+      tropical_reference_intensity_m_s: 70.0   # strength 1 at this potential intensity: the reference of the genesis index
+      midlatitude_radius_km: 1000.0            # the reach of a storm's influence [INFERRED: the synoptic scale]
+      tropical_radius_km: 300.0                # [INFERRED: the order of a cyclone's rain shield]
+      influence_cap: 2.0                       # overlapping storms add up to no more than this
+
+  DailyWeather:
+    implementation: worldengine.processes.daily_weather:RemembersNoiseWeather
+    standing: Adapted
+    model: "A weather generator in the line of Richardson 1981: temperatures drawn around the monthly mean with WeatherStatistics' spread, wet days at its share with exponential amounts that keep the month's total, wind and pressure around the monthly means; spells come from noise remembered over the look-back window, and passing storms bring rain and low pressure."
+    ignores: "The motion of the air itself."
+    wrong_where: "The weakest causal link in the chain: a believable sample around a physically derived climate, not a simulation. Years differ too little from each other. [INFERRED]"
+    writes: [weather_temperature, weather_precipitation, weather_wind, weather_pressure]
+    constants:
+      noise_length_km: 800.0                   # neighbouring cells vary together over about this distance [PROVISIONAL: weather
+                                               #  systems span about a thousand kilometres]
+      persistence: 0.7                         # the weight of yesterday's noise against today's [PROVISIONAL: spells of a few days]
+      storm_rain_chance: 0.6                   # a storm at full strength makes rain this likely where it is [PROVISIONAL]
+      pressure_spread_pa_per_k: 150.0          # pressure falls this much on a day one kelvin warmer than usual [PROVISIONAL]
+      storm_low_pa: 2000.0                     # a storm at full strength lowers the pressure by this [UNVERIFIED: 20 hPa, the order of
+                                               #  a mid-latitude low]
+      wind_spread_m_s: 3.0                     # the day's wind strays from the month's by about this [PROVISIONAL]

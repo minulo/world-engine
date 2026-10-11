@@ -74,10 +74,22 @@ def main(argv=None) -> int:
     sp.add_argument("--json", action="store_true")
     sp = sub.add_parser("info")
     sp.add_argument("store")
+    sp = sub.add_parser("weather", help="the weather of one day at one place, worked out on request (build step 8)")
+    sp.add_argument("store")
+    sp.add_argument("--day", type=int, required=True, help="days from the first day of year 0")
+    sp.add_argument("--days", type=int, default=1, help="this many days from --day on")
+    sp.add_argument("--cell", type=int)
+    sp.add_argument("--lat", type=float)
+    sp.add_argument("--lon", type=float)
+    sp = sub.add_parser("detail", help="finer cells over one region of a world: a summary of what they hold (build step 11)")
+    sp.add_argument("store")
+    sp.add_argument("--lat", type=float, required=True)
+    sp.add_argument("--lon", type=float, required=True)
+    sp.add_argument("--radius-km", type=float, default=500.0)
     args = ap.parse_args(argv)
     print_anywhere()
-    if args.cmd == "explain" and args.cell is None and (args.lat is None or args.lon is None):
-        print("refused: explain needs a place: --cell N, or --lat and --lon", file=sys.stderr)
+    if args.cmd in ("explain", "weather") and args.cell is None and (args.lat is None or args.lon is None):
+        print(f"refused: {args.cmd} needs a place: --cell N, or --lat and --lon", file=sys.stderr)
         return 2
     try:
         if args.cmd == "order":
@@ -119,6 +131,35 @@ def main(argv=None) -> int:
             cell = args.cell if args.cell is not None else _nearest_cell(view, args.lat, args.lon)
             ans = explain(view, cell, args.field)
             print(json.dumps(ans, indent=1) if args.json else as_text(ans))
+            return 0
+        if args.cmd == "weather":
+            from .engine import EngineError, engine_for_store
+            cell = args.cell if args.cell is not None else _nearest_cell(view, args.lat, args.lon)
+            eng = engine_for_store(view)
+            try:
+                for day in range(args.day, args.day + max(1, args.days)):
+                    w = eng.day_weather(view, day)
+                    wind = w["weather_wind"][cell]
+                    speed = float(np.linalg.norm(wind))
+                    print(f"day {day}: {w['weather_temperature'][cell] - 273.15:6.1f} C, {w['weather_precipitation'][cell]:6.1f} mm, "
+                          f"{w['weather_pressure'][cell] / 100:7.1f} hPa, wind {speed:4.1f} m/s, storms {w['storm_influence'][cell]:.2f}")
+            except EngineError as e:
+                print(f"refused: {e}", file=sys.stderr)
+                return 2
+            return 0
+        if args.cmd == "detail":
+            from . import detail as dt
+            from .mesh import get_mesh
+            coarse = get_mesh(int(view.meta["mesh_level"]))
+            region = dt.region_cells(coarse, args.lat, args.lon, args.radius_km, view.attrs["planet"]["radius_m"])
+            if region.size == 0:
+                print("refused: no cell of the world lies within that distance", file=sys.stderr)
+                return 2
+            d = dt.refine(view, region)
+            f = d.fields
+            print(f"{region.size} cells of the world, {d.cells.size} fine cells of mesh level {d.level}")
+            print(f"heights {f['elevation'].min():.0f} to {f['elevation'].max():.0f} m; sea on {f['ocean_mask'].mean():.0%} of the fine "
+                  f"cells, lakes on {f['lake'].mean():.0%}; the largest river carries {f['river_discharge'].max():.0f} m3/s")
             return 0
         if args.cmd == "serve":
             from .server import make_server

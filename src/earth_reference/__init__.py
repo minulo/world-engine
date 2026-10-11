@@ -24,7 +24,8 @@ NAMES = ("ETOPO5.DAT", "V22_GPCP.1979-2010.nc", "absolute.nc", "landsea.nc")
 YEAR_S = float(yaml.safe_load((ROOT / "data" / "planet.yaml").read_text(encoding="utf-8"))["year_length_s"])    # the default planet's year, which is Earth's
 DAYS_PER_MONTH = YEAR_S / 86400.0 / 12.0    # the engine's month is one twelfth of that year
 
-RELIEF_FOLDER_VARIABLE = "WORLDENGINE_RELIEF_FOLDER"     # where ReliefFromFile looks for the twin's relief file
+RELIEF_FOLDER_VARIABLE = "WORLDENGINE_RELIEF_FOLDER"
+TWIN_SURFACE_AGE_MY = 100.0      # the twin's stand-in age of every surface: older than every age rule of the soil table [INFERRED]     # where ReliefFromFile looks for the twin's relief file
 
 _checked = {}
 
@@ -1427,4 +1428,12 @@ def earth_twin_models(models: dict, mesh) -> dict:
         "wrong_where": "Straits and gorges narrower than a cell are closed.",
         "writes": ["elevation"],
         "constants": {"file": Path(path).name, "sha256": digest, "folder_from_env": RELIEF_FOLDER_VARIABLE}}
+    if "Soils" in twin["slots"]:                     # what Soils reads of the ground's history, which the twin has not got
+        twin["slots"]["Lithology"] = {
+            "implementation": "worldengine.processes.relief_from_file:GroundWithoutHistory", "standing": "Test",
+            "model": "One rock class, one surface age and no erosion everywhere: stand-ins, since the twin has no history.",
+            "ignores": "Earth's rocks and the ages of its surfaces.",
+            "wrong_where": "Everywhere the rock or the age of the ground decides the soil: young volcanic soils, old tropical ones.",
+            "writes": ["rock_type", "surface_age", "erosion_rate"],
+            "constants": {"rock": "stable_platform", "surface_age_my": TWIN_SURFACE_AGE_MY}}
     return twin

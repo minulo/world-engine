@@ -885,3 +885,59 @@ def test_the_world_store_round_trips_and_the_server_answers_for_every_kind_of_fi
     why = json.loads(get(f"/api/explain?cell={cell}&field=biome"))
     assert why["chain"] and why["notices"] == []
     srv.shutdown()
+# ---------------------------------------------------------------------------------- finer detail (build step 11)
+@pytest.fixture(scope="module")
+def detail(plain):
+    from worldengine import detail as dt
+    e, w = plain
+    view = store.MemoryView(w, e)
+    lat, hs = w.fields["latitude"], w.fields["height_above_sea"]
+    k = int(np.argmax(np.where(np.abs(lat) < 50, hs, -1e9)))             # the highest ground outside the polar caps
+    centre = (float(lat[k]), float(w.fields["longitude"][k]))
+    region = lambda dlat, dlon, km: dt.region_cells(e.mesh, centre[0] + dlat, centre[1] + dlon, km, e.planet["radius_m"])
+    return view, dt, region, dt.refine(view, region(0, 0, 800))
+
+
+def test_a_refined_region_averaged_back_is_the_world_it_came_from(plain, detail):
+    """Design, build step 11: averaged back to the world's cells, a refined region agrees with the world within a recorded
+    tolerance. The tolerance recorded: none beyond rounding, for the mean height, temperature and rain of each cell."""
+    e, w = plain
+    view, dt, region, d = detail
+    fine = dt.get_mesh(d.level)
+    for name in ("elevation", "surface_temperature", "precipitation"):
+        assert np.allclose(d.coarse_means(name, fine.area), w.fields[name][..., d.region], rtol=1e-9, atol=1e-6)
+
+
+def test_the_rivers_of_a_refined_region_leave_it_where_the_world_s_rivers_do(plain, detail):
+    """Each cell's water leaves it at one fine cell toward the world's receiver, with the world's flow from upstream:
+    where the world's river leaves the region, the fine river leaves at that cell with the same flow, within 10 %
+    [MEASURED on the default world: 6.3 %]. Inland (no fine sea in the cell) every cell passes on its flow within 15 %;
+    on a coast the water reaches the sea by several mouths."""
+    e, w = plain
+    view, dt, region, d = detail
+    recv, sea = w.fields["flow_receiver"], w.fields["ocean_mask"].astype(bool)
+    q = w.fields["river_discharge"].mean(axis=0)
+    at = {int(c): i for i, c in enumerate(d.cells)}
+    inside = set(d.region.tolist())
+    has_sea = {int(k) for k in d.owner[d.fields["ocean_mask"]]}
+    leaving = [k for k in d.region if not sea[k] and recv[k] >= 0 and recv[k] not in inside and k not in has_sea]
+    inland = [k for k in d.region if not sea[k] and recv[k] >= 0 and k not in has_sea]
+    ratio = lambda ks: np.array([d.fields["river_discharge"][at[d.outlets[k]]] / max(q[k], 1e-9) for k in ks])
+    assert inland and np.abs(ratio(inland) - 1).max() < 0.15
+    if leaving:
+        assert np.abs(ratio(leaving) - 1).max() < 0.10
+    # nowhere else does water leave a fine cell for nothing: only at an outlet, at the sea, or at the bottom of a hollow
+    ends = d.cells[d.fields["flow_receiver"] < 0]
+    assert set(ends.tolist()) <= set(d.outlets.values()) | set(d.cells[d.fields["ocean_mask"]].tolist()) | set(d.cells[sea[d.owner]].tolist())
+
+
+def test_two_regions_that_overlap_agree_on_the_cells_they_share_and_one_region_twice_is_the_same(detail):
+    view, dt, region, d = detail
+    a, b = dt.refine(view, region(0, 0, 600)), dt.refine(view, region(4, 4, 600))
+    shared = np.intersect1d(a.cells, b.cells)
+    assert shared.size > 50
+    ia, ib = np.searchsorted(a.cells, shared), np.searchsorted(b.cells, shared)
+    for name in a.fields:
+        assert a.fields[name][..., ia].tobytes() == b.fields[name][..., ib].tobytes(), name
+    again = dt.refine(view, region(0, 0, 800))
+    assert all(again.fields[n].tobytes() == d.fields[n].tobytes() for n in d.fields)

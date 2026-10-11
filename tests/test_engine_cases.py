@@ -116,12 +116,12 @@ def test_a_push_in_its_last_active_round_is_recorded_with_what_it_changed():
     assert not [n for n in w.notices if n["kind"] == "push_touched_nothing"]
 
 
-def test_a_push_limited_to_rounds_is_refused_on_a_climate_target_until_the_climate_reruns_inside_the_history():
+def test_a_push_limited_to_rounds_is_refused_on_a_climate_target_even_where_the_climate_reruns_inside_the_history():
     for target in ({"field": "a", "add": 1.0}, {"group": "toy_heat", "add": 1.0}):
         with pytest.raises(ParameterError) as err:
             engine({"HeatReader": slot("HeatReader", ["c"])}, pushes=[{"id": "late", "region": WHOLE_PLANET, "when": {"rounds": [1, 2]},
                                                                          "pushes": [target]}], keep_trio=True)
-        assert "limited to geological rounds 1 to 2" in str(err.value) and "build step 9" in str(err.value)
+        assert "limited to geological rounds 1 to 2" in str(err.value) and "which rounds a rerun stands for is not built" in str(err.value)
     with pytest.raises(ParameterError) as err:
         geo_engine([{"id": "back", "region": WHOLE_PLANET, "when": {"rounds": [4, 2]}, "pushes": [{"field": "elev", "add": 1.0}]}])
     assert "runs backwards" in str(err.value)
@@ -453,7 +453,7 @@ def test_a_weather_stage_that_holds_only_a_label_is_refused_like_any_other():
     label = {"storm_label": dict(family="Labels", unit="category", shape="cell", kind="category", label={"stage": "weather"}, default="none")}
     with pytest.raises(ParameterError) as err:                           # on loading, not after the climate has run
         engine({}, label, stages=stages, keep_trio=True)
-    assert "runs on the weather clock, which is built in step 8" in str(err.value)
+    assert "runs on the weather clock, which is computed on request and never stored; no label field may belong to it" in str(err.value)
     assert engine({}, stages=stages, keep_trio=True).build().settled["climate"]          # an empty weather stage is simply skipped
 
 

@@ -118,6 +118,9 @@ def category_colors(engine) -> dict:
     return out
 
 
+CARRIED = ("tables", "lagged_tables", "group_lagged", "group_now", "lagged", "read_from_later")   # the carry of a history
+
+
 def world_attributes(world, engine) -> dict:
     slots = engine.params["models"].get("slots") or {}
     return _clean({
@@ -197,7 +200,8 @@ def _write(world, engine, path):
     geo = next((s for s in engine.stage_list if engine.clocks[s] == "geological"), None)
     state = engine.carry_state(geo) if geo else {"round": 0}
     c.attrs["round"] = state["round"]
-    for key in ("tables", "lagged_tables", "group_lagged", "group_now", "lagged"):
+    c.attrs["climate_reruns"] = [int(r) for r in state.get("climate_reruns", [])]
+    for key in CARRIED:
         kg = c.create_group(key)
         for name, value in sorted((state.get(key) or {}).items()):
             if isinstance(value, dict):
@@ -364,13 +368,16 @@ class StoreView(WorldView):
         if "carry" not in self._root:
             raise KeyError("this world store holds no state of its geological history to continue from")
         c = self._root["carry"]
-        out = {"round": int(c.attrs["round"])}
-        for key in ("tables", "lagged_tables", "group_lagged", "group_now", "lagged"):
+        out = {"round": int(c.attrs["round"]), "climate_reruns": list(c.attrs.get("climate_reruns", []))}
+        for key in CARRIED:
+            if key not in c:                                 # a store written before build step 9 carries no climate
+                out[key] = {}
+                continue
             kg = c[key]
             out[key] = {name: {col.replace("~", ":"): kg[name][col][...] for col in kg[name].array_keys()}
                         for name in kg.group_keys()}
             out[key].update({name: kg[name][...] for name in kg.array_keys()})
-        for key in ("tables", "lagged_tables", "group_lagged", "group_now", "lagged"):
+        for key in CARRIED:
             for v in out[key].values():
                 for a in (v.values() if isinstance(v, dict) else [v]):
                     a.flags.writeable = False
@@ -416,3 +423,36 @@ class StoreView(WorldView):
             for col, a in sorted(self.table(t).items()):
                 out[f"table:{t}.{col}"] = hashlib.sha256(np.ascontiguousarray(a).tobytes()).hexdigest()
         return out
+
+
+# ---------------------------------------------------------------------------------------------- run stores (build step 8)
+def save_run(path, world, first_day, day_reached, fields, lagged, drivers=None):
+    """A run store: the state of the stages that step through dates, beside a world store that it never changes."""
+    path = Path(path)
+    if path.exists():
+        raise FileExistsError(f"{path} exists; a run store is written once. Continue into a new one.")
+    root = zarr.open_group(store=str(path), mode="w")
+    root.attrs.update({"world": world, "first_day": int(first_day), "day_reached": int(day_reached), "format": FORMAT})
+    for key, group in (("fields", fields), ("lagged", lagged)):
+        g = root.create_group(key)
+        for name, a in sorted(group.items()):
+            _put(g, name, np.asarray(a))
+    d = root.create_group("drivers")
+    for field, terms in sorted((drivers or {}).items()):
+        if field in fields:
+            fg = d.create_group(field)
+            for term, a in sorted(terms.items()):
+                _put(fg, term, np.asarray(a))
+    return path
+
+
+def read_run(path) -> dict:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"no run store at {path}")
+    root = zarr.open_group(store=str(path), mode="r")
+    a = dict(root.attrs)
+    return {"world": a["world"], "first_day": a["first_day"], "day_reached": a["day_reached"],
+            "fields": {k: root["fields"][k][...] for k in root["fields"].array_keys()},
+            "lagged": {k: root["lagged"][k][...] for k in root["lagged"].array_keys()}}
+

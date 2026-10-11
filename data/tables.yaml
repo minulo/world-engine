@@ -42,3 +42,6 @@ tables:
               inflow_m3_per_year: float64, loss_to_air_m3_per_year: float64, outflow_m3_per_year: float64,
               left_over_m3_per_year: float64, rain_on_lake_m3_per_year: float64, evaporation_m3_per_year: float64,
               overflows: bool, outlet_cell: int32, spills_into_cell: int32}
+  storms:
+    description: "One row per storm alive on the day: its kind (1 a mid-latitude storm, 2 a tropical cyclone), the day it was born, where its centre lies on the day, and its strength (0 to 1; a tropical cyclone's is its potential intensity over that of a strong cyclone)."
+    columns: {kind: int16, born_day: int32, lat: float64, lon: float64, strength: float64}

@@ -52,3 +52,18 @@ class ReliefFromFile(Process):
         if relief.shape != (ctx.mesh.n,) or relief.dtype.kind != "f" or not np.isfinite(relief).all():
             raise ValueError(f"the relief file {path} must hold one finite height for each of the {ctx.mesh.n} cells of this mesh")
         ctx.write("elevation", relief)
+
+
+class GroundWithoutHistory(Process):
+    """The ground that a world with measured relief has no history for (Test): one rock class everywhere, one surface
+    age and no erosion, so that the processes that read them, Soils among them, can run on the Earth twin. The three
+    are stand-ins and not Earth's: no map of them is read [INFERRED]."""
+    stage = "geological"
+    writes = ("rock_type", "surface_age", "erosion_rate")
+    model = "one rock class, one surface age and no erosion: stand-ins for a world without a history"
+
+    def run(self, ctx):
+        n = ctx.mesh.n
+        ctx.write("rock_type", np.full(n, ctx.categories("rock_type").index(ctx.const["rock"]), dtype=np.int16))
+        ctx.write("surface_age", np.full(n, ctx.const["surface_age_my"]))
+        ctx.write("erosion_rate", np.zeros(n))

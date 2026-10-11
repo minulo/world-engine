@@ -1,8 +1,10 @@
 """The small local server (design, Question 8 and Layer 8).
 
 It opens one world store for reading only, serves the viewer page, and answers what the page
-asks for: field values, the values of one cell, and the "why" answers. It listens on this
-machine only. Anything it keeps between requests equals what a fresh computation gives.
+asks for: field values, the values of one cell, the "why" answers, and the weather of a day,
+which it computes on request with the parameters the world was built with (build step 8). It
+listens on this machine only. Anything it keeps between requests equals what a fresh
+computation gives.
 """
 from __future__ import annotations
 
@@ -18,7 +20,8 @@ from scipy.spatial import cKDTree
 
 from . import __version__
 from .causes import class_name, explain
-from .store import StoreView, code_fingerprint, lock_fingerprint
+from .store import StoreView, code_fingerprint, field_specs, lock_fingerprint
+from .library.units import SECONDS_PER_DAY
 
 VIEWER_DIR = Path(__file__).resolve().parents[2] / "viewer"
 
@@ -32,6 +35,8 @@ class WorldService:
         self._idmaps: dict[int, bytes] = {}
         self._stats: dict[str, dict] = {}
         self._fields: dict[str, np.ndarray] = {}
+        self._weather_lock = threading.Lock()
+        self._engine, self._engine_error, self._day, self._day_values = None, None, None, None
         self._set_threads()
 
     def _set_threads(self):
@@ -66,6 +71,9 @@ class WorldService:
         for nt in a.get("notices") or []:
             if nt["kind"] == "climate_not_settled":
                 notices.append(f"The climate did not settle within {nt['rounds']} rounds. Its fields are a solver's unfinished working step.")
+            elif nt["kind"] == "climate_rerun_not_settled":
+                notices.append(f"The climate rerun inside the history after round {nt['after_round']} did not settle within "
+                               f"{nt['rounds']} rounds; the rounds after it eroded with an unfinished climate.")
             elif nt["kind"] == "model_outside_range":
                 notices.append(f"{nt['slot']} ran outside the range in which its model is expected to hold "
                                f"({nt['parameter']} = {nt['value']}, expected {nt['expected'][0]} to {nt['expected'][1]}).")
@@ -81,7 +89,58 @@ class WorldService:
                 "fields": {n: a["fields"][n] for n in stored}, "lineage": a["lineage"], "models": a.get("models", {}),
                 "notices": notices, "warnings": self.warnings(), "colors": a.get("category_colors", {}),
                 "engine_version": a.get("engine_version"),
-                "history": self.view.history() if hasattr(self.view, "history") else {"rounds": [], "times_my": [], "fields": []}}
+                "history": self.view.history() if hasattr(self.view, "history") else {"rounds": [], "times_my": [], "fields": []},
+                "weather": self.weather_info()}
+
+    # ------------------------------------------------------------------ the weather of a day
+    def _weather_engine(self):
+        """The engine that computes days, with the world's own parameters; made once, on the first request."""
+        if self._engine is None and self._engine_error is None:
+            try:
+                from .engine import engine_for_store
+                self._engine = engine_for_store(self.view)
+            except Exception as e:                           # a world from another version: it still shows, without days
+                self._engine_error = f"{type(e).__name__}: {e}"
+        return self._engine
+
+    def weather_info(self):
+        """The fields of a day that the world can compute, or None if no process of it runs on the weather clock."""
+        with self._weather_lock:
+            eng = self._weather_engine()
+        if eng is None:
+            return {"fields": {}, "days_per_year": 0, "why_not": f"the days of this world cannot be computed: {self._engine_error}"}
+        if not eng.weather_stages():
+            return None
+        specs = field_specs(eng)
+        names = [f for f, st in eng.stage_of.items() if eng.clocks.get(st) == "weather" and f in specs]
+        writers = {f: step for step, d in eng.decls.items() for f in d["writes"] if f in names}
+        return {"fields": {f: specs[f] for f in names}, "writers": writers,
+                "days_per_year": eng.params["planet"]["year_length_s"] / SECONDS_PER_DAY}
+
+    def weather(self, name, day, part=None) -> bytes:
+        """One field of the weather of a day, for display (the speed or one part of a direction)."""
+        if day < 0:
+            raise IndexError(f"day {day} is before the first day, 0")
+        with self._weather_lock:
+            eng = self._weather_engine()
+            if eng is None:
+                raise KeyError(f"the days of this world cannot be computed: {self._engine_error}")
+            if self._day != day:
+                self._day_values = eng.day_weather(self.view, int(day))
+                self._day = day
+            values = self._day_values
+        if name not in values or name.startswith("table:"):
+            raise KeyError(f"the weather of a day holds no field named {name}")
+        return np.ascontiguousarray(self._part(values[name], eng.registry.fields[name].kind, part), dtype="<f4").tobytes()
+
+    def _part(self, a, kind, part):
+        if kind != "direction":
+            return a
+        if part == "east":
+            return np.einsum("ij,ij->i", a, self.view.mesh_array("east"))
+        if part == "north":
+            return np.einsum("ij,ij->i", a, self.view.mesh_array("north"))
+        return np.linalg.norm(a, axis=-1)
 
     def idmap(self, width: int) -> bytes:
         """For a flat grid of longitude and latitude, the cell nearest to each point (unsigned 32-bit, row 0 in the north)."""
@@ -108,14 +167,7 @@ class WorldService:
             if not (0 <= m < a.shape[0]):
                 raise IndexError(f"month {m + 1} is outside 1 to {a.shape[0]}")
             a = a[m]
-        if spec["kind"] == "direction":
-            if part == "east":
-                a = np.einsum("ij,ij->i", a, self.view.mesh_array("east"))
-            elif part == "north":
-                a = np.einsum("ij,ij->i", a, self.view.mesh_array("north"))
-            else:
-                a = np.linalg.norm(a, axis=-1)
-        return a
+        return self._part(a, spec["kind"], part)
 
     def history_field(self, name, index) -> bytes:
         """One picture of the geological history of a field."""
@@ -223,6 +275,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(200, s.field(_asked(q, "name"), month, q.get("part")), "application/octet-stream")
             if url.path == "/api/history":
                 return self._send(200, s.history_field(_asked(q, "name"), _asked(q, "index", int)), "application/octet-stream")
+            if url.path == "/api/weather":
+                return self._send(200, s.weather(_asked(q, "name"), _asked(q, "day", int), q.get("part")), "application/octet-stream")
             if url.path == "/api/stats":
                 return self._json(s.stats(_asked(q, "name")))
             if url.path == "/api/cell":

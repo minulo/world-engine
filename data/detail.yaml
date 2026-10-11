@@ -1,0 +1,12 @@
+# Finer detail over one region of a finished world (build step 11): the constants of src/worldengine/detail.py.
+# Lengths are given in coarse spacings, the mean distance between neighbouring cells of the world.
+extra_levels: 2                     # each coarse cell is split into about 4 ** 2 = 16 fine cells: 60 km to 15 km on the standard mesh
+smoothing_spacings: 0.6             # width of the weights that lay a smooth surface through the coarse values [INFERRED: wide enough
+                                    #  to join the cells without steps, narrow enough to keep a coarse cell's own value near its centre]
+mean_iterations: 8                  # passes that lift or lower the fine heights so that each coarse cell keeps its mean height
+roughness_share: 0.2                # the fine heights stray from the smooth surface by about this share of the spread of the coarse
+                                    #  heights around [PROVISIONAL]
+wave_lengths_in_spacings: [1.0, 0.25]    # the roughness has waves from one coarse spacing down to one fine spacing
+waves: 64
+rain_per_windward_slope: 20.0       # rain grows by 20 % for each 1 % of slope that faces the wind, and falls as much on slopes
+rain_factor_limits: [0.3, 3.0]      #  that face away, within these limits [PROVISIONAL: a rule set here, not taken from a source]

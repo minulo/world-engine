@@ -5,7 +5,8 @@
 # snapshot_every_rounds, snapshot_fields: copies of chosen fields kept during the geological history, which the viewer
 #   plays as a film (build step 3). The designed values: every 5 rounds (10 My), elevation, ocean_mask, plate_id and
 #   crust_type.
-# climate_rerun_every_rounds: the rerun of the climate inside the history, built in step 9; refused until then.
+# climate_rerun_every_rounds: the climate is rerun inside the geological history after every so many rounds, so that
+#   the planet's own rain shapes its land (build step 9); null: the rivers of the history shed one runoff everywhere.
 profiles:
   preview:
     mesh_level: 5                  # 10,242 cells, about 240 km apart
@@ -29,10 +30,10 @@ profiles:
     snapshot_every_rounds: 5
     snapshot_fields: [elevation, ocean_mask, plate_id, crust_type]
   high_fidelity:
-    mesh_level: 8                  # 655,362 cells, about 30 km apart, if build step 9 shows it fits
+    mesh_level: 8                  # 655,362 cells, about 30 km apart. Not run where it was built: about 27 GB of memory [INFERRED]
     math_threads: 1
     run_time_limit_s: 28800
     climate: *climate
-    climate_rerun_every_rounds: null
+    climate_rerun_every_rounds: 25 # the planet's own rain shapes its land (design, build step 9); every 50 My
     snapshot_every_rounds: 5
     snapshot_fields: [elevation, ocean_mask, plate_id, crust_type]

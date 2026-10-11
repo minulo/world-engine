@@ -277,11 +277,12 @@ def test_a_push_may_test_the_field_it_changes():
 
 # ------------------------------------------------------------------------------------------ settings
 def test_more_settings_that_mean_nothing_where_they_stand_are_refused_on_loading():
-    """The rerun of the climate was refused only when the history ran, and not at all without a geological stage; a
-    first date on a stage without dates and two stages of one name went through or failed with another message."""
+    """The rerun of the climate inside the history means nothing without a geological stage (built in step 9; until then
+    it was refused only when the history ran); a first date on a stage without dates and two stages of one name went
+    through or failed with another message."""
     with pytest.raises(ParameterError) as err:
         engine({}, keep_trio=True, profile={"climate_rerun_every_rounds": 5})
-    assert "that link is built in step 9" in str(err.value)
+    assert "reruns the climate inside the geological history, but no stage runs on the geological clock" in str(err.value)
     stages = copy.deepcopy(WITH_GEO)
     stages["stages"][2]["first_date"] = "0001-01-01"
     with pytest.raises(ParameterError) as err:

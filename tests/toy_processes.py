@@ -671,3 +671,65 @@ class UniformRunoff(Process):
 
     def run(self, ctx):
         ctx.write("runoff_annual", np.full(ctx.mesh.n, ctx.const["mm_per_year"]))
+
+
+class RunoffFromHeight(Process):
+    """A climate in which high land sheds more water: runoff = mm_per_year * (1 + height / 1000 m) on land. It reads
+    the land as it stands, so a rerun of the climate inside the history passes the land's change on to erosion."""
+    stage = "climate"
+    reads = ("height_above_sea",)
+    writes = ("runoff_annual",)
+    model = "runoff that grows with height"
+
+    def run(self, ctx):
+        h = np.maximum(ctx.read("height_above_sea").astype(np.float64), 0.0)
+        ctx.write("runoff_annual", ctx.const["mm_per_year"] * (1.0 + h / 1000.0))
+
+
+# ------------------------------------------------------------------------------------- days (build step 8)
+class ToyRain(Process):
+    """The rain of a day, drawn from the seed and the date alone: a toy of the weather stage."""
+    stage = "weather"
+    reads = ("a",)
+    writes = ("toy_rain",)
+    draws = ("rain",)
+    model = "toy rain"
+
+    def run(self, ctx):
+        wet = ctx.draw.uniform("rain", ctx.mesh.n)
+        ctx.write("toy_rain", np.where(wet < 0.3, ctx.read("a") * wet, 0.0))
+
+
+class RainBarrel(Process):
+    """A barrel in every cell that keeps a share of yesterday's water and catches the day's rain: the toy of a stage
+    that steps through dates. It reads the day's rain and its own value from the day before."""
+    stage = "barrel"
+    reads = ("toy_rain",)
+    reads_lagged = ("barrel",)
+    writes = ("barrel",)
+    model = "toy barrel"
+    drivers = {"barrel": ("kept", "caught")}
+    additive = ("barrel",)
+
+    def run(self, ctx):
+        kept, caught = ctx.const["keep"] * ctx.read_lagged("barrel"), ctx.read("toy_rain")
+        ctx.write("barrel", kept + caught)
+        ctx.driver("barrel", "kept", kept)
+        ctx.driver("barrel", "caught", caught)
+
+
+def _does_nothing(self, ctx):
+    pass
+
+
+def _declared(name, **decl):
+    """A process that only declares, for the refusals of the scheduler."""
+    return type(name, (Process,), {"stage": "barrel", "model": "toy", "run": _does_nothing, **decl})
+
+
+LaggedRainReader = _declared("LaggedRainReader", reads_lagged=("toy_rain",), writes=("herd",))
+RainReader = _declared("RainReader", reads=("toy_rain",), writes=("herd",))
+BarrelReader = _declared("BarrelReader", stage="climate", reads_lagged=("barrel",), writes=("x",))
+LaggedClimateReader = _declared("LaggedClimateReader", reads_lagged=("a",), writes=("herd",))
+BarrelHeat = _declared("BarrelHeat", adds_to={"toy_heat": "herd_breath"})
+ClimateReader = _declared("ClimateReader", reads=("a",), writes=("herd",))

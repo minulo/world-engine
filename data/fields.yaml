@@ -183,18 +183,81 @@ fields:
     {family: Soil and life, unit: category, shape: cell, kind: category, categories_from: {file: biomes, key: climate_classes},
      description: "Köppen-Geiger climate class, computed from monthly temperature and precipitation."}
   biome:
-    {family: Soil and life, unit: category, shape: cell, kind: category, categories_from: {file: biomes, key: biomes},
-     description: "Large-scale vegetation type; the list lives in biomes.yaml."}
+    {family: Soil and life, unit: category, shape: cell, kind: category, categories_from: {file: biomes, key: biome1},
+     description: "Large-scale vegetation type, the biomes of BIOME1; the list lives in biomes.yaml."}
   vegetation_cover:
     {family: Soil and life, unit: 0 to 1, shape: month_cell, kind: number, default: 0.0, range: [0, 1],
      description: "Fraction of the ground shaded by plants."}
+  soil_order:
+    {family: Soil and life, unit: category, shape: cell, kind: category,
+     categories: [none_sea, ice, bare_rock, shifting_sand, gelisols, histosols, andisols, oxisols, ultisols, vertisols, aridisols,
+                  mollisols, spodosols, alfisols, inceptisols, entisols],
+     description: "The order of the soil, after the USDA Soil Taxonomy, with classes for ground that has no soil."}
+  soil_depth:
+    {family: Soil and life, unit: m, shape: cell, kind: number, default: 1.0, range: [0, 100],
+     description: "Depth of soil over the rock."}
+  soil_fertility:
+    {family: Soil and life, unit: 0 to 1, shape: cell, kind: number, default: 0.5, range: [0, 1],
+     description: "The soil's store of the nutrients plants take, as a share of the richest."}
   soil_water_capacity:
     {family: Soil and life, unit: mm, shape: cell, kind: number, default: 150.0, range: [0, 5000],
      description: "Water the soil can hold for plants; zero on sea."}
+  # ---------------------------------------------------------------- Storms and weather
+  storm_track_density:
+    {family: Storms and weather, unit: e-foldings, shape: month_cell, kind: number, default: 0.0, range: [0, 1000],
+     description: "How much growth the storms passing here have gathered: storm growth carried downwind by the steering wind over a storm's life. It ranks places; it is not a count of storms."}
+  tc_genesis_potential:
+    {family: Storms and weather, unit: index, shape: month_cell, kind: number, default: 0.0, range: [0, 1.0e+6],
+     description: "How favourable the month is for tropical cyclones to form here: the genesis potential index of Emanuel and Nolan. Zero over land."}
+  potential_intensity:
+    {family: Storms and weather, unit: m/s, shape: month_cell, kind: number, default: 0.0, range: [0, 200],
+     description: "The strongest wind that a tropical cyclone could sustain over this sea in the month. Zero over land."}
+  daily_temperature_spread:
+    {family: Storms and weather, unit: K, shape: month_cell, kind: number, default: 0.0, range: [0, 100],
+     description: "How far a day's mean temperature typically strays from the month's mean (one standard deviation)."}
+  wet_day_fraction:
+    {family: Storms and weather, unit: 0 to 1, shape: month_cell, kind: number, default: 0.0, range: [0, 1],
+     description: "The share of the month's days with at least 0.1 mm of rain or snow."}
+  storm_influence:
+    {family: Storms and weather, unit: 0 to 1, shape: day_cell, kind: number, default: 0.0, range: [0, 10],
+     description: "How strongly the storms alive on the day act on this cell: each storm's strength, fading with distance from its centre."}
+  weather_temperature:
+    {family: Storms and weather, unit: K, shape: day_cell, kind: number, range: [100, 400],
+     description: "The mean air temperature of the day near the ground or the sea surface."}
+  weather_precipitation:
+    {family: Storms and weather, unit: mm/day, shape: day_cell, kind: number, range: [0, 5000],
+     description: "Rain plus snow on the day."}
+  weather_pressure:
+    {family: Storms and weather, unit: Pa, shape: day_cell, kind: number, range: [50000, 150000],
+     description: "Air pressure on the day, adjusted to sea level."}
+  weather_wind:
+    {family: Storms and weather, unit: m/s, shape: day_cell, kind: direction, range: [-150, 150],
+     description: "The mean wind of the day near the surface."}
   # ---------------------------------------------------------------- Labels
   place_label:
     {family: Labels, unit: category, shape: cell, kind: category, label: {stage: climate}, default: none,
      description: "The named place this cell belongs to, or none. A label field of the climate stage: no process writes it, only a push sets it, and no process reads it, so it changes nothing else."}
+
+  # ---------------------------------------------------------------- Ice
+  snow_ice_cover:
+    {family: Ice, unit: 0 to 1, shape: month_cell, kind: number, default: 0.0, range: [0, 1],
+     description: "Share of the cell under snow or ice in the month: sea ice on the sea, snow and lasting ice on land."}
+  permafrost:
+    {family: Ice, unit: 0 to 1, shape: cell, kind: number, default: 0.0, range: [0, 1],
+     description: "How fully the ground stays frozen all year: 1 where it is frozen through every year, 0 where it thaws."}
+  # ---------------------------------------------------------------- Ocean
+  ocean_current:
+    {family: Ocean, unit: m/s, shape: cell, kind: direction, range: [-10, 10],
+     description: "The current at the sea surface, on the year's average: the wind-driven loops of the whole layer and the drift of the surface layer."}
+  mixed_layer_depth:
+    {family: Ocean, unit: m, shape: cell, kind: number, default: 75.0, range: [0, 1000], settle: {mean: 0.5, cell: 10.0},
+     description: "How deep the wind stirs the sea: the depth of water that the seasons warm and cool. The first guess is the 75 m of North et al. 1981."}
+  upwelling:
+    {family: Ocean, unit: m/day, shape: month_cell, kind: number, range: [-100, 100],
+     description: "Deep water rising to the surface (+) or surface water sinking (-), where the wind pushes the surface layer apart or together."}
+  ocean_heat_convergence:
+    {family: Ocean, unit: "W/m²", shape: month_cell, kind: number, range: [-2000, 2000],
+     description: "Heat the ocean's currents bring to (+) or take from (-) the surface of the sea."}
 
 # Groups: named sums that several processes add to (design, Layer 2).
 groups:

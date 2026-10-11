@@ -44,6 +44,15 @@
       <p class="muted small">The history of the plates, one picture every few rounds.</p>
     </div>
 
+    <div id="dayrow" hidden>
+      <label for="day">Day <output id="daylabel">0</output></label>
+      <div class="row">
+        <input id="day" type="range" min="0" max="3650" value="0" step="1">
+        <button id="playdays" type="button" aria-pressed="false">Play</button>
+      </div>
+      <p class="muted small">The weather of one day, which the server works out on request from the climate, the seed and the date. Nothing is stored: a day comes out the same however it is reached.</p>
+    </div>
+
     <label>View</label>
     <div class="row seg" role="group" aria-label="View">
       <button id="viewglobe" type="button" aria-pressed="true">Globe</button>

@@ -141,18 +141,13 @@ def test_a_push_that_tests_a_field_no_file_declares_is_refused():
         engine({}, pushes=[push], keep_trio=True)
 
 
-def test_stages_that_cannot_run_yet_or_lack_their_lengths_are_refused():
-    weather = {"stages": toy_file("stages")["stages"] + [{"name": "weather", "clock": "weather"}]}
-    with pytest.raises(ParameterError, match="stage weather runs on the weather clock, which is built in step 8; until then it must stay empty, but it holds Rogue"):
-        world_with(lambda c: c.write("c", monthly_zeros), stages=weather, stage="weather", writes=("c",))
+def test_a_geological_stage_without_its_lengths_is_refused():
+    """(Until build step 8 this also refused a weather stage that held a process: the weather clock is built now, and
+    tests/test_days.py tests it.)"""
     stages = copy.deepcopy(WITH_GEO)
     del stages["stages"][1]["history_length_my"]
     with pytest.raises(ParameterError, match="stage geo runs on the geological clock and needs round_length_my and history_length_my"):
         engine(GEO_SLOTS, GEO_FIELDS, GEO_GROUPS, stages=stages)
-    e = Engine(TOY, profile="toy")
-    e.clocks["climate"] = "weather"                          # past the check on loading: the build refuses as well
-    with pytest.raises(EngineError, match="stage climate runs on the weather clock, which is built in step 8"):
-        e.build()
 
 
 @pytest.mark.parametrize("columns,said", [

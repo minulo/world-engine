@@ -58,6 +58,15 @@ import numpy as np
 from .units import ZERO_CELSIUS_IN_K
 
 
+def saturation_vapour_density(temperature_k, s):
+    """Mass of water vapour that a cubic metre of air can hold (kg/m3), from the saturation pressure over water.
+    Below the formula's lowest temperature the value at that temperature is used."""
+    temperature_k = np.maximum(temperature_k, s["lowest_temperature_k"])
+    t_c = temperature_k - ZERO_CELSIUS_IN_K
+    pressure = s["pressure_at_zero_pa"] * np.exp(s["exponent_factor"] * t_c / (temperature_k - s["exponent_offset_k"]))
+    return pressure / (s["vapour_gas_constant_j_kg_k"] * temperature_k)
+
+
 def saturation_slope(t_c: np.ndarray, c: dict) -> np.ndarray:
     """Rise of the saturation vapour pressure with temperature, Pa/K (Davis et al. 2017, eq. B1)."""
     shifted = t_c + c["offset_c"]

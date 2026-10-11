@@ -92,6 +92,7 @@ class World:
         self.timings: dict[str, float] = {}
         self.round_times: list[dict] = []                    # seconds spent in each step of each round
         self.snapshots: list[dict] = []                      # pictures of the geological history: round, time_my, fields
+        self.climate_reruns: list[int] = []                  # the geological rounds after which the climate was rerun
         self.meta: dict = {}
 
     def notice(self, kind, **details):
@@ -436,12 +437,9 @@ class Engine:
                 problems.append(f"stages.yaml: stage {name} gives a step, which only a stage that steps through dates takes")
             if "first_date" in cfg and cfg["clock"] != "dated":
                 problems.append(f"stages.yaml: stage {name} gives a first date, which only a stage that steps through dates takes")
-            if cfg["clock"] in ("weather", "dated") and visible(self.plan.order[name]):
-                problems.append(f"stages.yaml: stage {name} runs on the {cfg['clock']} clock, which is built in step 8; until then "
-                                f"it must stay empty, but it holds {', '.join(visible(self.plan.order[name]))}")
-            elif cfg["clock"] in ("weather", "dated") and self.plan.order[name]:
-                problems.append(f"stages.yaml: stage {name} runs on the {cfg['clock']} clock, which is built in step 8; until then "
-                                f"no label field may belong to it")
+            if cfg["clock"] in ("weather", "dated") and any(st.startswith("Default[") for st in self.plan.order[name]):
+                problems.append(f"stages.yaml: stage {name} runs on the {cfg['clock']} clock, which is computed on request and "
+                                f"never stored; no label field may belong to it")
             for key in ("round_length_my", "history_length_my"):
                 if key in cfg and cfg["clock"] != "geological":
                     problems.append(f"stages.yaml: stage {name} gives {key}, which only a stage on the geological clock takes")
@@ -457,9 +455,10 @@ class Engine:
             elif self.clocks.get(self.stage_of.get(f)) != "geological":   # a world built from some of the slots
                 self.plan.notes.append(f"profiles.yaml asks for snapshots of {f}, which this world does not write on the "
                                        f"geological clock: no picture of it is kept")
-        if self.profile.get("climate_rerun_every_rounds") is not None:
-            problems.append(f"profiles.yaml: profile {self.profile_name} reruns the climate inside the geological history; "
-                            f"that link is built in step 9")
+        if self.profile.get("climate_rerun_every_rounds") is not None and not any(
+                c == "geological" and visible(self.plan.order[st]) for st, c in self.clocks.items()):
+            problems.append(f"profiles.yaml: profile {self.profile_name} reruns the climate inside the geological history, "
+                            f"but no stage runs on the geological clock")
         for q in self.pushes:                                # when.rounds counts geological rounds
             if q.rounds is None:
                 continue
@@ -472,8 +471,8 @@ class Engine:
             if late:
                 problems.append(f"push {q.id} is limited to geological rounds {q.rounds[0]} to {q.rounds[1]}, but its target "
                                 f"belongs to stage {', '.join(late)}, which does not run on the geological clock; a push "
-                                f"limited to part of the history can act on the climate only once the climate is rerun "
-                                f"inside the history (build step 9)")
+                                f"limited to part of the history cannot act on the climate, even where the climate is rerun "
+                                f"inside the history: which rounds a rerun stands for is not built")
         if problems:
             raise ParameterError("; ".join(problems))
 
@@ -730,17 +729,42 @@ class Engine:
             w.notice("push_touched_nothing", push=q.id, **({"why": why} if why else {}))
 
     # ------------------------------------------------------------------ rounds
-    def _run_round(self, stage, round_no, recording, replay=False, starting=False):
+    def _tail(self, stage) -> set:
+        """The processes of a stage whose output nothing in the stage reads from the previous round, directly or through
+        another process: they take no part in the loop, so they run once, after the stage has settled (build step 9).
+        Pushes and label fields stay in the loop."""
+        steps = self.plan.order[stage]
+        needed = {f for st in steps if st in self.decls for f in self.decls[st]["lagged"]}
+        needed |= {"group:" + g for st in steps if st in self.decls for g in self.decls[st]["lagged_group"]}
+        tail = set()
+        for st in reversed(steps):                           # the order is computed: what a step reads was written before it
+            d = self.decls.get(st)
+            if d is None or st in self.push_by_step:
+                continue
+            made = set(d["writes"]) | set(d["modifies"]) | {"group:" + g for g in d["contributes"]}
+            if made & needed:
+                needed |= set(d["reads"]) | set(d["modifies"]) | {"group:" + g for g in d["group_reads"]}
+            else:
+                tail.add(st)
+        pushed = {self.push_by_step[st].target for st in steps if st in self.push_by_step}
+        return {st for st in tail if not (set(self.decls[st]["writes"]) & pushed)}
+
+    def _run_round(self, stage, round_no, recording, replay=False, starting=False, skip=(), only=None):
+        """One round of a stage: every step in order, or all but `skip`, or only the steps in `only`, which go on from
+        the round just run (the steps that run after the stage has settled)."""
         w = self.world
         cfg = self.stage_cfg[stage]
-        self._fresh[stage] = set()
-        for g, members in w.group_now.items():               # this stage's members are worked out afresh; other stages' stay
-            for key in [k for k in members if self.member_stage.get((g, k)) == stage]:
-                del members[key]
+        if only is None:
+            self._fresh[stage] = set()
+            for g, members in w.group_now.items():           # this stage's members are worked out afresh; other stages' stay
+                for key in [k for k in members if self.member_stage.get((g, k)) == stage]:
+                    del members[key]
         when = "start" if starting else round_no
         spent = {}
         w.round_times.append({"stage": stage, "round": round_no, "cause_pass": bool(replay), "start_step": bool(starting), "seconds": spent})
         for step in self.plan.order[stage]:
+            if step in skip or (only is not None and step not in only):
+                continue
             t0 = time.perf_counter()
             if step.startswith("Default["):
                 name = step[len("Default["):-1]
@@ -916,14 +940,29 @@ class Engine:
         else:
             self._start(stage)
             first = 1
+        rerun = self.profile.get("climate_rerun_every_rounds")
+        climates = [s for s in self.stage_list if self.clocks[s] == "climate" and self.plan.order[s]]
         for r in range(first, rounds + 1):
             self._run_round(stage, r, recording=True)      # geological causes are recorded as the stage runs
             self._end_round(stage, 1.0)
             if every and r % every == 0:
                 self.world.snapshots.append({"round": r, "time_my": r * float(cfg["round_length_my"]),
                                              "fields": {f: self.world.fields[f].copy() for f in snap}})
+            if rerun and r % rerun == 0 and r < rounds:    # the climate of the land as it stands, for the rounds that follow
+                self._rerun_after = r
+                for st in climates:                          # (the last round's climate is the world's own, run after the history)
+                    self._run_climate(st, causes=False)
+                self.world.climate_reruns.append(r)
+                self.log(f"  the climate rerun after round {r}")
             self.log(f"  {stage} round {r} of {rounds}")
         self.world.rounds_used[stage] = rounds
+        # what the stage last read of later stages, kept so that a continued history reads what one long run would have
+        later = {f for st in self.plan.order[stage] if st in self.decls for f in self.decls[st]["lagged"]
+                 if self.stage_of.get(f) not in (stage, None) and self.clocks.get(self.stage_of.get(f)) != "once"}
+        self._read_from_later = {f: self.world.fields[f] for f in sorted(later) if f in self.world.fields}
+        # where the last round falls on a rerun, the next round would read the climate of the land as it ends: the
+        # world's own climate, which runs after the history and is taken when the state is saved
+        self._later_is_final = sorted(later) if rerun and rounds % rerun == 0 else None
 
     def carry_state(self, stage) -> dict:
         """What the geological clock carries from round to round, for a later build to go on from."""
@@ -934,6 +973,11 @@ class Engine:
                 "group_lagged": {g: {k: v for k, v in m.items() if mine(g, k)} for g, m in w.group_lagged.items()},
                 "group_now": {g: {k: v for k, v in m.items() if mine(g, k)} for g, m in w.group_now.items()},
                 "lagged": {f: a for f, a in w.lagged.items() if self.stage_of.get(f) == stage},
+                "read_from_later": ({f: w.fields[f] for f in self._later_is_final if f in w.fields}
+                                    if getattr(self, "_later_is_final", None) is not None else dict(getattr(self, "_read_from_later", {}))),
+                # a last round on a rerun counts as one: the rounds that follow read the climate run after it
+                "climate_reruns": list(w.climate_reruns) + ([int(w.rounds_used.get(stage, 0))]
+                                                            if getattr(self, "_later_is_final", None) is not None else []),
                 "round": int(w.rounds_used.get(stage, 0))}
 
     def _load_carry(self, stage) -> int:
@@ -960,11 +1004,15 @@ class Engine:
             for g, members in state[key].items():
                 getattr(w, key).setdefault(g, {}).update(members)
         w.lagged.update(state["lagged"])
+        for f, a in state.get("read_from_later", {}).items():   # the climate the stored history's last rounds read
+            w.fields[f] = a
+        w.climate_reruns = list(state.get("climate_reruns", []))
         w.snapshots = view.snapshots()
         return state["round"] + 1
 
-    def _run_climate(self, stage):
-        """Repeat the stage until it is steady, then record the causes in one extra pass over the settled round."""
+    def _run_climate(self, stage, causes=True):
+        """Repeat the stage until it is steady, then record the causes in one extra pass over the settled round. A rerun
+        inside the geological history (causes=False) keeps no causes: only the world's final climate answers why."""
         w = self.world
         tol = self.profile["climate"]
         cap, weight = int(tol["max_rounds"]), float(tol["blend_weight"])
@@ -983,8 +1031,9 @@ class Engine:
         self._start(stage)
         loop = self._has_loop(stage)
         previous_classes, settled, r = {}, False, 0
+        tail = self._tail(stage)
         for r in range(1, cap + 1):
-            self._run_round(stage, r, recording=False)
+            self._run_round(stage, r, recording=False, skip=tail)
             if not loop:                                     # nothing is read from the previous round: one pass is the answer
                 settled = True
                 break
@@ -998,6 +1047,12 @@ class Engine:
                                 if s.kind == "category" and not s.is_label and self.stage_of.get(f) == stage and f in w.fields}
             self._end_round(stage, weight)
         w.rounds_used[stage], w.settled[stage] = r, bool(settled)
+        if tail:                                             # what takes no part in the loop, once, on the settled round
+            self._run_round(stage, r, recording=False, only=tail)
+        if not causes:
+            if not settled:
+                w.notice("climate_rerun_not_settled", stage=stage, rounds=r, after_round=getattr(self, "_rerun_after", None))
+            return
         if not settled:
             w.notice("climate_not_settled", stage=stage, rounds=r)
         # The cause pass: the settled round is run once more with the same inputs, recording drivers.
@@ -1018,6 +1073,77 @@ class Engine:
         for t, cols in tables_before.items():
             if any(not np.array_equal(cols[c], w.tables[t][c], equal_nan=cols[c].dtype.kind == "f") for c in cols):
                 raise EngineError(f"table {t} changed when the settled round was run again for the cause records")
+
+    # ------------------------------------------------------------------ days (build step 8)
+    def _world_from(self, source):
+        """A world in memory holding what a stored world holds, for the stages that run on request."""
+        if self.mesh is None or self.mesh.level != self.level:
+            self.mesh = get_mesh(self.level)
+        w = World(self.mesh, self.months)
+        for f in source.field_names():
+            if f in self.registry.fields:
+                w.fields[f] = np.asarray(source.field(f))
+        self.world = w
+        self._fresh, self._weights = {}, {}
+        self._received, self._last_given, self._applied, self._rounds_in_force = set(), {}, {}, {}
+        return w
+
+    def weather_stages(self):
+        return [s for s in self.stage_list if self.clocks[s] == "weather" and visible(self.plan.order[s])]
+
+    def day_weather(self, source, day: int) -> dict:
+        """The weather of one day, from a stored world (a StoreView or a MemoryView): the fields and tables that the
+        weather stages write. Nothing is kept between days: any day comes out the same however it is reached."""
+        if not self.weather_stages():
+            raise EngineError("this world has no weather stage: no process runs on the weather clock")
+        if not isinstance(day, (int, np.integer)) or day < 0:
+            raise EngineError(f"a day is a whole number from 0, the first day of year 0; asked for {day!r}")
+        if self.world is None or getattr(self, "_weather_source", None) is not source:
+            self._world_from(source)
+            self._weather_source = source
+        w = self.world
+        with self._limit_threads():
+            for stage in self.weather_stages():
+                self._run_round(stage, int(day), recording=False)
+        out = {f: w.fields[f] for f, st in self.stage_of.items() if self.clocks.get(st) == "weather" and f in w.fields
+               and not f.startswith("table:")}
+        out.update({"table:" + t: w.tables[t] for t, st in self.table_stage.items() if self.clocks.get(st) == "weather" and t in w.tables})
+        return out
+
+    def run_dated(self, source, run_path, last_day: int, continue_from=None, first_day: int = 0):
+        """Step the stages on the dated clock from first_day (or from the day after a run store's last) to last_day,
+        each day after the weather of that day, and write their state to a new run store. The world store is not changed:
+        the run store names its world, its first date and the date it has reached (design, Layer 3)."""
+        from . import store as st
+        dated = [s for s in self.stage_list if self.clocks[s] == "dated" and visible(self.plan.order[s])]
+        if not dated:
+            raise EngineError("this engine has no stage that steps through dates")
+        bad = [s for s in dated if self.stage_cfg[s].get("step", "day") != "day"]
+        if bad:
+            raise EngineError(f"stage {', '.join(bad)} steps by a {self.stage_cfg[bad[0]]['step']}; only a daily step is built")
+        w = self._world_from(source)
+        start = first_day
+        if continue_from is not None:
+            state = st.read_run(continue_from)
+            if state["world"] != source.attrs.get("world_fingerprint"):
+                raise EngineError("the run store belongs to another world; a run continues only on the world it began on")
+            w.fields.update(state["fields"])
+            w.lagged.update(state["lagged"])
+            start, first_day = state["day_reached"] + 1, state["first_day"]
+        if last_day < start:
+            raise EngineError(f"the run has reached day {start - 1}; asked to stop at day {last_day}")
+        with self._limit_threads():
+            for day in range(start, last_day + 1):
+                for stage in self.weather_stages():
+                    self._run_round(stage, day, recording=False)
+                for stage in dated:
+                    self._run_round(stage, day, recording=day == last_day)
+                    self._end_round(stage, 1.0)
+        fields = {f: w.fields[f] for f, s in self.stage_of.items() if s in dated and f in w.fields}
+        lagged = {f: a for f, a in w.lagged.items() if self.stage_of.get(f) in dated}
+        st.save_run(run_path, world=source.attrs.get("world_fingerprint"), first_day=first_day, day_reached=last_day,
+                    fields=fields, lagged=lagged, drivers=dict(w.drivers))
+        return fields
 
     def _check_ranges(self):
         """Each model states the range of planet parameters in which it is expected to hold (design, Layer 9)."""
@@ -1110,18 +1236,27 @@ class Engine:
                 self._run_geological(stage)
             elif clock == "climate":
                 self._run_climate(stage)
-            else:                                            # refused on loading: see _check_settings
-                raise EngineError(f"stage {stage} runs on the {clock} clock, which is built in step 8")
+            # the weather of a day is computed on request (day_weather), and a stage that steps through dates runs into
+            # a run store of its own (run_dated): neither is part of the world, which follows from the seed alone
         self._finish_push_records()
         self._lineage()
         w.meta = {
             "engine_version": __version__, "profile": self.profile_name, "mesh_level": self.level, "cells": w.n,
             "months": self.months, "seed": self.seed, "math_threads": self.threads,
             "order": self.order(), "notes": list(self.plan.notes), "rounds_used": dict(w.rounds_used),
-            "settled": dict(w.settled), "parameters_fingerprint": self.params.fingerprint(),
+            "settled": dict(w.settled), "climate_reruns": list(w.climate_reruns), "parameters_fingerprint": self.params.fingerprint(),
             "mesh": self.mesh.describe(), "build_seconds": time.perf_counter() - t0,
         }
         limit = self.profile.get("run_time_limit_s")
         if limit is not None and w.meta["build_seconds"] > limit:
             w.notice("run_time_over_limit", profile=self.profile_name, seconds=round(w.meta["build_seconds"], 1), limit_s=limit)
         return w
+
+def engine_for_store(view, log=None) -> "Engine":
+    """An engine with the parameters a world store was built with, read back from the store's own copy: for what is
+    computed on request from a finished world, the weather of a day and the runs that step through dates."""
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="worldengine-") as folder:
+        for stem, text in view.attrs["parameters_text"].items():
+            (Path(folder) / f"{stem}.yaml").write_text(text, encoding="utf-8")
+        return Engine(folder, profile=view.meta["profile"], seed=view.attrs["seed"], log=log)

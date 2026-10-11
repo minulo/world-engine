@@ -2,6 +2,7 @@
 import numpy as np
 import pytest
 
+from conftest import first_version_data
 from worldengine.library import operators as op
 from worldengine.library.flood import barriers, pour
 from worldengine.library.orbit import daily_insolation, monthly_insolation
@@ -17,6 +18,13 @@ CIRCULAR = {"orbit": {"eccentricity": 0.0, "perihelion_solar_longitude_deg": 0.0
 @pytest.fixture(scope="module")
 def h():
     return Harness(level=4)
+
+
+@pytest.fixture(scope="module")
+def first(tmp_path_factory):
+    """The harness on a copy of the data in which Albedo, Biomes and Soils are their first versions (build steps 1 and 2),
+    which steps 6 and 7 replaced: their files stay, and so do their tests."""
+    return Harness(level=4, data_dir=first_version_data(tmp_path_factory.mktemp("first")))
 
 
 def geometry(h):
@@ -577,7 +585,8 @@ def albedo_inputs(h, sea):
     return {"ocean_mask": sea, "latitude": g["latitude"], "cell_area": g["cell_area"]}
 
 
-def test_albedo_returns_the_table_value_of_each_surface_type(h):
+def test_albedo_returns_the_table_value_of_each_surface_type(first):
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     sea = h.mesh.xyz[:, 0] > 0
     bare = {"cloud_share": 0.0, "low_sun_term": 0.0}
     warm = np.full((12, h.mesh.n), 300.0)
@@ -591,7 +600,8 @@ def test_albedo_returns_the_table_value_of_each_surface_type(h):
     assert np.allclose(dry[:, sea], 0.658) and np.allclose(dry[:, ~sea], 0.20)      # cold land on which no snow lies stays dark
 
 
-def test_albedo_with_cloud_and_ice_gives_the_published_values_and_its_drivers_add_up(h):
+def test_albedo_with_cloud_and_ice_gives_the_published_values_and_its_drivers_add_up(first):
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     sea = h.mesh.xyz[:, 0] > 0
     t = np.where(h.mesh.lat > 60, 250.0, 300.0) * np.ones((12, 1))
     snowy = np.where(h.mesh.lat > 60, 1.0, 0.0) * np.ones((12, 1))
@@ -622,8 +632,9 @@ def _white_months(h, sea, temperature, snow_cover=0.0):
     return out.drivers["albedo"]["from_snow_and_ice"][:, 0].astype(np.float64) / (0.658 - (0.07 if sea else 0.20))
 
 
-def test_ice_lies_on_the_sea_where_the_mean_of_the_year_is_below_minus_ten(h):
+def test_ice_lies_on_the_sea_where_the_mean_of_the_year_is_below_minus_ten(first):
     """North, Cahalan and Coakley 1981, p. 102: an ice cap whose edge is the yearly mean of -10 C."""
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     assert np.all(_white_months(h, True, _year(-5.0, 12.0)) == 0.0)        # eight months below freezing, yet no ice
     assert np.allclose(_white_months(h, True, _year(-15.0, 20.0)), 1.0)    # ice in every month, the warm ones included
     assert np.allclose(_white_months(h, True, _year(-9.5, 0.0)), 0.25, atol=1e-4)     # inside the ramp, 2 K wide, the ice is partial
@@ -632,11 +643,12 @@ def test_ice_lies_on_the_sea_where_the_mean_of_the_year_is_below_minus_ten(h):
     assert np.all(_white_months(h, True, _year(-5.0, 12.0), snow_cover=1.0) == 0.0)     # and snow does not whiten the open sea
 
 
-def test_land_is_white_by_the_share_of_the_ground_that_lay_under_snow(h):
+def test_land_is_white_by_the_share_of_the_ground_that_lay_under_snow(first):
     """The snow store and the share of the ground it covers are Hydrology's (tests/test_water.py follows both by
     hand: cover = min(1, store / 15 mm), the rule of Dutra et al. 2010, equation A2, taken day by day). Albedo draws
     the land white by that share, as it stood in the last round. The earlier rule, snow in every month below
     freezing and no other, made cold dry ground white and froze one seeded world in 32 (second review)."""
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     cover = [1 / 3, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0]
     white = _white_months(h, False, 273.15 + np.array([-5.0] * 6 + [5.0] * 6), cover)
     assert np.allclose(white, cover, atol=1e-5)
@@ -644,7 +656,8 @@ def test_land_is_white_by_the_share_of_the_ground_that_lay_under_snow(h):
     assert np.allclose(_white_months(h, False, np.full(12, 300.0), 0.08), 0.08, atol=1e-6)          # and it asks only for the cover
 
 
-def test_albedo_says_so_when_snow_and_ice_cover_more_than_a_third_of_the_planet(h):
+def test_albedo_says_so_when_snow_and_ice_cover_more_than_a_third_of_the_planet(first):
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     sea = h.mesh.xyz[:, 0] > 0
     t = np.where(np.abs(h.mesh.lat) > 15, 240.0, 300.0) * np.ones((12, 1))            # ice down to 15 degrees: three quarters of the surface
     snowy = np.where(np.abs(h.mesh.lat) > 15, 1.0, 0.0) * np.ones((12, 1))
@@ -706,7 +719,9 @@ def test_the_storage_driver_is_the_heat_going_into_and_out_of_storage_and_nothin
     spectrum = np.fft.rfft(t, axis=0)
     wave = np.arange(spectrum.shape[0])[:, None]
     rate = np.fft.irfft(spectrum * 1j * wave * 2 * np.pi / 3.15576e7, n=12, axis=0)       # dT/dt in K per second
-    capacity = np.where(sea, 3.10e8, 1.055e7)
+    c = h.params["models"]["slots"]["EnergyBalance"]["constants"]
+    depth = h.registry.fields["mixed_layer_depth"].default_array(m.n, 12)        # the stirred depth's first guess, 75 m
+    capacity = np.where(sea, c["sea_heat_capacity_j_m3_k"] * depth, c["heat_capacity_land_j_m2_k"])
     expected = -capacity * rate / 2.09
     d = out.drivers["surface_temperature"]
     assert np.abs(expected).max() > 5.0                                                    # the test has something to see
@@ -733,11 +748,14 @@ def mirrored_temperature(mesh):
     return 300.0 - 45.0 * np.sin(lat)[None, :] ** 2 + 12.0 * season * np.sin(lat)[None, :]
 
 
-def run_circulation(h, temperature, **kw):
+def run_circulation(h, temperature, sea=None, **kw):
+    """Circulation on a planet that is all sea unless `sea` says otherwise (since build step 5 the rising branch follows
+    the warm land, and air sinks west of heated land)."""
     g = geometry(h)
     n = h.mesh.n
     return h.run("Circulation", reads={"surface_temperature": temperature, "coriolis_parameter": g["coriolis_parameter"],
-                                       "latitude": g["latitude"], "height_above_sea": np.zeros(n), "cell_area": g["cell_area"]}, **kw)
+                                       "latitude": g["latitude"], "height_above_sea": np.zeros(n), "cell_area": g["cell_area"],
+                                       "ocean_mask": np.ones(n, dtype=bool) if sea is None else sea}, **kw)
 
 
 def test_on_an_all_ocean_planet_each_month_in_the_north_mirrors_the_south_half_a_year_later(h):
@@ -1059,21 +1077,24 @@ def biome_run(h, temperature_c, rain_mm, sea=None):
     return names_b[out.fields["biome"][0]], names_c[out.fields["climate_class"][0]], out
 
 
-def test_warm_and_wet_all_year_is_tropical_rainforest(h):
+def test_warm_and_wet_all_year_is_tropical_rainforest(first):
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     biome, klass, out = biome_run(h, [26.0] * 12, [300.0] * 12)
     assert biome == "tropical_rainforest" and klass == "Af"
     assert np.allclose(out.fields["vegetation_cover"], 0.95)
 
 
-def test_a_year_whose_warmest_month_is_below_freezing_is_ice_with_no_plant_cover(h):
+def test_a_year_whose_warmest_month_is_below_freezing_is_ice_with_no_plant_cover(first):
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     biome, klass, out = biome_run(h, [-30, -28, -25, -18, -10, -4, -1, -3, -9, -17, -24, -29], [10.0] * 12)
     assert biome == "ice" and klass == "EF"
     assert np.all(out.fields["vegetation_cover"] == 0.0)
     assert set(out.drivers["biome"]["rule"]) == {1} and set(out.drivers["biome"]["limit"]) == {1}
 
 
-def test_sea_is_shown_as_ice_where_the_albedo_rule_lays_ice_on_it(h):
+def test_sea_is_shown_as_ice_where_the_albedo_rule_lays_ice_on_it(first):
     """The mean temperature of the year below -10 C: the rule Albedo uses, so that the map and the reflected sunlight agree."""
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     n = h.mesh.n
     sea = np.ones(n, dtype=bool)
     assert biome_run(h, [-20.0] * 12, [10.0] * 12, sea)[0] == "ice"
@@ -1101,7 +1122,8 @@ SEASONS = lambda mean, swing: [mean - swing * np.cos(2 * np.pi * (m - 0.5) / 12)
     # Both rules pass again, with more rain in winter: the summer is the dry season.
     (SEASONS(16, 8), [100, 100, 0.3, 5, 5, 2, 5, 5, 5, 100, 100, 100], "Csa", None),
 ])
-def test_climate_classes_follow_the_published_rules(h, temps, rain, expected_class, expected_biome):
+def test_climate_classes_follow_the_published_rules(first, temps, rain, expected_class, expected_biome):
+    h = first                                                       # the first version (toy_data/first_versions.yaml)
     biome, klass, _ = biome_run(h, temps, rain)
     assert klass == expected_class
     if expected_biome:

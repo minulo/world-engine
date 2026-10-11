@@ -29,9 +29,7 @@ Tectonics:
     drivers:
       formed_thickness: {base: true, says: "it formed {v} thick, at the seeded start or at a spreading ridge", follows: [crust_type]}
       thickened_by_plates: {says: "plates closing nearby have since thickened it by {v}", follows: [convergence_rate]}
-      removed_by_erosion:
-        says: "erosion has since changed it by {v}"
-        ends: "The chain ends here, at the history of erosion: what rivers and hillside creep wore away in each round, a round's wear set by the slope, the water and the rock of that time (FluvialErosion)."
+      removed_by_erosion: {says: "erosion has since changed it by {v}"}
       event:
         row_of: tectonic_events
         values: {kind: {1: "a trench where one plate dives under the other", 2: "a collision of continents", 3: "the split of a plate", 4: "a spreading ridge"}}
@@ -138,6 +136,20 @@ Insolation:
     says: "Sunlight at the top of the air averages {value} over the year here."
     ends: "The chain ends here, at planet parameters: the latitude of {lat}, the axial tilt of {planet[axial_tilt_deg]} degrees and the star output of {planet[star_output_w_m2]} W/m²."
 
+Cryosphere:
+  snow_ice_cover:
+    says: "Snow or ice covers {value} of this cell, on the year's average."
+    follows: [snow_water, surface_temperature]
+    drivers:
+      covered_by:
+        names: ["Nothing frozen lies here", "It is snow that comes and goes with the seasons", "It is lasting ice: the snow here never melts away", "It is sea ice, in the months the sea is below freezing"]
+        says: "{v}"
+  permafrost:
+    says: "The ground here is frozen all year to the degree {value}, from the year's mean temperature of {yearly_mean}."
+    follows: [surface_temperature]
+    drivers:
+      yearly_mean: {unit: C_from_K}
+
 Albedo:
   albedo:
     says: "Over the year, {value} of the sunlight is reflected here:"
@@ -146,7 +158,7 @@ Albedo:
     drivers:
       from_cloud_and_sun_angle: {says: "cloud and the low sun reflect {v}"}
       from_surface_type: {says: "the surface type reflects {v}", follows: [ocean_mask]}
-      from_snow_and_ice: {says: "snow and ice add {v}", follows: [snow_cover, surface_temperature]}
+      from_snow_and_ice: {says: "snow and ice add {v}", follows: [snow_ice_cover]}
 
 EnergyBalance:
   surface_temperature:
@@ -158,6 +170,7 @@ EnergyBalance:
       spread_from_neighbours: {unit: K_difference, says: "heat spread from neighbouring cells changes it by {v}"}
       seasonal_storage: {unit: K_difference, says: "heat stored and released through the year changes it by {v}"}
       other_heat: {unit: K_difference, says: "other heat delivered to the surface changes it by {v}", group: surface_heat_flux}
+      carried_by_wind: {unit: K_difference, says: "heat the wind carries in changes it by {v}", follows: [wind]}
       cooling_from_height: {unit: K_difference, says: "its height changes it by {v}", follows: [height_above_sea]}
 
 Circulation:
@@ -182,6 +195,7 @@ Circulation:
         names: ["It lies under no branch of the tropical overturning loop", "It lies under the rising branch of the tropical overturning loop",
                 "It lies under the sinking branch of the northern loop", "It lies under the sinking branch of the southern loop"]
         says: "{v}"
+      west_of_hot_land: {says: "air sinking west of land that the sun heats more than its latitude adds {v}"}
 
 Moisture:
   precipitation:
@@ -366,33 +380,76 @@ Hydrology:
     follows: [lake_fraction]
     follows_missing: [lake_fraction]
 
-Soils:
-  soil_water_capacity:
-    says: "The soil here can hold {value} of water."
-    ends: "The chain ends here, at a model constant: until the Soils process of build step 7, every soil is given the capacity of Manabe's bucket."
+OceanCurrents:
+  ocean_current:
+    says: "The sea surface here moves at {value}:"
+    form: sum
     drivers:
-      cell_is: {names: [land, sea]}
-    cases:
-      - when: {cell_is: sea}
-        says: "This cell is sea: it has no soil, and so nothing that could hold water."
-        ends: "The chain ends here: the cell is sea."
+      loops: {says: "the wind-driven loops of the ocean give {v}", follows: [wind]}
+      drift: {says: "the drift of the surface layer under the wind gives {v}", follows: [wind]}
+  mixed_layer_depth:
+    says: "The wind stirs the sea here to {value}, from a friction velocity of {friction_velocity_m_s}."
+    follows: [wind]
+    drivers:
+      friction_velocity_m_s: {unit: m/s}
+  upwelling:
+    says: "Deep water rises here at {value} (a negative value means surface water sinks), where the wind pushes the surface water apart."
+    follows: [wind]
+  ocean_heat_convergence:
+    says: "The ocean brings {value} of heat to the surface here:"
+    form: sum
+    drivers:
+      carried_by_loops: {says: "the loops carry in {v}", follows: [ocean_current]}
+      carried_by_drift: {says: "the surface drift carries in {v}"}
+      upwelling: {says: "cold water rising from the deep takes {v}", follows: [upwelling]}
+      evened_over_the_sea: {says: "what the ocean gains or loses elsewhere, spread over the whole sea, adds {v}"}
+
+Soils:
+  soil_order:
+    says: "The soil here is of the order {value}:"
+    follows: [surface_temperature, precipitation, surface_age]
+    drivers:
+      rule:
+        names: ["lasting ice covers the ground", "the soil is thinner than 10 cm: bare rock", "the ground is too dry for plants or soil: shifting sand",
+                "the ground stays frozen: a Gelisol", "the ground is cold, flat and waterlogged: a Histosol, peat", "the ground is young volcanic rock: an Andisol",
+                "an old, hot and wet surface weathered to its end: an Oxisol", "a warm, wet surface weathered long: an Ultisol",
+                "clay in a basin with a dry season: a Vertisol", "the ground is dry: an Aridisol", "the soil of grassland in a climate neither wet nor dry: a Mollisol",
+                "the soil of cool, wet conifer forest: a Spodosol", "a temperate soil under forest, weathered for a while: an Alfisol",
+                "the ground is young: an Inceptisol", "the ground is steep: an Inceptisol", "no other rule holds: an Entisol"]
+        says: "{v}"
+  soil_depth:
+    says: "The soil here is {value} deep: the thinner of what its making balances against erosion ({at_balance_with_erosion}) and what has formed since the ground was renewed {time_since_renewal} ago."
+    follows: [erosion_rate, surface_age]
+    drivers:
+      at_balance_with_erosion: {unit: m}
+      time_since_renewal: {unit: My}
+  soil_water_capacity:
+    says: "The soil here holds {value} of water for plants: {per_metre} per metre of soil, over the {root_depth} that roots reach."
+    follows: [soil_depth, rock_type]
+    drivers:
+      per_metre: {unit: mm}
+      root_depth: {unit: m}
+  soil_fertility:
+    says: "The soil here holds {value} of the nutrients of the richest soil, by its order."
+    follows: [soil_order]
 
 Biomes:
   biome:
     says: "The biome here is {value}:"
     drivers:
       rule:
-        names: ["the cell is sea", "the warmest month is below freezing, so nothing grows", "Whittaker's chart places this climate here",
-                "the climate lies off Whittaker's chart, and this is the nearest biome on it",
-                "ice lies on the sea here: the mean temperature of the year is below -10 °C"]
+        names: ["the cell is sea", "lasting ice covers the ground", "the plant types that dominate here make this biome (BIOME1)",
+                "the plant types that dominate here make no biome of the table; this is the biome that shares the most of them",
+                "ice lies on the sea for most of the year"]
         says: "{v}"
         follows_by:
           "the cell is sea": [ocean_mask]
-          "ice lies on the sea here: the mean temperature of the year is below -10 °C": [surface_temperature, ocean_mask]
-          "the warmest month is below freezing, so nothing grows": [surface_temperature]
-      # on sea the two yearly values are missing, and a missing value is not mentioned
-      yearly_temperature: {unit: C_from_K, says: "the yearly mean temperature is {v}"}
-      yearly_precipitation: {unit: mm, says: "the yearly precipitation is {v}"}
+          "ice lies on the sea for most of the year": [snow_ice_cover]
+          "lasting ice covers the ground": [snow_ice_cover]
+      coldest_month: {unit: C_from_K, says: "the coldest month averages {v}"}
+      warmest_month: {unit: C_from_K, says: "the warmest month averages {v}"}
+      degree_days_above_5: {unit: degree-days, says: "the growing season gives {v} above 5 °C"}
+      drought_index: {unit: "", says: "the ground gives the air {v} of what it asks for in the year"}
       limit:
         names: [none, too_cold, too_dry, not_land]
         says_by:
@@ -403,6 +460,13 @@ Biomes:
           too_cold: [surface_temperature]
           too_dry: [precipitation]
           none: [precipitation, surface_temperature]
+  vegetation_cover:
+    says: "Plants shade {value} of the ground here, on the year's average:"
+    form: rule
+    drivers:
+      biome_cover: {says: "the biome's plants shade {v} of it when they grow", follows: [biome]}
+      season: {says: "the months too cold for growth keep {v} of that", follows: [surface_temperature]}
+      soil: {says: "the soil's fertility keeps {v} of it", follows: [soil_fertility]}
   climate_class:
     says: "The Köppen-Geiger climate class here is {value}:"
     follows: [surface_temperature, precipitation]
@@ -417,3 +481,37 @@ SurfaceAge:
   surface_age:
     says: "The ground here was last renewed {value} ago (counted from the start of the history), by new ocean floor, lava, deep erosion or rising from the sea."
     follows: [volcanism, erosion_rate, ocean_mask]
+
+StormClimatology:
+  storm_track_density:
+    says: "Storms passing here have gathered {value} of growth, in the month's mean, from where they grew upwind, carried by the steering wind; storms grow here at {growth_per_day}."
+    follows: [baroclinicity, steering_wind]
+    drivers:
+      growth_per_day: {unit: per day}
+  tc_genesis_potential:
+    says: "The genesis potential of tropical cyclones here is {value}, from the spin of the air {spin}, a humidity of {humidity_per_cent}, a potential intensity of {potential_intensity_m_s} and a shear of {shear_m_s}."
+    says_zero: "No tropical cyclone can form here: the index is zero, over land or over a sea too cool."
+    follows: [potential_intensity, column_water, wind, steering_wind]
+    follows_zero: [ocean_mask, surface_temperature]
+    drivers:
+      spin: {unit: 1/s}
+      humidity_per_cent: {unit: "%"}
+      potential_intensity_m_s: {unit: m/s}
+      shear_m_s: {unit: m/s}
+  potential_intensity:
+    says: "The strongest wind a tropical cyclone could hold here is {value}, from the temperature of the sea."
+    says_zero: "No tropical cyclone could hold its strength here: over land, or over a sea too cool."
+    follows: [surface_temperature, ocean_mask]
+
+WeatherStatistics:
+  daily_temperature_spread:
+    says: "A day's temperature here typically strays {value} from the month's mean: a contrast of {contrast_k} across the mixing length, of which {mixing_length_km} acts here."
+    follows: [surface_temperature, storm_track_density]
+    drivers:
+      contrast_k: {unit: K}
+      mixing_length_km: {unit: km}
+  wet_day_fraction:
+    says: "{value} of the days are wet here, on the month's mean, from {rain_per_day_mm} of rain or snow a day."
+    follows: [precipitation]
+    drivers:
+      rain_per_day_mm: {unit: mm}

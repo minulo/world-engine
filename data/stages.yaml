@@ -9,4 +9,4 @@ stages:
   - name: climate
     clock: climate
   - name: weather
-    clock: weather                 # no process yet; built in step 8
+    clock: weather                 # computed on request, one day at a time, never stored (build step 8)

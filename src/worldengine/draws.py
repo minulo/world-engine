@@ -84,3 +84,9 @@ class Draws:
     def sphere_points(self, purpose, n):
         self._check(purpose)
         return sphere_points(self._seed, self._slot, purpose, self._when, n)
+
+    def on(self, when):
+        """The same draws keyed by another date: for the weather, which redraws the storms and the noise of the days
+        before the one asked for, each keyed by its own date, so that any day comes out the same however it is reached
+        (design, Layer 3: weather keeps no state)."""
+        return Draws(self._seed, self._slot, self._allowed, when)
