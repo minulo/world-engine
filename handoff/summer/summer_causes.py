@@ -89,13 +89,36 @@ RUNS = {
     "no_low_sun_term": const("Albedo", "low_sun_term", 0.0),
     "wind_column_half": const("EnergyBalance", "air_column_kg_m2", 1000.0),
     "no_wind_heat": const("EnergyBalance", "air_column_kg_m2", 0.0),
+    # the two mends tried: clouds by surface (Albedo) and the air's overturning closed (EnergyBalance), each alone and both
+    "both_mends": lambda slots: None,
+    "return_only": both(const("Albedo", "cloud_fraction.land", 0.67), const("Albedo", "cloud_fraction.sea", 0.67)),
+    "clouds_only": lambda slots: None,                                  # with the return switched off below
 }
+NO_RETURN = ("clouds_only",)
+
+SAVE = None
 
 if __name__ == "__main__":
-    names = sys.argv[1:] or list(RUNS)
+    args = sys.argv[1:]
+    if args and args[0].startswith("--save="):
+        SAVE = args.pop(0).split("=", 1)[1]
+        Path(SAVE).mkdir(parents=True, exist_ok=True)
+    names = args or list(RUNS)
     for name in names:
         t0 = time.time()
+        from worldengine.library import ocean as oc
+        kept = oc.returned_from_aloft
+        if name in NO_RETURN:
+            oc.returned_from_aloft = lambda mesh, q, temperature, radius: np.zeros(mesh.n)
         e, w = twin(RUNS[name])
+        oc.returned_from_aloft = kept
         row = numbers(e, w)
         row["seconds"] = round(time.time() - t0, 1)
         print(name, json.dumps(row), flush=True)
+        if SAVE:                                                         # the fields the analysis reads, for reading again
+            keep = ("surface_temperature", "albedo", "insolation", "ocean_mask", "cell_area", "snow_ice_cover", "height_above_sea",
+                    "precipitation", "mixed_layer_depth", "wind")
+            np.savez_compressed(Path(SAVE) / f"{name}.npz", lat=w.mesh.lat, lon=w.mesh.lon,
+                                **{k: np.asarray(w.fields[k]) for k in keep if k in w.fields},
+                                **{f"driver_{k}": np.asarray(v) for k, v in w.drivers.get("surface_temperature", {}).items()},
+                                **{f"heat_{k}": np.asarray(v) for k, v in getattr(w, "groups", {}).get("surface_heat_flux", {}).items()} if isinstance(getattr(w, "groups", None), dict) else {})

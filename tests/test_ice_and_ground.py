@@ -66,14 +66,33 @@ def albedo(h, sea, ice, plants):
                  lagged={"snow_ice_cover": monthly(h, np.full(n, ice)), "vegetation_cover": monthly(h, np.full(n, plants))}).fields["albedo"][0]
 
 
+def cloud_over(c, surface):
+    """The share of sunlight that cloud reflects over land or sea: the planet's share, in proportion to the cloud there."""
+    return c["cloud_share"] * c["cloud_fraction"][surface] / c["cloud_fraction"]["planet"]
+
+
+def test_land_is_less_cloudy_than_sea_and_the_planet_keeps_its_cloud_share(h):
+    """MODIS sees cloud over about 55 % of land and 72 % of ocean, 67 % on the planet's mean (King et al. 2013). Albedo
+    gives each surface the planet's cloud share in proportion: less over land, more over the sea, and on a planet
+    with Earth's share of land (0.29) the mean of the two is the planet's share again."""
+    c = const(h, "Albedo")
+    assert cloud_over(c, "land") < c["cloud_share"] < cloud_over(c, "sea")
+    assert abs(0.29 * cloud_over(c, "land") + 0.71 * cloud_over(c, "sea") - c["cloud_share"]) < 0.002
+    lat = h.run("PlanetGeometry").fields["latitude"]
+    at = np.abs(np.abs(lat) - np.rad2deg(np.arcsin(np.sqrt(1 / 3)))) < 2.0           # where the low-sun term drops out
+    land = albedo(h, False, 0.0, 0.0)[at]
+    assert np.allclose(land, cloud_over(c, "land") + (1 - cloud_over(c, "land")) ** 2 * c["surface"]["bare_ground"], atol=0.01)
+
+
 def test_full_ice_reflects_what_the_ice_cap_of_north_et_al_reflects_where_the_sun_angle_term_vanishes(h):
     """Where the second Legendre polynomial of the sine of latitude is zero (35.26 degrees), the low-sun term drops out:
     open sea reflects cloud plus sea seen twice through the gaps in the cloud, and full ice 0.62 (North et al. 1981)."""
     c = const(h, "Albedo")
     lat = h.run("PlanetGeometry").fields["latitude"]
     at = np.abs(np.abs(lat) - np.rad2deg(np.arcsin(np.sqrt(1 / 3)))) < 2.0
-    through = (1 - c["cloud_share"]) ** 2
-    assert np.allclose(albedo(h, True, 0.0, 0.0)[at], c["cloud_share"] + through * c["surface"]["sea"], atol=0.01)
+    cloud = cloud_over(c, "sea")
+    through = (1 - cloud) ** 2
+    assert np.allclose(albedo(h, True, 0.0, 0.0)[at], cloud + through * c["surface"]["sea"], atol=0.01)
     assert np.allclose(albedo(h, True, 1.0, 0.0)[at], 0.62, atol=0.01)
 
 
@@ -84,7 +103,7 @@ def test_plants_hide_part_of_the_snow_beneath_them(h):
     # the snow's own share of the reflection is cut by the hidden share under full plant cover
     snow_under = covered - plain_covered
     s = np.sin(np.deg2rad(h.run("PlanetGeometry").fields["latitude"]))
-    through = (1 - c["cloud_share"]) ** 2
+    through = (1 - cloud_over(c, "land")) ** 2
     t = c["surface"]
     want = (1 - c["snow_hidden_by_plants"]) * (through * (t["ice"] - t["under_plants"]) - c["low_sun_term"] * (3 * s * s - 1) / 2)
     assert np.allclose(snow_under, want, atol=1e-5)

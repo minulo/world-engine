@@ -739,6 +739,28 @@ def test_a_member_of_the_heat_group_shifts_the_mean_by_its_size_over_b(h):
     assert np.allclose(pushed.drivers["surface_temperature"]["other_heat"], -10.0, atol=1e-4)
 
 
+
+def test_the_wind_moves_heat_and_makes_none_even_where_it_gathers(h):
+    """Trade winds blow toward the equator from 30 degrees on either side: they gather over the warm equator and spread
+    out of the cooler subtropics. Counted as what flows in sideways alone, such a wind cooled the planet, since the air
+    that rose where it gathered took its warmth nowhere (the Earth twin lost 3.9 W/m2 that way, about 1.9 K, until the
+    northern-summer work of 2026-10-24). Air now sinks back where the wind spreads out, at the temperature of the air
+    that rose: the heat the wind carries adds up to zero, and the planet's mean is that of a still sky."""
+    m = h.mesh
+    reads = energy_inputs(h)
+    toward_equator = np.where(np.abs(m.lat) < 30, -5.0 * np.sign(m.lat) * np.cos(np.deg2rad(3 * m.lat)), 0.0)
+    wind = np.broadcast_to(toward_equator[:, None] * m.north, (12, m.n, 3)).copy()
+    still = h.run("EnergyBalance", reads=reads).fields["surface_temperature"].astype(np.float64)
+    out = h.run("EnergyBalance", reads=reads, lagged={"wind": wind})
+    t = out.fields["surface_temperature"].astype(np.float64)
+    w = h.mesh.area / h.mesh.area.sum()
+    carried = out.drivers["surface_temperature"]["carried_by_wind"].astype(np.float64)
+    assert np.abs(carried).max() > 1.0                                     # the wind does something
+    assert abs((carried.mean(axis=0) * w).sum()) < 1e-3                    # and makes no heat
+    assert abs((t.mean(axis=0) * w).sum() - (still.mean(axis=0) * w).sum()) < 1e-3
+    subtropics, equator = (np.abs(m.lat) > 20) & (np.abs(m.lat) < 30), np.abs(m.lat) < 5
+    assert carried.mean(axis=0)[subtropics].mean() > 0 > carried.mean(axis=0)[equator].mean()   # sinking air warms the subtropics
+
 # ------------------------------------------------------------------------------------------ Circulation
 def mirrored_temperature(mesh):
     """A sea-level temperature that depends on latitude and season, the south half a year behind the north."""

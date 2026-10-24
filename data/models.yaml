@@ -227,12 +227,16 @@ slots:
     # The first version, which decides snow and ice itself, is still there: worldengine.processes.albedo_surface_table:SurfaceTableAlbedo
     implementation: worldengine.processes.albedo_cover_table:CoverTableAlbedo
     standing: Rule
-    model: "A table sets reflection by surface type (sea, bare ground, ground under plants, snow and ice), with a constant share for cloud and more reflection at low sun angles (North, Cahalan and Coakley 1981). Snow and ice are where Cryosphere put them in the last round; plants come from the last round's Biomes, and hide part of the snow beneath them."
+    model: "A table sets reflection by surface type (sea, bare ground, ground under plants, snow and ice), with a share for cloud, less over land than over sea in proportion to the cloud that satellites see over each (King et al. 2013), and more reflection at low sun angles (North, Cahalan and Coakley 1981). Snow and ice are where Cryosphere put them in the last round; plants come from the last round's Biomes, and hide part of the snow beneath them."
     ignores: "Where clouds actually form, dust, the darkening of old snow."
-    wrong_where: "The cloud decks of cool subtropical seas and the cloud bands of the tropics: every sky has the same share of cloud. A planet can still freeze over, more easily than in fuller models [UNVERIFIED: recalled]; the process says so in a note when snow and ice cover more than a third of the surface."
+    wrong_where: "The cloud decks of cool subtropical seas, the cloud bands of the tropics and the clear skies of deserts: every sky over land has the same share of cloud, and every sky over the sea. A planet can still freeze over, more easily than in fuller models [UNVERIFIED: recalled]; the process says so in a note when snow and ice cover more than a third of the surface."
     writes: [albedo]
     constants:
       cloud_share: 0.255                       # [INFERRED: set so that an ice-free planet with the table of the first version reflects the 0.319 of North et al. 1981]
+      cloud_fraction:                          # the share of the sky that cloud covers, over each surface and on the planet's mean: the
+        land: 0.55                             #  cloud share above is the planet's, and each surface reflects it in proportion to its own
+        sea: 0.72                              #  cloud [DOCUMENTED: King et al. 2013, MODIS, the abstract: about 55 % over land, 72 % over
+        planet: 0.67                           #  ocean, 67 % globally. INFERRED: that cloud reflects as much per share of sky over each]
       low_sun_term: 0.202                      # times the second Legendre polynomial of sin(latitude) [DOCUMENTED: North, Cahalan and Coakley 1981, eq. 18]
       surface:
         sea: 0.07                              # [UNVERIFIED: typical value]
@@ -262,8 +266,8 @@ slots:
   EnergyBalance:
     implementation: worldengine.processes.energy_balance_wind:WindEnergyBalance
     standing: Adapted
-    model: "The energy balance model of North, Cahalan and Coakley 1981: absorbed sunlight equals heat lost to space (A + B T) plus heat spread sideways, with land and sea differing in how slowly they warm. First version: spreading only."
-    ignores: "The layers of the air, heat carried as water vapour, wind and ocean heat (folded into the spreading constant), sea ice as a lid on the sea, and the make-up of the air: every planet gets Earth's greenhouse effect."
+    model: "The energy balance model of North, Cahalan and Coakley 1981: absorbed sunlight equals heat lost to space (A + B T) plus heat spread sideways, with land and sea differing in how slowly they warm. Second version (build step 5): heat is also carried by the last round's wind, and the air that spreads out of a cell is replaced from above by air at the temperature of the air that rose where the wind gathers, so that the wind moves heat and makes none."
+    ignores: "The layers of the air beyond one overturning, heat carried as water vapour, the overturning of the deep ocean (only the wind-driven ocean carries heat; the rest is folded into the spreading constant), sea ice as a lid on the sea, and the make-up of the air: every planet gets Earth's greenhouse effect."
     wrong_where: "It spreads heat over about 3,500 km, so anything narrower is smoothed away. Coasts facing the wind are not milder. High plateaus are too cold. The seasons on land are too weak unless the continent is very large: on Earth's relief northern land is 13 K warmer in July than in January where Earth's is 31 K, and too much land poleward of about 50 degrees keeps its snow all year. The whole of that miss lies in the summer: between 40 and 60 degrees north the twin's land is as cold as Earth's in its coldest month and 17 K colder in its warmest, and two thirds of it lie under snow in July [MEASURED: docs/BUILD_NOTES.md, sections 4.6 and 8]. Two causes are likely and have not been told apart: the one spreading constant, which damps the seasons of land (run alone and without snow, this process gives the middle of a continent half the swing recalled for North America), and the snow that a weak summer leaves, which reflects the next summer's sunlight [INFERRED]."
     writes: [surface_temperature]
     constants:

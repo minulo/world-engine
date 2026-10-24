@@ -131,3 +131,18 @@ def upwind_heating(mesh, q: np.ndarray, temperature: np.ndarray, radius: float) 
     gain = np.bincount(j, weights=into_j * (temperature[i] - temperature[j]), minlength=mesh.n) + \
         np.bincount(i, weights=into_i * (temperature[j] - temperature[i]), minlength=mesh.n)
     return gain / (mesh.area * radius * radius)
+
+
+def returned_from_aloft(mesh, q: np.ndarray, temperature: np.ndarray, radius: float) -> np.ndarray:
+    """The other half of what a surface flow q (m3/s across each edge) does to temperature, as K m/s: air that gathers
+    in a cell rises out of it, and air that spreads out of a cell is replaced from above by air that rose elsewhere.
+    upwind_heating counts what flows in sideways; this counts what sinks in from above, at the mean temperature of the
+    air that rose, weighted by how much rose. Together the two move heat and neither make nor destroy it: their sum
+    over the planet, weighted by area, is zero (a closed overturning of one layer)."""
+    i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
+    spreads = np.bincount(i, weights=q, minlength=mesh.n) - np.bincount(j, weights=q, minlength=mesh.n)  # out less in
+    sinks, rises = np.maximum(spreads, 0.0), np.maximum(-spreads, 0.0)
+    if rises.sum() <= 0.0:
+        return np.zeros(mesh.n)
+    aloft = float((rises * temperature).sum() / rises.sum())
+    return sinks * (aloft - temperature) / (mesh.area * radius * radius)

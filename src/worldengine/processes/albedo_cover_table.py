@@ -9,6 +9,7 @@ lighter than ground under plants, and snow on the ground under trees reflects le
 (a share of the snow's whiteness, set by the plant cover, is hidden).
 
     albedo = cloud + (1 - ice) * low_sun * P2(sin latitude) + (1 - cloud)^2 * surface,
+    cloud = the planet's cloud share * the cloud fraction over this surface (land or sea) / the planet's cloud fraction,
     surface on land = bare + cover_of_plants * (under plants - bare), and snow's share of it ice * (1 - hidden * plants)
 
 Ignores: where clouds actually form, dust, the darkening of old snow, the colour of the sea under a low sun.
@@ -42,10 +43,12 @@ class CoverTableAlbedo(Process):
         land = t["bare_ground"] + plants * (t["under_plants"] - t["bare_ground"])
         base = np.where(sea[None, :], t["sea"], land)
         ice = np.where(sea[None, :], cover, cover * (1 - c["snow_hidden_by_plants"] * plants))
-        through = (1 - c["cloud_share"]) ** 2
+        clouds = c["cloud_fraction"]
+        cloud = c["cloud_share"] * np.where(sea, clouds["sea"], clouds["land"]) / clouds["planet"]   # less cloud over land
+        through = (1 - cloud) ** 2
         from_type = through * base
         from_ice = ice * (through * (t["ice"] - base) - c["low_sun_term"] * legendre)
-        from_sky = np.broadcast_to(c["cloud_share"] + c["low_sun_term"] * legendre, cover.shape)
+        from_sky = np.broadcast_to(cloud + c["low_sun_term"] * legendre, cover.shape)
         ctx.write("albedo", np.clip(from_type + from_ice + from_sky, 0.0, 1.0))
         covered = float((ice.mean(axis=0) * area).sum() / area.sum())
         if covered > c["note_when_covered_above"]:
