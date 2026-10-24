@@ -1,0 +1,28 @@
+band       kind  twin ann  CRU ann  twin Jul  CRU Jul  twin Jan  CRU Jan  absorbed  sunlight_aga spread_from_ other_heat carried_by_w seasonal_sto cooling_from
+ -90..-60 land     -24.3    -35.2     -30.8    -44.3     -13.9    -18.6      70.5        -63.5        40.8         0.0        11.7         0.0       -13.3
+ -90..-60 sea       -6.0     -7.2     -10.8    -12.1       0.9     -0.3     105.6        -46.7        34.1         4.8         1.9        -0.0         0.0
+ -60..-40 land       6.1      9.3       1.8      4.4      10.5     14.0     183.1         -9.7        13.6         0.0         5.1        -0.0        -2.9
+ -60..-40 sea        6.6      6.6       3.3      4.7      10.1      8.5     177.2        -12.5        12.0         2.6         4.5        -0.0         0.0
+ -40..-20 land      17.8     19.4      13.6     13.1      21.6     25.0     257.2         25.8        -6.3         0.0         2.1         0.0        -3.8
+ -40..-20 sea       20.9     18.9      18.6     16.7      23.0     21.2     259.9         27.1       -13.7         5.5         1.9         0.0         0.0
+ -20..  0 land      22.8     24.0      20.5     21.7      24.5     25.0     308.2         50.2       -14.0         0.0        -9.4        -0.0        -4.0
+ -20..  0 sea       27.5     25.4      27.3     24.4      27.6     26.0     317.9         54.8       -15.7        -4.4        -7.2         0.0         0.0
+   0.. 20 land      22.6     26.0      24.1     26.5      20.1     23.4     306.8         49.5       -14.2         0.0        -9.5         0.0        -3.2
+   0.. 20 sea       26.6     26.2      26.6     26.4      26.5     25.4     318.4         55.1        -8.8       -10.2        -9.4        -0.0         0.0
+  20.. 40 land      10.3     17.4      17.3     26.1       2.6      7.3     236.9         16.1        -5.9         0.0         6.9         0.0        -6.8
+  20.. 40 sea       19.6     20.5      22.2     24.0      16.6     17.0     262.5         28.3       -16.8         5.2         3.0         0.0         0.0
+  40.. 60 land      -2.2      3.5       9.4     18.4     -13.3    -12.7     147.9        -26.5        20.8         0.0         7.1        -0.0        -3.7
+  40.. 60 sea        3.7      7.8       7.9     13.1      -0.4      2.9     176.6        -12.8        10.9         1.7         4.0        -0.0         0.0
+  60.. 90 land     -14.2     -9.6      -3.9      9.5     -23.2    -26.4      83.4        -57.4        43.8         0.0         2.4         0.0        -3.1
+  60.. 90 sea      -12.8    -10.1      -5.3      3.1     -19.0    -21.5      86.5        -55.9        27.7         5.6         9.7         0.0         0.0
+carried_by_wind: over the planet +0.00 W/m2
+other_heat: over the planet +0.00 W/m2
+the ocean carries -0.51 PW northward across -40 degrees
+the ocean carries -1.25 PW northward across -20 degrees
+the ocean carries -0.64 PW northward across 0 degrees
+the ocean carries +0.78 PW northward across 20 degrees
+the ocean carries +0.50 PW northward across 26.5 degrees
+the ocean carries +0.27 PW northward across 40 degrees
+the ocean carries +0.18 PW northward across 60 degrees
+northern hemisphere: twin 11.83 C, CRU 14.61 C
+southern hemisphere: twin 14.78 C, CRU 13.25 C

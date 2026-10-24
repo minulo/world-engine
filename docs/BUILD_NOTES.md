@@ -2468,3 +2468,83 @@ world cell is split into the cells of mesh level + 2, about 16 to a cell.
 3. The mean is kept by a last correction cell by cell. It leaves steps at the edges of the world cells: the median
    height step between fine neighbours is 583 m across an edge, against 408 m inside a cell [MEASURED].
 4. The roughness and the rule for rain on slopes are [PROVISIONAL].
+
+## 22. The northern summer, measured again (2026-10-24)
+
+After step 11 the largest known error was still the cold summer of the twin's northern land (sections 4.9 and 13):
+the warmest month of land between 40 and 60° N was 6.2 °C, Earth's 18.4 °C. This section measured its causes again on
+the engine as it then stood, changed two things, and names the next cause. Every number is the preview Earth twin
+[MEASURED: `handoff/summer/summer_causes.py`, logs in `handoff/summer/`], unless a line says otherwise.
+
+### 22.1 What the twin's July was made of
+
+EnergyBalance's own account of July over the land at 40 to 60° N (its drivers, in K, as the process records them):
+sunlight against the loss of heat to space 13.4, spreading −1.2, the wind 2.1, storage −6.0, height −3.7. The land
+reflected 0.488 of July's sunlight, of which cloud and the low sun gave 0.329. One change at a time:
+
+| | Warmest month | Coldest month | Planet's mean | Land white in July |
+|---|---|---|---|---|
+| Earth (CRU) | 18.4 °C | −12.7 °C | 14.0 °C | |
+| As it stood | 6.2 | −16.6 | 11.8 | 0.237 |
+| No low-sun term | 0.7 | −21.5 | 6.2 | 0.632 |
+| No snow counted on land | 10.7 | −13.3 | 13.6 | 0.0 |
+| No heat carried by the wind | 6.0 | −17.3 | 13.6 | 0.332 |
+
+Two findings changed the course of the work.
+
+1. **The wind made heat disappear.** The heat the wind carried was counted in advective form: a cell gains what flows
+   in sideways at the upwind temperature. Where the surface wind gathers, the air that rises takes its warmth nowhere,
+   and where it spreads out, nothing replaces the air that leaves. Over the twin that took 3.9 W/m² out of the planet
+   on the year's mean, about 1.9 K at B = 2.09, most of the twin's cold bias of 2.1 K. Removing the wind's heat
+   altogether warmed the planet by 1.8 K and left the northern summer as it was.
+2. **Land absorbed far less sunlight than sea at the same latitude**: 33 W/m² less between 0 and 20° N, 47 between 20
+   and 40° N, 45 between 40 and 60° N, on the year's mean. Every sky had the same share of cloud, so land's brighter
+   surface showed through as much cloud as the sea's. The twin's land was too cold on the year's mean in every band of
+   the north and of the tropics (0 to 20° N by 7.3 K, 20 to 40° N by 12.0, 40 to 60° N by 9.2), its sea mostly within
+   1 to 3 K.
+
+A low-sun term tied to the month's sun instead of the latitude was tried on paper and dropped: a rule in the
+insolation-weighted cosine of the sun's angle cannot return the yearly fit of North, Cahalan and Coakley 1981 (a straight
+line misses it by up to 0.033 of albedo; a curve that fits rises and falls with the sun's height), since that fit holds
+the pattern of cloud by latitude as well [MEASURED: a calculation outside the engine].
+
+### 22.2 What was changed
+
+- **The wind's overturning is closed** (`library/ocean.py`, `returned_from_aloft`; `energy_balance_wind.py`). Where the
+  wind spreads out of a cell, air sinks in from above at the mean temperature of the air that rose where the wind
+  gathers, weighted by how much rose. The two parts sum to zero over the planet (a test plants trade winds and asks
+  it; the old form fails it by 2.27 K). [INFERRED: one layer that overturns as a whole; the sinking air of Earth's
+  subtropics is warmed on its way down, which this leaves out]
+- **Land is less cloudy than sea** (`albedo_cover_table.py`): the planet's cloud share (0.255) is given to land and sea
+  in proportion to the cloud that MODIS sees over each, 55 % and 72 % against 67 % on the mean [DOCUMENTED: King et al.
+  2013, abstract, read through a search service; the journals' own pages could not be reached from the build machine].
+  Land then reflects through cloud 0.209 and sea 0.274.
+- **The spreading constant fitted again**: 0.465 (`tools/fit_spreading.py`: the fall from the tropics to the polar caps
+  is 43.0 K at 0.40, 40.2 at 0.46, 40.0 at 0.465, 37.9 at 0.52, 35.8 at 0.58 and 33.7 at 0.65; CRU's 40.0).
+
+Each alone, before the new fit: the closed overturning took the warmest month to 11.0 °C and the planet to 14.5 °C;
+the cloud by surface took them to 6.9 and 11.0 °C. Both, with the new fit:
+
+| Land at 40 to 60° N | Before | After | Earth |
+|---|---|---|---|
+| Warmest month | 6.2 °C | 10.5 °C | 18.4 °C |
+| Coldest month | −16.6 °C | −13.8 °C | −12.7 °C |
+| Year | −5.7 °C | −2.2 °C | 3.5 °C |
+| White in July | 0.237 | 0.090 | |
+| The planet's mean | 11.8 °C | 13.3 °C | 14.0 °C |
+
+With no snow counted on land as well, the warmest month would be 13.9 °C: snow still costs 3.5 K of it.
+
+### 22.3 The next cause: the ocean carries heat the wrong way across the equator
+
+The twin's northern half averages 11.8 °C on the year where CRU's averages 14.6, and its southern half 14.8 where CRU's
+averages 13.3: the twin is warmer in the south, Earth in the north. Its seas between 40 and 60° N are 4.1 K too cold on
+the year's mean (3.7 against 7.8 °C), 5.2 K in July, and the spreading ties the land to them (−7.8 K in July). The heat
+the twin's ocean carries north, read off its heat convergence [MEASURED]: −1.25 PW across 20° S, −0.64 PW across the
+equator, +0.78 across 20° N, +0.50 across 26.5° N, +0.27 across 40° N. Earth's ocean carries about 0.4 PW northward
+across the equator because of the Atlantic's overturning, which keeps the northern hemisphere perhaps 2 °C warmer
+(Marshall et al. 2013), and the Atlantic's overturning alone carries 1.3 PW at 26° N (Hirschi et al. 2020)
+[DOCUMENTED: both abstracts, read through a search service]. OceanCurrents moves water by the wind alone; its
+`ignores` names the deep overturning driven by density. That overturning is the next cause to build, in the ocean,
+and it is not built: an overturning that chooses its own hemisphere from causes (salt, the basins' shapes, the winds
+of the Southern Ocean) is a process of its own, and placing it in the North Atlantic by hand would place an outcome.
