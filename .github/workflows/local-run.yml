@@ -1,0 +1,246 @@
+# Does the engine install and run on a person's own computer? On Linux, macOS (Apple silicon) and Windows this runs
+# what the README tells a person to run: the launcher in scripts/ from nothing, a second time (every step skipped), the
+# tests that do not build whole worlds, and the server in the background as a person starts it, asked for the page and
+# the API, then stopped. An Intel Mac shows the launcher's refusal (the pinned numba has no wheels for it), the Docker
+# job builds and runs the image, and the last job sets the worlds that each system built side by side.
+name: Local run
+
+on:
+  push:
+    branches: ["claude/**"]
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Tests: fast (all but tests/test_world.py, a quarter of an hour of whole worlds) or all"
+        type: choice
+        options: [fast, all]
+        default: fast
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-run-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      VPY: ${{ matrix.os == 'windows-latest' && '.venv/Scripts/python.exe' || '.venv/bin/python' }}
+      TESTS: ${{ github.event.inputs.suite == 'all' && 'tests' || 'tests --ignore=tests/test_world.py' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      # 1. The launcher, from nothing: environment, pinned packages, the preview world, the server, its check, stop.
+      - name: Launcher, first run (scripts/run.sh --check)
+        if: runner.os != 'Windows'
+        run: scripts/run.sh --check
+      - name: Launcher, first run (scripts\run.cmd -Check, through Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: scripts\run.cmd -Check
+
+      # 2. The second run skips what is done.
+      - name: Launcher, second run skips every step (scripts/run.sh --check)
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        run: |
+          scripts/run.sh --check | tee second.log
+          grep -q "holds the pinned packages already" second.log
+          grep -q "exists; it is served as it is" second.log
+      - name: Launcher, second run skips every step (scripts/run.ps1 -Check, through PowerShell 7)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/run.ps1 -Check | Tee-Object -FilePath second.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Select-String -Path second.log -SimpleMatch "holds the pinned packages already")) { exit 1 }
+          if (-not (Select-String -Path second.log -SimpleMatch "exists; it is served as it is")) { exit 1 }
+
+      # 3. The tests, with the launcher's environment.
+      - name: Tests (${{ github.event.inputs.suite == 'all' && 'all' || 'all but tests/test_world.py' }})
+        if: ${{ !cancelled() }}
+        run: |
+          # $TESTS is split into words on purpose: the folder, and the file left out
+          # shellcheck disable=SC2086
+          $VPY -m pytest -p no:cacheprovider --durations=15 $TESTS
+
+      # 4. The server in the background as a person starts it (the launcher without a browser); the page, the API, a
+      #    second server refused on the same port, then stopped.
+      - name: Server in the background (scripts/run.sh --no-browser); page, API, port in use, SIGTERM
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        run: |
+          scripts/run.sh --no-browser --port 8766 > server.log 2>&1 &
+          pid=$!
+          trap 'echo "--- server.log"; cat server.log' EXIT
+          for _ in $(seq 1 180); do curl -sf -o /dev/null http://127.0.0.1:8766/api/world && break; sleep 1; done
+          curl -sf http://127.0.0.1:8766/ | grep -q "World viewer"
+          curl -sf -D - -o /dev/null http://127.0.0.1:8766/viewer.js | grep -qi "^content-type: text/javascript"
+          curl -sf http://127.0.0.1:8766/api/world | $VPY -c "import json, sys; w = json.load(sys.stdin); print('GET /api/world: a world of', w['meta']['cells'], 'cells')"
+          test "$(curl -sf 'http://127.0.0.1:8766/api/field?name=elevation' | wc -c)" -eq $((10242 * 4))
+          set +e; $VPY -m worldengine serve worlds/first.zarr --port 8766 --check; code=$?; set -e
+          test "$code" -eq 2                                  # a second server on the port is refused
+          kill -TERM "$pid"                                   # (a background job ignores SIGINT; Ctrl+C is tested by pytest)
+          for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          wait "$pid"
+          grep -q "^stopped" server.log
+      - name: Server in the background (scripts\run.ps1 -NoBrowser); page, API, port in use, stop
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath powershell -PassThru -NoNewWindow -RedirectStandardOutput server.log -RedirectStandardError server.err `
+               -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts\run.ps1", "-NoBrowser", "-Port", "8766"
+          $base = "http://127.0.0.1:8766"
+          $up = $false
+          for ($i = 0; $i -lt 180 -and -not $up; $i++) {
+            try { Invoke-WebRequest -UseBasicParsing "$base/api/world" -TimeoutSec 30 | Out-Null; $up = $true } catch { Start-Sleep 1 }
+          }
+          if (-not $up) { Get-Content server.log, server.err; exit 1 }
+          $page = Invoke-WebRequest -UseBasicParsing "$base/"
+          if ($page.Content -notmatch "World viewer") { exit 1 }
+          $js = Invoke-WebRequest -UseBasicParsing "$base/viewer.js"
+          Write-Host "viewer.js: $($js.Headers['Content-Type'])"
+          if ("$($js.Headers['Content-Type'])" -notlike "text/javascript*") { exit 1 }
+          $world = (Invoke-WebRequest -UseBasicParsing "$base/api/world").Content | ConvertFrom-Json
+          Write-Host "GET /api/world: a world of $($world.meta.cells) cells"
+          $field = Invoke-WebRequest -UseBasicParsing "$base/api/field?name=elevation"
+          if ($field.RawContentLength -ne 10242 * 4) { Write-Host "elevation: $($field.RawContentLength) bytes"; exit 1 }
+          & $env:VPY -m worldengine serve worlds\first.zarr --port 8766 --check
+          $second = $LASTEXITCODE
+          taskkill /PID $p.Id /T /F | Out-Null
+          Get-Content server.log, server.err
+          if ($second -ne 2) { Write-Host "a second server on the port was not refused (exit $second)"; exit 1 }
+
+      # 5. What this system built, for the comparison of the systems (the last job).
+      - name: The world's fingerprints on this system
+        if: ${{ !cancelled() }}
+        run: |
+          $VPY - "${{ matrix.os }}" <<'EOF'
+          import json, platform, sys
+          from worldengine.store import StoreView
+          v = StoreView("worlds/first.zarr")
+          a = v.attrs
+          assert v.fingerprints() == a["fingerprints"], "the store does not read back as it was written"
+          out = {"system": sys.argv[1], "machine": platform.machine(), "python": platform.python_version(),
+                 "world": a["world_fingerprint"], "fields": a["fingerprints"], "packages": a["packages"],
+                 "build_seconds": round(a["meta"]["build_seconds"], 1)}
+          json.dump(out, open(f"fingerprint-{sys.argv[1]}.json", "w"), indent=1)
+          print(sys.argv[1], platform.machine(), "world", a["world_fingerprint"][:16], "built in", out["build_seconds"], "s")
+          EOF
+      - uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: fingerprint-${{ matrix.os }}
+          path: fingerprint-${{ matrix.os }}.json
+          if-no-files-found: warn
+
+  intel-mac:
+    # macos-13 was retired in December 2025; macos-15-intel is the Intel image GitHub offers until autumn 2027.
+    name: macos-15-intel (the launcher refuses, as it must)
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: The pinned numba and llvmlite have no wheels for Intel Macs
+        run: |
+          if python -m pip download --no-deps --only-binary=:all: -d wheels numba==0.68.0 llvmlite==0.50.0; then
+            echo "Wheels were found: the launcher's refusal on Intel Macs is out of date."; exit 1
+          fi
+      - name: The launcher stops with its explanation
+        run: |
+          set +e; scripts/run.sh --check > launcher.log 2>&1; code=$?; set -e
+          cat launcher.log
+          test "$code" -eq 3 && grep -q "This is an Intel Mac" launcher.log
+
+  docker:
+    name: Docker (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build the image
+        run: docker build -t worldengine .
+      - name: First start builds the preview world into the volume; --check asks for the page and /api/world
+        run: docker run --rm -v worldengine-worlds:/app/worlds worldengine --check
+      - name: Serve with the port published, as the README says; ask from the host; docker stop ends it cleanly
+        run: |
+          docker run -d --name we -p 127.0.0.1:8765:8765 -v worldengine-worlds:/app/worlds worldengine
+          for _ in $(seq 1 120); do curl -sf -o /dev/null http://127.0.0.1:8765/api/world && break; sleep 1; done
+          curl -sf http://127.0.0.1:8765/ | grep -q "World viewer"
+          curl -sf http://127.0.0.1:8765/api/world | python3 -c "import json, sys; w = json.load(sys.stdin); print('GET /api/world: a world of', w['meta']['cells'], 'cells')"
+          time docker stop -t 30 we
+          docker logs we 2>&1 | tail -3
+          test "$(docker inspect we --format '{{.State.ExitCode}}')" = 0
+      - name: docker compose up, ask, down
+        run: |
+          docker compose up -d
+          for _ in $(seq 1 300); do curl -sf -o /dev/null http://127.0.0.1:8765/api/world && break; sleep 1; done
+          curl -sf http://127.0.0.1:8765/ | grep -q "World viewer"
+          docker compose down
+      - name: The world's fingerprints in the container
+        run: |
+          docker run --rm -i -v worldengine-worlds:/app/worlds -v "$PWD:/out" --user root --entrypoint python worldengine - <<'EOF'
+          import json, platform
+          from worldengine.store import StoreView
+          v = StoreView("/app/worlds/first.zarr")
+          a = v.attrs
+          out = {"system": "docker (python:3.13-slim on ubuntu-latest)", "machine": platform.machine(), "python": platform.python_version(),
+                 "world": a["world_fingerprint"], "fields": a["fingerprints"], "packages": a["packages"],
+                 "build_seconds": round(a["meta"]["build_seconds"], 1)}
+          json.dump(out, open("/out/fingerprint-docker.json", "w"), indent=1)
+          print("docker", platform.machine(), "world", a["world_fingerprint"][:16])
+          EOF
+      - uses: actions/upload-artifact@v6
+        with:
+          name: fingerprint-docker
+          path: fingerprint-docker.json
+
+  compare:
+    name: The worlds of the systems, side by side
+    needs: [native, docker]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: fingerprint-*
+          merge-multiple: true
+          path: prints
+      - name: Which fields are the same, bit for bit, on every system
+        run: |
+          python3 - <<'EOF'
+          import glob, json, os
+          runs = [json.load(open(p)) for p in sorted(glob.glob("prints/*.json"))]
+          if not runs:
+              raise SystemExit("no fingerprints were uploaded")
+          base = next((r for r in runs if r["system"] == "ubuntu-latest"), runs[0])
+          lines = ["| system | machine | Python | world fingerprint | build s | fields differing from " + base["system"] + " |",
+                   "|---|---|---|---|---|---|"]
+          for r in runs:
+              differ = sorted(f for f in base["fields"] if r["fields"].get(f) != base["fields"][f])
+              shown = ", ".join(differ[:8]) + (f" and {len(differ) - 8} more" if len(differ) > 8 else "")
+              lines.append(f"| {r['system']} | {r['machine']} | {r['python']} | {r['world'][:16]} | {r['build_seconds']} | "
+                           f"{len(differ)} of {len(base['fields'])}{': ' + shown if differ else ''} |")
+          text = "\n".join(lines)
+          print(text)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("## The preview world built on each system\n\n" + text + "\n\nA difference is information, not a failure: "
+                      "bit-for-bit equality across systems is not claimed (README, \"Run it on your computer\").\n")
+          EOF
