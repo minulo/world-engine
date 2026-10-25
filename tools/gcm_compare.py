@@ -103,7 +103,7 @@ def main(argv=None):
     ap.add_argument("--data", default=str(DEFAULT_DATA_DIR))
     ap.add_argument("--profile", default="preview")
     args = ap.parse_args(argv)
-    g = json.loads(Path(args.gcm).read_text())
+    g = json.loads(Path(args.gcm).read_text(encoding="utf-8"))      # JSON is UTF-8; Windows would read the system's code page
     days = g["rotation_days"]
     lat_g = np.asarray(g["lat"])
     gcm = summary(lat_g, np.asarray(g["ts"]) - 273.15, np.asarray(g["ua_lowest"]), np.asarray(g["pr"]))

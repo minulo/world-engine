@@ -18,9 +18,99 @@ what they did not do and where the worlds are wrong is in docs/BUILD_NOTES.md, s
 section 13 first: the northern continents of the Earth twin are still far too cold in summer, and the
 standard build takes longer than its profile allows.
 
-## Install
+## Run it on your computer
 
-The lock file pins the versions the engine was built and tested with, on Python 3.13.
+One command installs the engine into a folder of its own (`.venv`, inside the repository), builds the
+default world once into `worlds/first.zarr` and opens it in the browser. Run it again later and it skips
+what is done: the viewer opens at once. Ctrl+C stops the server.
+
+You need Python 3.13, a 64-bit system and an internet connection for the first run. Install Python first:
+
+| System | Install Python 3.13 | Then, in the repository folder |
+|---|---|---|
+| macOS on Apple silicon | `brew install python@3.13`, or the installer from python.org | `scripts/run.sh` |
+| Ubuntu 25.04 and 25.10 | `sudo apt install python3.13 python3.13-venv` | `scripts/run.sh` |
+| Ubuntu 22.04, 24.04 and 26.04 | `sudo add-apt-repository ppa:deadsnakes/ppa`, `sudo apt update`, then the line above | `scripts/run.sh` |
+| Windows 10 and 11 | `winget install Python.Python.3.13`, or the 64-bit installer from python.org; then open a new terminal | `scripts\run.cmd`, or double-click `run.cmd` in the `scripts` folder |
+| macOS on an Intel processor | not possible: see below | Docker, below |
+
+Python 3.13 is in the official archive of Ubuntu 25.04 and 25.10 only; 24.04 has 3.12 and 26.04 has 3.14, and
+the deadsnakes archive provides 3.13 for 22.04, 24.04 and 26.04 [DOCUMENTED: Launchpad, the publishing history of
+python3.13 and the deadsnakes archive, read on 2026-10-25]. If the launcher finds no 3.13 it takes a 3.12 or 3.14
+and says so. The pinned packages have wheels for both [DOCUMENTED: PyPI's file lists], and on 3.12.3 they installed
+and the viewer served here [MEASURED], but the tests were not run on either, and a world may differ in its last digits.
+
+The launcher takes these options (in PowerShell and `run.cmd`, the same with a single dash and capitals:
+`-World`, `-Profile`, `-Seed`, `-Port`, `-Host`, `-Python`, `-NoBrowser`, `-Check`):
+
+    scripts/run.sh --world worlds/other.zarr --profile preview --seed 7   # another world, built if it is not there
+    scripts/run.sh --port 9000 --host 127.0.0.1                           # where the server listens
+    scripts/run.sh --python /opt/homebrew/bin/python3.13                  # a Python of your choice
+    scripts/run.sh --no-browser                                           # serve, without opening a browser
+    scripts/run.sh --check                                                # install, build, serve, fetch the page and
+                                                                          # /api/world from the server, stop
+
+What it needs and how long it takes, measured on a 4-core Linux cloud machine with 15 GB of memory (Ubuntu 24.04,
+Python 3.13.16) on 2026-10-25 [MEASURED]:
+
+| | |
+|---|---|
+| The first run of `scripts/run.sh --check`: environment, packages, preview world, check | 98 s, with pip's cache already holding the packages (the download was not timed) |
+| The preview build within it, and two more builds on their own | 66.6 s, 63.8 s and 62.3 s, the same world each time |
+| The largest memory of one process during a preview build | 0.59 GB |
+| A second run, which skips the installation and the build | 1.8 s |
+| The download of the pinned packages (from PyPI's file sizes) | 120 MB on Linux, 98 MB on Windows, 88 MB on a Mac |
+| `.venv` on disk | 452 MB in 7,693 files |
+| `worlds/first.zarr` on disk | 37 MB (26 MB of data in 1,681 files) |
+
+The other times in this README come from two-core machines. Plan for about 1 GB of disk and 1 GB of free memory
+for the preview world; the standard world needs 6.7 GB of memory at its peak (under "Use", below). Nothing was
+measured on a Mac or on Windows by hand [UNVERIFIED]: the workflow `.github/workflows/local-run.yml` runs the
+launcher there, twice, then the tests (all but `tests/test_world.py`), then the server in the background, and its
+results say whether that works.
+
+**Intel Macs.** The pinned numba 0.68.0 and llvmlite 0.50.0 publish no wheels for Intel Macs; numba stopped making
+them with 0.63.0, in December 2025 [DOCUMENTED: PyPI's file lists, read on 2026-10-25]. pip would try to compile
+llvmlite from source, which needs LLVM, and fail. The launcher stops and says so; use Docker instead.
+
+**Windows.** Keep the repository out of a folder that OneDrive keeps in step (Documents and Desktop are, in many
+Windows 11 setups): it would copy the 7,700 files of `.venv` and the 1,700 of each world, and may hold them open
+while a world is written [INFERRED]. Keep the path of the repository folder under about 120 characters: the longest
+path in `.venv` is 105 characters past `.venv\Lib\site-packages\`, and Windows refuses paths of more than 260 unless
+long paths are switched on [MEASURED on Linux; the Windows limit DOCUMENTED by Microsoft, "Maximum Path Length
+Limitation"]. `run.cmd` starts `run.ps1` with the execution policy set aside for that script alone.
+
+**Worlds from another system.** The same seed and parameters give the same world, bit for bit, on one machine. On
+this machine the world built in Docker (Debian 13, Python 3.13.17) had the same fingerprint as the one built in
+`.venv` on Ubuntu 24.04 (Python 3.13.16) [MEASURED]. Between Linux, macOS and Windows, or between processors, it is
+not known [UNVERIFIED]: the last job of the workflow sets the fingerprints of the worlds built on each system side by
+side, field by field. A world built on one system opens on any other: nothing refuses a world for its fingerprints.
+The viewer shows a warning when the engine's code or the lock file differ from those that built it.
+
+### Run it in Docker
+
+The same commands work on Linux, on macOS (Apple silicon and Intel) and on Windows, with Docker Desktop or Docker
+Engine. They were run here on Linux only [MEASURED], and the workflow runs them on ubuntu-latest. On Apple silicon
+the image is built for arm64, from other wheels, so its worlds may differ in their last digits from those of an
+Intel or AMD processor [INFERRED].
+
+    docker build -t worldengine .
+    docker run --rm -p 127.0.0.1:8765:8765 -v worldengine-worlds:/app/worlds worldengine
+    docker compose up                       # the same, from compose.yaml
+
+Then open http://localhost:8765/. The first start builds the preview world into the volume `worldengine-worlds`
+(74 to 76 s on the machine above [MEASURED]), and later starts serve it at once. `docker stop` and
+`docker compose down` stop it within a second [MEASURED: 0.3 and 0.7 s]; so should Ctrl+C, which the server
+handles [INFERRED; not tried in Docker]. Inside the container the server listens on every address
+(`serve --host 0.0.0.0`); `-p 127.0.0.1:8765:8765` keeps it to this machine, as the engine's own server is by
+default. `-e WORLDENGINE_PROFILE=standard` builds the standard world instead, which needs Docker Desktop to have
+8 GB of memory or more [INFERRED from its peak of 6.7 GB]. The image is 782 MB [MEASURED]. Whether Docker Desktop still runs on every Intel Mac was not
+checked [UNVERIFIED].
+
+## Install by hand
+
+The launcher above does this. The lock file pins the versions the engine was built and tested with, on Python 3.13;
+they install on 3.12 to 3.14 and not on 3.11 (numpy 2.5.3 needs 3.12).
 
     python -m venv .venv
     .venv/bin/python -m pip install -r requirements.lock        # Windows: .venv\Scripts\python
@@ -32,16 +122,15 @@ no third-party code. With another Python version the lock file may not install; 
 ".[test]"` then takes current versions, and a world may differ in its last digits from one built
 with the pinned ones.
 
-Nothing was run on Windows. Paths, text encodings and line endings are written for it and tested
-as far as Linux can show (docs/BUILD_NOTES.md, sections 5.3 and 6); the first install there is a
-test of its own.
+Nothing was run on Windows by hand. Paths, text encodings and line endings are written for it and tested
+as far as Linux can show (docs/BUILD_NOTES.md, sections 5.3 and 6); the workflow above is the first test there.
 
 ## Use
 
     python -m worldengine order                                  # the running order computed from the declarations
     python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; about two minutes where it was built
     python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 40 to 80 minutes where it was built
-    python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/
+    python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/ (--open opens it)
     python -m worldengine explain worlds/first.zarr --lat 18 --lon -102 --field biome
     python -m worldengine info worlds/first.zarr
     python -m worldengine weather worlds/first.zarr --day 180 --days 7 --lat 50 --lon 10   # a place's days, worked out on request
@@ -132,7 +221,12 @@ in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 984 tests; with the Earth data, under half an hour where it was built
+    python -m pytest                    # 994 tests; with the Earth data, under half an hour where it was built
+    python -m pytest --ignore=tests/test_world.py     # all but the whole-world tests, as the workflow runs them
+
+Without the Earth data, the second command ran in 3 min 11 s on the 4-core machine of "Run it on your computer"
+(838 passed, 119 skipped), and `tests/test_world.py`, which builds whole worlds, in 13 min 49 s on its own
+[MEASURED].
 
 39 of them are expected failures, all in `tests/test_earth.py`: patterns of Earth, and one condition of
 the design (the closed Caspian), that the engine is known to miss, each with the number measured.
@@ -194,6 +288,9 @@ refuses an option it does not know.
     tests/                the test suite; toy processes and the design's declarations as test data
     trials/               the two trials of build step 1 and their results
     tools/                development tools
+    scripts/              the launchers (run.sh; run.ps1 and run.cmd for Windows) and what the container runs
+    Dockerfile, compose.yaml   the engine in a container
+    .github/workflows/    local-run.yml: the launchers, the tests and the server on Linux, macOS and Windows, and Docker
     docs/BUILD_NOTES.md   the state of the build
     HANDOFF.md, handoff/  the working record of the close-out of build step 2: the reports of its fifth check,
                           the logs of the tools that the notes quote, and the scripts that write the notes' tables

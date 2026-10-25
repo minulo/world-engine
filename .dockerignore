@@ -1,0 +1,17 @@
+# The image needs requirements.lock, pyproject.toml, src/, data/, viewer/ and scripts/docker-start.sh.
+.git
+.claude
+.venv
+.pytest_cache
+**/__pycache__
+**/*.pyc
+*.egg-info
+src/*.egg-info
+worlds
+*.zarr
+reference_data
+handoff
+trials
+tests
+tools
+docs

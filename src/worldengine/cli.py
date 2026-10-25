@@ -3,7 +3,7 @@
     python -m worldengine order   [--profile P]
     python -m worldengine build   --profile preview --out worlds/first.zarr [--seed N] [--interventions FILE]
                                   [--history-my 500 --continue-from worlds/older.zarr]
-    python -m worldengine serve   worlds/first.zarr [--port 8765]
+    python -m worldengine serve   worlds/first.zarr [--port 8765] [--host 127.0.0.1] [--open] [--check]
     python -m worldengine explain worlds/first.zarr --lat 48 --lon -20 --field biome
     python -m worldengine info    worlds/first.zarr
 """
@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -41,6 +44,76 @@ def _engine(args, log=None):
     return Engine(args.data, profile=args.profile, seed=args.seed, overrides=overrides or None, log=log)
 
 
+def open_browser(url) -> bool:
+    """Open the viewer in the system's browser, from a thread of its own so that the server starts whatever the
+    browser does. On Linux only where there is a screen (DISPLAY or WAYLAND_DISPLAY) or a browser named in BROWSER:
+    without one, webbrowser would start a text browser such as w3m in the terminal that runs the server."""
+    import webbrowser
+    if sys.platform.startswith("linux") and not any(os.environ.get(v) for v in ("DISPLAY", "WAYLAND_DISPLAY", "BROWSER")):
+        print(f"no screen to open a browser on: open {url} in a browser")
+        return False
+    threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+    return True
+
+
+def _serve(args) -> int:
+    from .server import check, local_url, make_server
+    try:
+        srv = make_server(args.store, host=args.host, port=args.port)
+    except FileNotFoundError:
+        raise
+    except OSError as e:                                     # the port is in use, or not this program's to take
+        print(f"refused: cannot listen on {args.host} port {args.port} ({e.strerror or e}). Another program, or a world "
+              f"server started before, may hold it: stop that one, or choose another port with --port", file=sys.stderr)
+        return 2
+    for wmsg in srv.RequestHandlerClass.service.warnings():
+        print("warning:", wmsg)
+    url = local_url(srv)
+    if args.host not in ("127.0.0.1", "localhost"):
+        print(f"note: listening on {args.host}, so other machines that reach this one can open the viewer too")
+    if args.check:                                           # serve, ask, answer, stop: for the launchers and the workflow
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            for line in check(srv):
+                print("check:", line, flush=True)
+        except (OSError, RuntimeError, ValueError, KeyError) as e:
+            print(f"check failed at {url}: {type(e).__name__}: {e}", file=sys.stderr)
+            return 1
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        print(f"check passed: the viewer and the world were served at {url}")
+        return 0
+    print(f"viewer at {url}  (stop with Ctrl+C)", flush=True)
+    if args.open:
+        open_browser(url)
+    before = _stop_on_sigterm()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("stopped", flush=True)
+    finally:
+        srv.server_close()
+        if before is not None:
+            signal.signal(signal.SIGTERM, before)
+    return 0
+
+
+def _stop_on_sigterm():
+    """Stop on SIGTERM as on Ctrl+C. `docker stop`, `kill` and service managers send SIGTERM, and the first process of
+    a container (the server, in the Dockerfile) has no default action for it: Linux delivers to the first process of
+    a namespace only the signals it has a handler for. [MEASURED in the image of the Dockerfile, without this handler:
+    `docker stop` waited 10.2 s and then killed the server, exit code 137.] Returns the handler it replaced, or None
+    where none can be set (outside the main thread). On Windows the handler is set and never called: a process there
+    is stopped by TerminateProcess, without a signal."""
+    def stop(signum, frame):
+        raise KeyboardInterrupt
+    try:
+        return signal.signal(signal.SIGTERM, stop)
+    except ValueError:
+        return None
+
+
 def _nearest_cell(view, lat, lon):
     la, lo = np.deg2rad(lat), np.deg2rad(lon)
     p = np.array([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)])
@@ -63,8 +136,12 @@ def main(argv=None) -> int:
             sp.add_argument("--continue-from", default=None, help="a world store whose geological history this build goes on from")
     sp = sub.add_parser("serve")
     sp.add_argument("store")
-    sp.add_argument("--port", type=int, default=8765)
-    sp.add_argument("--host", default="127.0.0.1")
+    sp.add_argument("--port", type=int, default=8765, help="the port to listen on; 0 takes a free one (default 8765)")
+    sp.add_argument("--host", default="127.0.0.1", help="the address to listen on: 127.0.0.1, this machine alone (the "
+                                                         "default), or 0.0.0.0, every address (in a container)")
+    sp.add_argument("--open", action="store_true", help="open the viewer in the system's browser")
+    sp.add_argument("--check", action="store_true", help="start, fetch the page and /api/world from the server, say what "
+                                                          "came back and stop: exit code 0 if both answered, 1 if not")
     sp = sub.add_parser("explain")
     sp.add_argument("store")
     sp.add_argument("--field", required=True)
@@ -162,16 +239,7 @@ def main(argv=None) -> int:
                   f"cells, lakes on {f['lake'].mean():.0%}; the largest river carries {f['river_discharge'].max():.0f} m3/s")
             return 0
         if args.cmd == "serve":
-            from .server import make_server
-            srv = make_server(args.store, host=args.host, port=args.port)
-            for wmsg in srv.RequestHandlerClass.service.warnings():
-                print("warning:", wmsg)
-            print(f"viewer at http://{args.host}:{args.port}/  (stop with Ctrl+C)")
-            try:
-                srv.serve_forever()
-            except KeyboardInterrupt:
-                pass
-            return 0
+            return _serve(args)
     except (ParameterError, Refused, FileNotFoundError, KeyError, IndexError) as e:      # (IndexError: a cell the world does not have)
         print(f"refused: {str(e).strip(chr(39) + chr(34))}", file=sys.stderr)
         return 2
