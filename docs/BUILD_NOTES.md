@@ -2557,3 +2557,16 @@ across the equator because of the Atlantic's overturning, which keeps the northe
 `ignores` names the deep overturning driven by density. That overturning is the next cause to build, in the ocean,
 and it is not built: an overturning that chooses its own hemisphere from causes (salt, the basins' shapes, the winds
 of the Southern Ocean) is a process of its own, and placing it in the North Atlantic by hand would place an outcome.
+
+### 22.4 The tests afterwards
+
+`python -m pytest` with the Earth data [MEASURED, 2026-10-25, on the commit that set these numbers]: 997 tests, 960 pass
+and 37 are expected failures, none fails. Two expected failures of the twin pass now and are tests again: the year
+within 2 K of Earth's with the Amazon within a factor of two (0.6 K colder; 134,451 m³/s), and no permafrost in western
+Europe (0.04). The reasons of the others quote the numbers of `handoff/summer/twin_pins.log`; one moved the wrong way:
+Arabia's summer rain, 41.2 mm a month at build step 5, is 77.4 (GPCP 4.7). Two allowances of tests that were found,
+then kept, were set again from what was measured, each with its cause in the test: the southernmost band of the
+default world is 0.28 K warmer than the band beside it, because the air sinking over the pole adds 4.7 K there; and
+the last round's snow cover leaves a trace of whiteness (at most 2e-12) on 7 cells of bare ground. The largest river
+of the default world now rises in an overflowing lake of 2.6 million km² at 59° N, so the why answer that leads from a
+river to its rain follows the largest river whose source is on dry ground, and the README shows a snow-fed northern river.
