@@ -2511,37 +2511,46 @@ the pattern of cloud by latitude as well [MEASURED: a calculation outside the en
 ### 22.2 What was changed
 
 - **The wind's overturning is closed** (`library/ocean.py`, `returned_from_aloft`; `energy_balance_wind.py`). Where the
-  wind spreads out of a cell, air sinks in from above at the mean temperature of the air that rose where the wind
-  gathers, weighted by how much rose. The two parts sum to zero over the planet (a test plants trade winds and asks
-  it; the old form fails it by 2.27 K). [INFERRED: one layer that overturns as a whole; the sinking air of Earth's
-  subtropics is warmed on its way down, which this leaves out]
+  wind spreads out of a cell, air sinks in from above: air that rose where the wind gathers, carried aloft along the
+  divergent part of the surface flow turned around (a potential flow on the mesh's graph Laplacian) and keeping the
+  temperature it rose with, mixed where streams join. The two parts sum to zero over the planet: a test plants trade
+  winds and asks it (the old form fails it by 2.27 K), and another plants a polar overturning beside the tropical one
+  and asks that the pole's sinking air be the cold air that rose near 65° (3.4 to 4.3 °C), not the tropics' (18.6 °C).
+  A first version drew all sinking air from one planet-wide pool of the rising air; it warmed the default world's
+  south pole above the band beside it and cells of the frozen region, and two tests of the whole world caught it.
+  [INFERRED: one layer that overturns as a whole; the sinking air of Earth's subtropics is warmed on its way down,
+  which this leaves out]
 - **Land is less cloudy than sea** (`albedo_cover_table.py`): the planet's cloud share (0.255) is given to land and sea
   in proportion to the cloud that MODIS sees over each, 55 % and 72 % against 67 % on the mean [DOCUMENTED: King et al.
   2013, abstract, read through a search service; the journals' own pages could not be reached from the build machine].
   Land then reflects through cloud 0.209 and sea 0.274.
-- **The spreading constant fitted again**: 0.465 (`tools/fit_spreading.py`: the fall from the tropics to the polar caps
-  is 43.0 K at 0.40, 40.2 at 0.46, 40.0 at 0.465, 37.9 at 0.52, 35.8 at 0.58 and 33.7 at 0.65; CRU's 40.0).
+- **The spreading constant fitted again**: 0.57 (`tools/fit_spreading.py`: the fall from the tropics to the polar caps
+  is 47.6 K at 0.42, 45.0 at 0.465, 43.2 at 0.50, 40.9 at 0.55, 40.2 at 0.565 and 39.8 at 0.575; CRU's 40.0). With the
+  planet-wide pool it had been 0.465, and before the closure 0.52.
 
-Each alone, before the new fit: the closed overturning took the warmest month to 11.0 °C and the planet to 14.5 °C;
-the cloud by surface took them to 6.9 and 11.0 °C. Both, with the new fit:
+Each alone, with the planet-wide pool and the old constant: the closed overturning took the warmest month to 11.0 °C and
+the planet to 14.5 °C; the cloud by surface took them to 6.9 and 11.0 °C. Both, with the upper branch and the new fit:
 
 | Land at 40 to 60° N | Before | After | Earth |
 |---|---|---|---|
-| Warmest month | 6.2 °C | 10.5 °C | 18.4 °C |
-| Coldest month | −16.6 °C | −13.8 °C | −12.7 °C |
-| Year | −5.7 °C | −2.2 °C | 3.5 °C |
-| White in July | 0.237 | 0.090 | |
+| Warmest month | 6.2 °C | 10.2 °C | 18.4 °C |
+| Coldest month | −16.6 °C | −13.7 °C | −12.7 °C |
+| Year | −5.7 °C | −2.3 °C | 3.5 °C |
+| White in July | 0.237 | 0.086 | |
 | The planet's mean | 11.8 °C | 13.3 °C | 14.0 °C |
+| Climate rounds to settle | 20 | 32 | |
 
-With no snow counted on land as well, the warmest month would be 13.9 °C: snow still costs 3.5 K of it.
+With no snow counted on land as well, the warmest month would be 13.8 °C (that run had not settled after 60 rounds):
+snow still costs about 3.6 K of it.
 
 ### 22.3 The next cause: the ocean carries heat the wrong way across the equator
 
 The twin's northern half averages 11.8 °C on the year where CRU's averages 14.6, and its southern half 14.8 where CRU's
-averages 13.3: the twin is warmer in the south, Earth in the north. Its seas between 40 and 60° N are 4.1 K too cold on
-the year's mean (3.7 against 7.8 °C), 5.2 K in July, and the spreading ties the land to them (−7.8 K in July). The heat
-the twin's ocean carries north, read off its heat convergence [MEASURED]: −1.25 PW across 20° S, −0.64 PW across the
-equator, +0.78 across 20° N, +0.50 across 26.5° N, +0.27 across 40° N. Earth's ocean carries about 0.4 PW northward
+averages 13.3: the twin is warmer in the south, Earth in the north. Its seas between 40 and 60° N are 4.0 K too cold on
+the year's mean (3.8 against 7.8 °C), 5.1 K in July, and the spreading ties the land to them (−7.7 K in July). The heat
+the twin's ocean carries north, read off its heat convergence [MEASURED: `handoff/summer/bands_and_hemispheres.py`]:
+−1.04 PW across 20° S, −0.52 PW across the equator, +0.68 across 20° N, +0.41 across 26.5° N, +0.22 across 40° N.
+Earth's ocean carries about 0.4 PW northward
 across the equator because of the Atlantic's overturning, which keeps the northern hemisphere perhaps 2 °C warmer
 (Marshall et al. 2013), and the Atlantic's overturning alone carries 1.3 PW at 26° N (Hirschi et al. 2020)
 [DOCUMENTED: both abstracts, read through a search service]. OceanCurrents moves water by the wind alone; its
