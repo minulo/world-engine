@@ -273,11 +273,12 @@ slots:
     constants:
       loss_at_zero_celsius_w_m2: 203.3         # A [DOCUMENTED: North, Cahalan and Coakley 1981]
       loss_per_kelvin_w_m2_k: 2.09             # B [DOCUMENTED: the same]
-      spreading_constant_w_m2_k: 0.465         # D, on a sphere of the radius below [CALIBRATED: tools/fit_spreading.py on the preview
-                                               #  Earth twin with the ocean and the wind carrying heat, the wind's overturning closed and
-                                               #  the cloud by surface (2026-10-24): the fall from the tropics to the polar caps equals
-                                               #  CRU's 40.0 K at 0.465 (0.52 before the overturning was closed; the 0.649 of North,
-                                               #  Cahalan and Coakley 1981 was fitted with spreading as the only transport)]
+      spreading_constant_w_m2_k: 0.57          # D, on a sphere of the radius below [CALIBRATED: tools/fit_spreading.py on the preview
+                                               #  Earth twin with the ocean and the wind carrying heat, the wind's overturning closed by
+                                               #  its upper branch and the cloud by surface (2026-10-25): the fall from the tropics to the
+                                               #  polar caps is 40.2 K at 0.565 and 39.8 K at 0.575, CRU's 40.0 K between (0.52 before
+                                               #  the overturning was closed; the 0.649 of North, Cahalan and Coakley 1981 was fitted
+                                               #  with spreading as the only transport)]
       spreading_constant_radius_m: 6.371e+6    # the radius D was fitted on; the spreading length of 3,550 km is kept on other planets [INFERRED]
       heat_capacity_land_j_m2_k: 1.055e+7      # 0.16 B years [DOCUMENTED: the same paper, p. 100], with B above and a year of 3.156e7 s
       heat_capacity_sea_j_m2_k: 3.10e+8        # 4.7 B years, an ocean mixed layer of 75 m [DOCUMENTED: the same]
