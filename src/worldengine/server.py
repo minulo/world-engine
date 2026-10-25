@@ -2,15 +2,18 @@
 
 It opens one world store for reading only, serves the viewer page, and answers what the page
 asks for: field values, the values of one cell, the "why" answers, and the weather of a day,
-which it computes on request with the parameters the world was built with (build step 8). It
-listens on this machine only. Anything it keeps between requests equals what a fresh
-computation gives.
+which it computes on request with the parameters the world was built with (build step 8). By
+default it listens on this machine only; `serve --host 0.0.0.0` opens it to the network, which a
+container needs. Anything it keeps between requests equals what a fresh computation gives.
 """
 from __future__ import annotations
 
 import json
 import mimetypes
+import socket
+import sys
 import threading
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -24,6 +27,13 @@ from .store import StoreView, code_fingerprint, field_specs, lock_fingerprint
 from .library.units import SECONDS_PER_DAY
 
 VIEWER_DIR = Path(__file__).resolve().parents[2] / "viewer"
+
+# The types of the viewer's own files, fixed here. mimetypes reads them from the system, and on Windows from the
+# registry, where another program may have set .js to text/plain [DOCUMENTED: Lib/mimetypes.py of Python 3.13, "on
+# Windows, the default values are taken from the registry"]. A browser does not apply a style sheet sent as
+# text/plain to a page in standards mode [DOCUMENTED: the HTML standard, the link type "stylesheet"]. Not run on Windows.
+CONTENT_TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
+                 ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
 
 
 class WorldService:
@@ -286,10 +296,12 @@ class _Handler(BaseHTTPRequestHandler):
             if url.path.startswith("/api/"):
                 return self._json({"error": f"no such request: {url.path}"}, 404)
             rel = "index.html" if url.path in ("/", "") else url.path.lstrip("/")
+            if "\\" in rel or ":" in rel:                      # on Windows a drive, a share or a stream: never looked up
+                return self._json({"error": "not found"}, 404)
             path = (self.viewer_dir / rel).resolve()
             if self.viewer_dir.resolve() not in path.parents or not path.is_file():
                 return self._json({"error": "not found"}, 404)
-            ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            ctype = CONTENT_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             return self._send(200, path.read_bytes(), ctype + ("; charset=utf-8" if ctype.startswith("text/") or ctype.endswith("javascript") else ""))
         except (_BadRequest, KeyError, IndexError) as e:    # a wrong request, or a field, cell or month the world does not have
             return self._json({"error": str(e).strip("'\"")}, 400)
@@ -297,8 +309,53 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"error": f"the server could not answer ({type(e).__name__}: {e})"}, 500)
 
 
+class _Server(ThreadingHTTPServer):
+    """The standard threaded server, except that a port another server listens on is refused on every system.
+    HTTPServer asks for SO_REUSEADDR. On Linux and macOS that only lets a stopped server's port be taken again at once;
+    on Windows it lets a second server take a port that another is still listening on [DOCUMENTED: Microsoft, "Using
+    SO_REUSEADDR and SO_EXCLUSIVEADDRUSE", Winsock documentation]. On Windows the port is asked for alone instead
+    [not run on Windows: the workflow .github/workflows/local-run.yml runs the test there]."""
+
+    def server_bind(self):
+        if sys.platform == "win32":
+            self.allow_reuse_address = False
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def make_server(store_path, host="127.0.0.1", port=8765, viewer_dir=None) -> ThreadingHTTPServer:
-    """A server for one world store. Call serve_forever() on the result, and shutdown() to stop it."""
+    """A server for one world store. Call serve_forever() on the result, and shutdown() to stop it. Port 0 takes a
+    free port; server_address then holds the one taken. A port that is in use raises OSError."""
     service = WorldService(StoreView(store_path))
     handler = type("Handler", (_Handler,), {"service": service, "viewer_dir": Path(viewer_dir) if viewer_dir else VIEWER_DIR})
-    return ThreadingHTTPServer((host, port), handler)
+    return _Server((host, port), handler)
+
+
+def local_url(server) -> str:
+    """The address at which a browser on this machine reaches the server (a server on every address, 0.0.0.0, is
+    reached at 127.0.0.1)."""
+    host, port = server.server_address[:2]
+    return f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{port}/"
+
+
+def check(server, timeout_s=600) -> list:
+    """Ask a running server for what the browser asks for first: the page, its script and style sheet with the types
+    a browser accepts, and /api/world. Returns one line for each; raises RuntimeError if an answer is wrong. For the
+    launchers' and the workflow's check that a world serves; no proxy is used, whatever the environment sets."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    base, said = local_url(server), []
+    for name, want, holds in (("", "text/html", b"World viewer"), ("viewer.js", "text/javascript", b"WebGL2"),
+                              ("style.css", "text/css", b"")):
+        with opener.open(base + name, timeout=timeout_s) as r:
+            body, ctype = r.read(), r.headers.get_content_type()
+        if ctype != want or holds not in body:
+            raise RuntimeError(f"GET /{name} gave {len(body)} bytes of {ctype}; expected {want}" + (f" holding {holds.decode()}" if holds else ""))
+        said.append(f"GET /{name} gave {len(body)} bytes of {ctype}")
+    with opener.open(base + "api/world", timeout=timeout_s) as r:
+        world = json.loads(r.read())
+    cells, fields = world["meta"]["cells"], len(world["fields"])
+    if not (cells > 0 and fields > 0):
+        raise RuntimeError(f"GET /api/world gave a world of {cells} cells and {fields} fields")
+    said.append(f"GET /api/world gave a world of {cells} cells, {fields} fields, seed {world['seed']}")
+    return said
