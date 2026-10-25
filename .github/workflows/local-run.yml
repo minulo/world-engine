@@ -8,6 +8,17 @@ name: Local run
 on:
   push:
     branches: ["claude/**"]
+    paths:                                     # only what a person runs to start the engine; the climate's own changes do not
+      - "scripts/**"                           # start three systems' runs (macOS minutes cost ten times Linux's on private repos)
+      - "Dockerfile"
+      - "compose.yaml"
+      - ".dockerignore"
+      - "requirements.lock"
+      - "pyproject.toml"
+      - "src/worldengine/cli.py"
+      - "src/worldengine/server.py"
+      - "viewer/**"
+      - ".github/workflows/local-run.yml"
   workflow_dispatch:
     inputs:
       suite:
