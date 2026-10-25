@@ -1,0 +1,8 @@
+# Line ends that a Windows checkout must not change. Git for Windows writes text files with CRLF by default
+# (core.autocrlf=true); a shell script with CRLF stops at its first line, in Docker as anywhere else.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf
+compose.yaml    text eol=lf
+*.cmd           text eol=crlf
+*.bat           text eol=crlf
