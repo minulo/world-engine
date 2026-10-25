@@ -6,9 +6,10 @@ wind". The wind of the previous round carries the temperature of the air across 
 advective form, in a column of air of set mass; the heat that arrives is a known amount in the equation, worked out
 from the temperature of the round's own solution and solved again a set number of times with the same prepared
 solver (design, Layer 3: the wind's heat as a known amount, so that the solver is prepared once for each climate run).
-Where the wind spreads out of a cell, air sinks in from above at the mean temperature of the air that rose where the
-wind gathers: a closed overturning of one layer, so that the wind moves heat and makes none (added on 2026-10-24: the
-advective form alone took 3.9 W/m2 out of the Earth twin, about 1.9 K, most of the twin's cold bias of 2.1 K).
+Where the wind spreads out of a cell, air sinks in from above: air that rose where the wind gathers, carried aloft
+along the divergent part of the flow turned around, at the temperature it rose with. A closed overturning of one layer,
+so that the wind moves heat and makes none (added on 2026-10-24: the advective form alone took 3.9 W/m2 out of the
+Earth twin, about 1.9 K, most of the twin's cold bias of 2.1 K).
 The depth of the sea that the seasons warm and cool is the one OceanCurrents stirred in the last round (a departure
 from the design's declarations, build step 4: docs/BUILD_NOTES.md, section 4.9, found the sea's seasons the larger
 cause of the cold northern summers). The spreading constant is fitted again with the wind and the ocean carrying heat (tools/fit_spreading.py), so that the
@@ -86,10 +87,13 @@ class WindEnergyBalance(Process):
         column = c["air_column_kg_m2"] * c["air_heat_capacity_j_kg_k"]                  # J/m2 per kelvin
         flows = [oc.transport_across_edges(mesh, wind[m], np.ones(mesh.n, dtype=bool), radius) for m in range(months)]
         carried = np.zeros((months, mesh.n))
+        if ("upper branch", mesh.level) not in ctx.memo:                 # the flow aloft of the wind's overturning
+            ctx.memo[("upper branch", mesh.level)] = oc.upper_branch_solver(mesh)
+        upper = ctx.memo[("upper branch", mesh.level)]
         sea_level_c = solve(forcing)
         for _ in range(int(c["wind_heat_passes"])):
             carried = np.stack([column * (oc.upwind_heating(mesh, flows[m], sea_level_c[m], radius)
-                                          + oc.returned_from_aloft(mesh, flows[m], sea_level_c[m], radius)) for m in range(months)])
+                                          + oc.returned_from_aloft(mesh, flows[m], sea_level_c[m], radius, upper)) for m in range(months)])
             sea_level_c = solve(forcing + carried)
         cooling = -ctx.shared["lapse_rate_k_per_km"] * height / M_PER_KM
         ctx.write("surface_temperature", sea_level_c + ZERO_CELSIUS_IN_K + cooling)

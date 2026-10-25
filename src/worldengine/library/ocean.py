@@ -9,6 +9,7 @@
   ekman_transport()    the wind-driven transport of the surface layer, with friction where the spin term vanishes
   closed_divergence()  the divergence of a transport with no flow across a coast
   upwind_heating()     the heat that a flow across the edges brings to each cell, in advective form
+  returned_from_aloft()  the heat that air sinking where a surface flow spreads out brings, by a closed overturning
 
 All lengths are in metres here: each function takes the planet radius where it needs one.
 """
@@ -16,6 +17,8 @@ from __future__ import annotations
 
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg as spla
+from numba import njit
 
 from . import operators as op
 
@@ -133,16 +136,62 @@ def upwind_heating(mesh, q: np.ndarray, temperature: np.ndarray, radius: float) 
     return gain / (mesh.area * radius * radius)
 
 
-def returned_from_aloft(mesh, q: np.ndarray, temperature: np.ndarray, radius: float) -> np.ndarray:
+def upper_branch_solver(mesh):
+    """The prepared solver of returned_from_aloft for one mesh: the graph Laplacian of the mesh, -L chi = sources, with
+    the potential of the first cell held at zero (the sum of the sources is zero, so its own equation follows)."""
+    lap = (-op.laplacian_matrix(mesh)).tolil()
+    lap[0, :] = 0.0
+    lap[0, 0] = 1.0
+    return spla.splu(lap.tocsc())
+
+
+def returned_from_aloft(mesh, q: np.ndarray, temperature: np.ndarray, radius: float, solver=None) -> np.ndarray:
     """The other half of what a surface flow q (m3/s across each edge) does to temperature, as K m/s: air that gathers
-    in a cell rises out of it, and air that spreads out of a cell is replaced from above by air that rose elsewhere.
-    upwind_heating counts what flows in sideways; this counts what sinks in from above, at the mean temperature of the
-    air that rose, weighted by how much rose. Together the two move heat and neither make nor destroy it: their sum
-    over the planet, weighted by area, is zero (a closed overturning of one layer)."""
+    in a cell rises out of it, flows aloft, and sinks where the surface flow spreads out, replacing the air that left.
+    upwind_heating counts what flows in sideways at the surface; this counts what sinks in from above. The flow aloft
+    is the divergent part of the surface flow turned around: a potential flow from where air rose to where it sinks
+    (its potential solves -L chi = rising - sinking on the mesh's graph Laplacian). Along it the air keeps the
+    temperature it rose with, mixed where streams join, so air sinks at the temperature of the air that rose nearest
+    upstream of it. Together with upwind_heating it moves heat and neither makes nor destroys it: their sum over the
+    planet, weighted by area, is zero (a closed overturning of one layer)."""
     i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
     spreads = np.bincount(i, weights=q, minlength=mesh.n) - np.bincount(j, weights=q, minlength=mesh.n)  # out less in
     sinks, rises = np.maximum(spreads, 0.0), np.maximum(-spreads, 0.0)
     if rises.sum() <= 0.0:
         return np.zeros(mesh.n)
-    aloft = float((rises * temperature).sum() / rises.sum())
+    sources = rises - sinks
+    sources[0] = 0.0                                           # the held cell (its equation follows from the others)
+    chi = (solver or upper_branch_solver(mesh)).solve(sources)
+    aloft_q = (mesh.edge_dual / mesh.edge_dist) * (chi[i] - chi[j])          # from the first cell to the second, aloft
+    upstream, downstream = np.where(aloft_q > 0, i, j), np.where(aloft_q > 0, j, i)
+    aloft = _aloft_temperature(np.argsort(-chi, kind="stable"), rises, np.asarray(temperature, dtype=np.float64),
+                               upstream, downstream, np.abs(aloft_q))
     return sinks * (aloft - temperature) / (mesh.area * radius * radius)
+
+
+@njit(cache=True)
+def _aloft_temperature(order, rises, temperature, upstream, downstream, flow):
+    """The temperature of the air aloft over each cell: what rose there and what flows in from upstream, mixed. Cells
+    are taken from the highest potential down, so every cell upstream of one is done before it."""
+    n = rises.size
+    count = np.zeros(n + 1, dtype=np.int64)
+    for e in range(flow.size):
+        count[downstream[e] + 1] += 1
+    start = np.cumsum(count)
+    fill = start[:-1].copy()
+    incoming = np.empty(flow.size, dtype=np.int64)
+    for e in range(flow.size):
+        incoming[fill[downstream[e]]] = e
+        fill[downstream[e]] += 1
+    aloft = temperature.copy()
+    for k in range(n):
+        c = order[k]
+        mass = rises[c]
+        heat = rises[c] * temperature[c]
+        for m in range(start[c], start[c + 1]):
+            e = incoming[m]
+            mass += flow[e]
+            heat += flow[e] * aloft[upstream[e]]
+        if mass > 0.0:
+            aloft[c] = heat / mass
+    return aloft

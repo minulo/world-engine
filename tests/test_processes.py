@@ -761,6 +761,27 @@ def test_the_wind_moves_heat_and_makes_none_even_where_it_gathers(h):
     subtropics, equator = (np.abs(m.lat) > 20) & (np.abs(m.lat) < 30), np.abs(m.lat) < 5
     assert carried.mean(axis=0)[subtropics].mean() > 0 > carried.mean(axis=0)[equator].mean()   # sinking air warms the subtropics
 
+
+def test_air_sinks_at_the_temperature_of_the_air_that_rose_nearest_upstream_of_it(h):
+    """Two overturnings apart: trade winds gather over the warm equator and spread out of the subtropics, and a polar
+    wind spreads out of the north pole and gathers near 65 degrees. The air that sinks over the pole is the cold air
+    that rose near 65 degrees, not the warm air of the equator: a planet-wide mean of the rising air, which the
+    first closure used, warmed the poles of the default world above the bands next to them."""
+    from worldengine.library import ocean as oc
+    m = h.mesh
+    trades = np.where(np.abs(m.lat) < 30, -5.0 * np.sign(m.lat) * np.cos(np.deg2rad(3 * m.lat)), 0.0)
+    polar = np.where(m.lat > 60, -3.0 * np.sin(np.deg2rad(6 * (m.lat - 60))), 0.0)          # southward from the pole
+    wind = (trades + polar)[:, None] * m.north
+    q = oc.transport_across_edges(m, wind, np.ones(m.n, dtype=bool), 1.0)
+    t = 30.0 * np.cos(np.deg2rad(m.lat)) - 10.0
+    returned = oc.returned_from_aloft(m, q, t, 1.0)
+    i, j = m.edge_cells[:, 0], m.edge_cells[:, 1]
+    sinks = np.maximum(np.bincount(i, weights=q, minlength=m.n) - np.bincount(j, weights=q, minlength=m.n), 0.0)
+    pole = (m.lat > 80) & (sinks > 0)
+    aloft = t[pole] + returned[pole] * m.area[pole] / sinks[pole]
+    assert pole.any() and aloft.max() < t[np.abs(m.lat - 55) < 3].mean()                # colder than the air at 55 degrees
+    assert abs(((returned + oc.upwind_heating(m, q, t, 1.0)) * m.area).sum()) < 1e-9
+
 # ------------------------------------------------------------------------------------------ Circulation
 def mirrored_temperature(mesh):
     """A sea-level temperature that depends on latitude and season, the south half a year behind the north."""
