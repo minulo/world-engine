@@ -65,9 +65,12 @@ Python 3.13.16) on 2026-10-25 [MEASURED]:
 
 The other times in this README come from two-core machines. Plan for about 1 GB of disk and 1 GB of free memory
 for the preview world; the standard world needs 6.7 GB of memory at its peak (under "Use", below). Nothing was
-measured on a Mac or on Windows by hand [UNVERIFIED]: the workflow `.github/workflows/local-run.yml` runs the
-launcher there, twice, then the tests (all but `tests/test_world.py`), then the server in the background, and its
-results say whether that works.
+measured on a Mac or on Windows by hand. The workflow `.github/workflows/local-run.yml` runs the launcher there,
+twice, then the tests (all but `tests/test_world.py`), then the server in the background; on its first run, on
+2026-10-25, every step passed on ubuntu-latest, macos-latest (Apple silicon) and windows-latest (through Windows
+PowerShell 5.1 and PowerShell 7), the launcher refused on macos-15-intel as it should, and the Docker job passed
+[MEASURED: GitHub Actions run 40146705857, commit 7a3bdee]. The preview build took 124 s there on Ubuntu, 94 s on
+macOS, 76 s on Windows and 114 s in Docker.
 
 **Intel Macs.** The pinned numba 0.68.0 and llvmlite 0.50.0 publish no wheels for Intel Macs; numba stopped making
 them with 0.63.0, in December 2025 [DOCUMENTED: PyPI's file lists, read on 2026-10-25]. pip would try to compile
@@ -81,10 +84,14 @@ long paths are switched on [MEASURED on Linux; the Windows limit DOCUMENTED by M
 Limitation"]. `run.cmd` starts `run.ps1` with the execution policy set aside for that script alone.
 
 **Worlds from another system.** The same seed and parameters give the same world, bit for bit, on one machine. On
-this machine the world built in Docker (Debian 13, Python 3.13.17) had the same fingerprint as the one built in
-`.venv` on Ubuntu 24.04 (Python 3.13.16) [MEASURED]. Between Linux, macOS and Windows, or between processors, it is
-not known [UNVERIFIED]: the last job of the workflow sets the fingerprints of the worlds built on each system side by
-side, field by field. A world built on one system opens on any other: nothing refuses a world for its fingerprints.
+the build machine the world built in Docker (Debian 13, Python 3.13.17) had the same fingerprint as the one built in
+`.venv` on Ubuntu 24.04 (Python 3.13.16) [MEASURED]. Between machines it is not so. On the workflow's first run, of
+the 138 fields of the preview world, the one built in Docker differed from the one built on the Ubuntu runner in 60,
+the one built on Windows in 88 and the one built on macOS in 96, among them the mesh's own cell areas [MEASURED: run
+40146705857, the job "The worlds of the systems, side by side"]. The numba loops are compiled for the processor they
+run on, and numpy chooses its routines by processor too, so two machines may round differently [INFERRED]. How far
+the worlds differ, in the last digits or in their continents, was not measured: the job compares fingerprints only.
+The numbers this README and the notes quote are those of the build machine. A world built on one system opens on any other: nothing refuses a world for its fingerprints.
 The viewer shows a warning when the engine's code or the lock file differ from those that built it.
 
 ### Run it in Docker
