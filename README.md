@@ -238,7 +238,7 @@ Without the Earth data, the second command ran in 3 min 11 s on the 4-core machi
 (838 passed, 119 skipped), and `tests/test_world.py`, which builds whole worlds, in 13 min 49 s on its own
 [MEASURED].
 
-37 of them are expected failures, all in `tests/test_earth.py`: patterns of Earth, and one condition of
+Of the 997 tests, 37 are expected failures, all in `tests/test_earth.py`: patterns of Earth, and one condition of
 the design (the closed Caspian), that the engine is known to miss, each with the number measured.
 `python -m pytest -rx` prints them. They are not the whole list of known errors: the notes' sections
 4.4, 4.6, 8 and 13 to 22 name misses that no test states. Without the Earth data the 119 tests that
