@@ -163,33 +163,36 @@ of a day (weather temperature, rain, pressure, wind and storm influence) are in 
 ### A "why" answer
 
 Every process records the terms that made its result, and `explain` walks back through them to a
-planet parameter, a seeded start or a push. For the mouth of the largest river of the default world
-(shortened):
+planet parameter, a seeded start or a push. For the mouth of one of the large rivers of the default world,
+which carries the snow of a northern plain to the sea (shortened):
 
-    python -m worldengine explain worlds/first.zarr --lat 68.2 --lon 98.5 --field river_discharge
+    python -m worldengine explain worlds/first.zarr --lat 69.3 --lon 66.6 --field river_discharge
 
-    Why is river_discharge like this at 68.2° N, 98.5° E (cell 4999)?
-    1. This cell is sea. The rivers that end here deliver 51634 m³/s on the year's average: 51634 m³/s
-       arrive from upstream, where the largest single source is cell 1282, at 50.7° N, 96.8° E.
-    2. At 50.7° N, 96.8° E (cell 1282), where the cause lies: Runoff here averages 37.4 mm/month: melted
-       snow that the soil could not hold gives 28.9 mm/month; ice leaving ground where snow never melts
-       away gives 7.32 mm/month; rain that the soil could not hold gives 1.18 mm/month.
-    3. [...] The snow on the ground here holds 173.5 mm of water on the year's average, and lies all
-       year: more snow falls in a year than the year can melt. Of the 36.2 mm/month that fall on the
-       year's average, 28.9 mm/month melt and 7.32 mm/month leave as ice. [...]
-    5. [...] Precipitation here averages 37.4 mm/month: moist air rains 26.0 mm/month; air forced up
-       rising ground adds 11.4 mm/month.
+    Why is river_discharge like this at 69.3° N, 66.6° E (cell 7146)?
+    1. This cell is sea. The rivers that end here deliver 37335 m³/s on the year's average: 37335 m³/s
+       arrive from upstream, where the largest single source is cell 1815, at 54.2° N, 52.0° E.
+    2. At 54.2° N, 52.0° E (cell 1815), where the cause lies: Runoff here averages 50.2 mm/month: melted
+       snow that the soil could not hold gives 35.9 mm/month; rain that the soil could not hold gives
+       14.3 mm/month.
+    3. [...] The snow on the ground here holds 94.7 mm of water on the year's average. It builds up in
+       the cold months and is gone by the end of the warm ones: of the 38.3 mm/month that fall as snow
+       on the year's average, all melt. [...]
+    5. [...] Precipitation here averages 67.2 mm/month: moist air rains 65.6 mm/month; air forced up
+       rising ground adds 1.62 mm/month.
     ...
-    11. [...] The temperature here averages -14.1 °C over the year: sunlight absorbed against heat lost
-        to space would give -46.3 °C; heat spread from neighbouring cells changes it by +35.9 °C; its
-        height changes it by -14.2 °C; heat the wind carries in changes it by +10.5 °C.
-    12. [...] Sunlight at the top of the air averages 280.6 W/m² over the year here.
-    13. [...] The chain ends here, at planet parameters: the latitude of 50.7° north, the axial tilt of
+    11. [...] The temperature here averages -4.0 °C over the year: sunlight absorbed against heat lost
+        to space would give -40.7 °C; heat spread from neighbouring cells changes it by +33.0 °C; heat
+        the wind carries in changes it by +8.8 °C; its height changes it by -5.2 °C.
+    12. [...] Sunlight at the top of the air averages 264.2 W/m² over the year here.
+    13. [...] The chain ends here, at planet parameters: the latitude of 54.2° north, the axial tilt of
         23.44 degrees and the star output of 1361.0 W/m².
+    14. [...] Over the year, 0.56 of the sunlight is reflected here: cloud and the low sun reflect 0.31;
+        the surface type reflects 0.15; snow and ice add 0.0954.
 
-The answer is true of the world and shows one of its known errors at work: snow that never melts at 51°
-north, on ground 14 °C below freezing over the year, where a fifth of what the ground sheds is ice leaving
-a store that the summers cannot empty (docs/BUILD_NOTES.md, sections 4.9, 8 and 13).
+Most of what this river carries is snow that melts in the warm months (35.9 of 50.2 mm/month at its largest
+source), and the warmth that melts it is mostly brought: sunlight alone would hold the ground at -40.7 °C over
+the year, and heat spread from neighbouring cells and carried by the wind adds 41.8 K. Until 2026-10-25 the mouth of the
+largest river was fed by snow that never melted at 51° north (docs/BUILD_NOTES.md, sections 13 and 22).
 
 ## Earth, as a yardstick
 

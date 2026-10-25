@@ -91,8 +91,11 @@ def test_both_poles_are_cold_and_carry_ice(plain):
     lat, zonal = op.zonal_mean(m, yearly, 10.0)
     assert abs(lat[np.argmin(zonal)]) > 75 and abs(lat[np.argmax(zonal)]) < 25    # coldest at a pole, warmest in the tropics
     # colder toward each pole. Found, then kept: since build step 3 the two southernmost bands of 10 degrees are level within
-    # 0.03 K (measured: -12.20 and -12.23 C), so a step of up to 0.1 K the wrong way is let pass.
-    assert np.all(np.diff(zonal[lat > 20]) < 0.1) and np.all(np.diff(zonal[lat < -20]) > -0.1)
+    # 0.03 K (measured: -12.20 and -12.23 C), so a step of up to 0.1 K the wrong way was let pass. Since the wind's overturning
+    # was closed (2026-10-25) the air that sinks over each pole is air that rose near 65 degrees, and its heat adds 4.7 K to
+    # the southernmost band (5.9 K to the northernmost; -0.01 K to the band beside it): the southernmost band is 0.28 K
+    # warmer than the next (measured: -12.58 and -12.86 C), and a step of up to 0.3 K the wrong way is let pass.
+    assert np.all(np.diff(zonal[lat > 20]) < 0.3) and np.all(np.diff(zonal[lat < -20]) > -0.3)
 
 
 def _mean_temperature_c(w):
@@ -195,15 +198,17 @@ def test_the_driest_land_band_between_the_equator_and_60_degrees_lies_between_15
 
 
 def test_where_the_dry_belts_lie_and_how_much_rain_they_get(plain):
-    """Found, then kept: the numbers that the notes quote for the dry belts of the default world at the end of build
-    step 8. Each driest band is the one centred at 29.2 degrees: 456 mm a year in the north and 388 mm in the south
-    [MEASURED]. (Until step 8 the driest northern band lay at 58 degrees with 309 mm, on land under snow all year.)"""
+    """Found, then kept: the numbers that the notes quote for the dry belts of the default world after the northern-summer
+    work of 2026-10-25 (docs/BUILD_NOTES.md, 22). The driest northern band is the one centred at 24.3 degrees, with 506 mm
+    a year, and the driest southern band the one at 29.2 degrees, with 402 mm [MEASURED]. (At the end of build step 8 both
+    lay at 29.2 degrees, with 456 and 388 mm; until step 8 the driest northern band lay at 58 degrees with 309 mm, on land
+    under snow all year.)"""
     _, w = plain
     lat, land_rain, yearly = _land_rain_by_band(w)
-    for sign, rain in ((1, 456.5), (-1, 387.7)):
+    for sign, at, rain in ((1, 24.3, 506.0), (-1, 29.2, 401.5)):
         side = (sign * lat > 0) & (sign * lat < 60) & ~np.isnan(land_rain)
         k = int(np.flatnonzero(side)[np.argmin(land_rain[side])])
-        assert abs(sign * lat[k] - 29.2) < 0.1 and abs(land_rain[k] - rain) < 3.0
+        assert abs(sign * lat[k] - at) < 0.1 and abs(land_rain[k] - rain) < 3.0
 
 
 @pytest.mark.parametrize("sign", [1, -1], ids=["north", "south"])
@@ -478,8 +483,11 @@ def test_the_snow_on_the_map_is_the_snow_that_whitens_the_ground(plain):
     cover, store_mm = f["snow_cover"].astype(np.float64), f["snow_water"].astype(np.float64)
     white = w.drivers["albedo"]["from_snow_and_ice"].astype(np.float64)
     covered, bare = land & (cover.min(axis=0) >= 1.0), land & (cover.max(axis=0) == 0.0)
-    assert covered.sum() > 100 and bare.sum() > 500
-    assert np.all(white[:, covered] > 0.02) and not white[:, bare].any()   # (white adds least at the poles, where the low sun already
+    assert covered.sum() > 50 and bare.sum() > 500                         # (measured 86 and 1936 after 2026-10-25; more than 100
+                                                                            # covered in every month before, when summers were colder)
+    # on bare ground the last round's cover, which Albedo reads, may keep a trace of snow at the rounding of the store: at most
+    # 2e-12 of whiteness, on 7 cells, measured after 2026-10-25 (none before)
+    assert np.all(white[:, covered] > 0.02) and white[:, bare].max() < 1e-9   # (white adds least at the poles, where the low sun already
                                                                             # reflects much: 0.025 at the least since step 6, whose bare
                                                                             # ground at 0.25 is brighter than the land of the first table)
     assert not cover[:, ~land].any() and not store_mm[:, ~land].any()
@@ -498,9 +506,13 @@ def test_the_why_answers_for_water_on_land_lead_from_a_river_to_the_rain_behind_
     sea = f["ocean_mask"]
     land = ~sea
     river = f["river_discharge"].astype(np.float64).mean(axis=0)
-    mouth = int(np.argmax(np.where(sea, river, -1.0)))
+    # the largest river at the sea whose largest source lies on dry ground, where the chain goes on to the rain (since
+    # 2026-10-25 the largest river of all rises in a lake that covers its source cell, and the answer stops at the lake)
+    source_of = w.drivers["river_discharge"]["largest_source"]
+    dry_source = sea & (source_of >= 0) & (f["lake_fraction"][np.maximum(source_of, 0)] == 0)
+    mouth = int(np.argmax(np.where(dry_source, river, -1.0)))
     text = as_text(explain(view, mouth, "river_discharge"))
-    source = int(w.drivers["river_discharge"]["largest_source"][mouth])
+    source = int(source_of[mouth])
     assert "This cell is sea. The rivers that end here deliver" in text
     assert f"arrive from upstream, where the largest single source is cell {source}," in text
     assert f"(cell {source}), where the cause lies: Runoff here averages" in text and "Precipitation here averages" in text
@@ -734,7 +746,7 @@ def test_the_world_report_prints_the_numbers_of_the_world(plain):
     assert f"land share {area[land].sum() / area.sum():.3f};" in text and f"highest {f['height_above_sea'].max():.0f} m;" in text
     assert f"temperature: global mean {mean(celsius, np.ones(w.n, dtype=bool)):.1f} C; north pole {celsius[NORTH_POLE]:.1f}, south pole {celsius[SOUTH_POLE]:.1f};" in text
     assert f"rain: global {mean(rain, np.ones(w.n, dtype=bool)):.0f} mm/yr; land {mean(rain, land):.0f}; sea {mean(rain, sea):.0f};" in text
-    assert "driest land band, north: 29 degrees, 456 mm/yr; equatorward of 50: 29 degrees, 456 mm/yr;" in text
+    assert "driest land band, north: 24 degrees, 506 mm/yr; equatorward of 50: 24 degrees, 506 mm/yr;" in text
     assert (f"water on land, mm/yr: rain {mean(rain, land):.0f}; back to the air {mean(to_air, land):.0f} "
             f"({mean(to_air, land) / mean(rain, land):.3f} of the rain);") in text
     assert f"rivers reaching the sea {to_sea:.1f} thousand km3 a year;" in text and "ratio 1.000000" in text
@@ -742,9 +754,9 @@ def test_the_world_report_prints_the_numbers_of_the_world(plain):
     assert f"lakes: {len(lakes['hollow'])}, of which {int(lakes['overflows'].sum())} overflow; {(f['lake_fraction'] * area).sum() / area[land].sum():.3f} of the land under water;" in text
     # the counts that docs/BUILD_NOTES.md quotes for the default world on the preview mesh
     assert "exact ties: of 2807 land cells with a lower neighbour, 649 have several equally low: the lower bed settles 632, the wider way 17, the cell numbers 0; 0 land cells lie on level ground" in text
-    assert "closed hollows: 22 with one bottom, 3 made of two;" in text and "lakes: 17, of which 16 overflow; 0.034 of the land under water;" in text
-    assert "land under snow in every month 0.05 of land, in some month 0.34;" in text                     # since build step 6: snow_ice_cover
-    assert "sea under ice 0.000 of the sea all year, 0.155 in some month" in text
+    assert "closed hollows: 22 with one bottom, 3 made of two;" in text and "lakes: 17, of which 16 overflow; 0.035 of the land under water;" in text
+    assert "land under snow in every month 0.03 of land, in some month 0.31;" in text                     # since build step 6: snow_ice_cover
+    assert "sea under ice 0.000 of the sea all year, 0.142 in some month" in text                         # (0.05, 0.34 and 0.155 until 2026-10-25)
     assert sum(line.startswith("biomes, share of the surface:") for line in said) == 1 and said[-1].startswith("timings (s):")
 
 
