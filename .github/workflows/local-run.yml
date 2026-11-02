@@ -20,6 +20,8 @@ on:
       - "src/worldengine/server.py"
       - "viewer/**"
       - "panel/**"
+      - "tests/test_panel.py"
+      - "tests/test_local_run.py"
       - ".github/workflows/local-run.yml"
   workflow_dispatch:
     inputs:
