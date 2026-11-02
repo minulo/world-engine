@@ -90,8 +90,11 @@ window was closed with "Keep running", and a newly opened panel then stopped it 
 workflow `.github/workflows/local-run.yml` runs the following on Windows and macOS: the self-test of the window with
 setup-python's Python; Start, Running and Stop through the panel's control layer with the real launcher; the stop of a
 server started as from a terminal; the shortcut on Windows (made into a folder of the runner); and on macOS the app,
-whose Info.plist is checked with `plutil -lint` and which is then opened with `open` [not yet run when this was
-written]. Nobody has used the panel by hand on Windows or on a Mac.
+whose Info.plist is checked with `plutil -lint` and which is then opened with `open`. Every one of these steps passed
+on windows-latest (Tk 8.6.15, the vista theme) and macos-latest [MEASURED: GitHub Actions run 41530268296, 2026-11-02].
+The first run on Windows found that a closed port of the same computer is refused only after about 2 s there, which
+the panel's Stop then took for a server still running; the panel now waits long enough. Nobody has used the panel
+by hand on Windows or on a Mac.
 
 Two things about the macOS app were not checked by hand:
 
