@@ -1,6 +1,8 @@
 # World engine
 
 **To install, open, close, upgrade or delete it on macOS, Windows or Ubuntu, step by step: [docs/RUNNING.md](docs/RUNNING.md).**
+On Windows and macOS a window, the control panel, does it with buttons and shows whether the engine is running
+(docs/RUNNING.md, "The control panel").
 
 A generator for a planet's geography, natural systems and climate, in which every feature follows
 from a stated physical cause. The design is in the design document "World engine design: physical

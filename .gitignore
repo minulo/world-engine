@@ -6,3 +6,4 @@ worlds/
 *.egg-info/
 reference_data/
 .venv/
+.worldengine/
