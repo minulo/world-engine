@@ -2,6 +2,8 @@
 
 Every operation, for every system, in one place: [install](#1-install), [open](#2-open-the-app),
 [close](#3-close-the-app), [upgrade](#4-upgrade), [delete](#5-delete), and [when something goes wrong](#6-when-something-goes-wrong).
+On Windows and macOS, a window does the same with buttons and shows whether the engine is running:
+[the control panel](#the-control-panel).
 Pick your system in each section. What the launcher does, the time and disk it takes, and what was tested where are
 in the README, under "Run it on your computer".
 
@@ -15,6 +17,92 @@ in the README, under "Run it on your computer".
 
 Until the work on the branch `claude/quirky-newton-a5zchs` is merged, `main` has no launcher: the install below
 switches to that branch. Once it is merged, leave out the `git checkout` line.
+
+## The control panel
+
+The control panel is a small window, "World Engine", that shows whether the world engine is running and has a button
+for each operation of this page. It is an alternative to the commands of sections 2 to 5, not a replacement: both work
+on the same folder, and the panel also sees, and can stop, a server that was started from a terminal. Install the
+engine first (section 1); the panel's first Start does the rest.
+
+The panel needs Python with tkinter. The installers from python.org include it, on Windows and on macOS. Homebrew's
+Python does not: add it with `brew install python-tk@3.13`.
+
+### Open it
+
+| System | The first time, in the `world-engine` folder | From then on |
+|---|---|---|
+| Windows | `.\scripts\panel.cmd` in PowerShell, or double-click `panel.cmd` in the `scripts` folder. Then press **Install shortcut** (or run `.\scripts\panel.cmd -InstallShortcut`) | "World Engine" on the Desktop or in the Start menu |
+| macOS | `scripts/panel.command` in Terminal, or double-click it in the Finder (it opens a Terminal window, which you may close). Then press **Install app** (or run `scripts/panel.command --install-app`) | "World Engine" in the Applications folder of your home folder (`~/Applications`), or from Spotlight |
+
+The shortcut and the app open the panel of the folder they were made from. If you move the folder, open the panel from
+the folder's new place and install them again.
+
+### The light
+
+The panel asks the engine itself, every two seconds, whether it answers (`GET /api/world` on 127.0.0.1 at the panel's
+port). The light is green only when the engine answers, whoever started it; a port that another program holds is not
+taken for the engine.
+
+| Light | Words | Meaning |
+|---|---|---|
+| grey | Stopped | Nothing answers on the port. |
+| amber | Installing | The launcher makes `.venv` and installs the packages (the first start, or after a reset, or after an upgrade that changed `requirements.lock`). |
+| amber | Building the world | The launcher builds the world: one to two minutes for the preview. |
+| amber | Starting, Stopping, Working | The server is starting or stopping, or the panel is upgrading or deleting. |
+| green | Running | The engine answers. Under the light are its address (click it to open the viewer), the world, the process number and how long it has run. |
+| red | Error | The launcher stopped with an error, or another program holds the port. The reason is under the light; **Details** shows everything the launcher printed. |
+
+### The buttons
+
+Each button is greyed out when it makes no sense (Start while the engine runs, for example). Pointing at a button shows
+what it does at the foot of the window.
+
+| Button | What it does |
+|---|---|
+| **Start** | Runs the launcher of section 2 without a browser (`scripts/run.sh --no-browser` on macOS, `scripts\run.ps1 -NoBrowser` on Windows), with the port and the world of the settings. Its output appears under **Details** and in `.worldengine/launcher.log`. |
+| **Stop** | Stops the engine: it asks the server to stop, and if the server does not, it ends the process. This works for a server started from a terminal too. In the middle of a build it warns first: the world being built is thrown away, because a world is written to disk only at the very end. At most a folder `<world>.partial` is left, which the next build removes. |
+| **Open in browser** | Opens the viewer. |
+| **Upgrade…** | Asks first. It stops the engine if it runs, fetches the new version with `git pull --ff-only`, and, if the version changed, deletes the default world `worlds/first.zarr`, so that the next start builds it with the new engine (section 4 says why). Other worlds are kept. If Git is missing, or the pull cannot simply move forward (your copy has changes or commits of its own), it says so and changes nothing. Afterwards it offers to start. Close and reopen the panel to use its own new version. |
+| **Rebuild world…** | Asks first. It deletes the selected world and starts, which builds the world again. |
+| **Reset environment…** | Asks first. It deletes `.venv` (about 450 MB); the next start makes it again and downloads the packages. Use it when the packages are broken. |
+| **Open folder** | Shows the `world-engine` folder in Explorer or the Finder. |
+| **Install shortcut** (Windows), **Install app** (macOS) | Makes the shortcuts or the app described above. |
+| **Delete…** | Asks first, with the list of what it removes: `.venv`, `worlds/`, `.worldengine/` (the panel's settings and logs) and the shortcuts or the app it installed. It does not remove the `world-engine` folder itself, Python or Git. After the panel has closed, delete the folder as section 5 says. |
+| **Details**, **Copy log**, **Open log** | Show the launcher's output, copy it (to send to someone who helps), or open its file. |
+| Settings: **Port**, **World** | The port (8765 unless you change it) and the world to serve: one of the worlds in `worlds/`, or a new name, which Start builds. The panel keeps them in `.worldengine/panel.json`. They can be changed while the engine is stopped. |
+
+When you close the panel while the engine runs, it asks whether to leave it running. **Keep running** closes the window
+and the engine goes on serving (open the panel again to stop it); **Stop and quit** stops it first.
+
+### How it knows, and what was checked
+
+While it runs, `serve` writes `.worldengine/server-<port>.json`: its process number, address, world, start time and
+engine version, and a token with which the panel asks it to stop (`POST /api/stop`, which the server refuses without
+that token). It removes the file when it stops on Ctrl+C, on SIGTERM, on the panel's request or at the end of
+`--check`. A file left by a server that was killed is recognised (its process has gone, or nothing answers on its
+port) and removed. A server of an older engine writes no such file: the panel shows it as running, but it can be
+stopped only where it was started.
+
+On Linux, where the panel was written, it ran with Tk 9.0 on a virtual screen: its self-test showed every state, and a
+real Start from the window made `.venv`, built the preview world and served it; the server went on running after the
+window was closed with "Keep running", and a newly opened panel then stopped it [MEASURED on 2026-11-02 with Python 3.13.14 of python-build-standalone and Tk 9.0.3 under Xvfb: Start to Installing 1 s, to Building the world 39 s, to Running 187 s; python.org and setup-python ship Tk 8.6, which was not run here]. The
+workflow `.github/workflows/local-run.yml` runs the following on Windows and macOS: the self-test of the window with
+setup-python's Python; Start, Running and Stop through the panel's control layer with the real launcher; the stop of a
+server started as from a terminal; the shortcut on Windows (made into a folder of the runner); and on macOS the app,
+whose Info.plist is checked with `plutil -lint` and which is then opened with `open` [not yet run when this was
+written]. Nobody has used the panel by hand on Windows or on a Mac.
+
+Two things about the macOS app were not checked by hand:
+
+- Gatekeeper. macOS checks an app when it is first opened if the app carries the quarantine attribute, which the
+  program that downloaded it sets [DOCUMENTED: Apple, WWDC 2019 session 701, "Advances in macOS Security"; Howard
+  Oakley, "Quarantine and the quarantine flag", eclecticlight.co, 2020; both seen through a search, not read in full].
+  The panel writes the app's files itself and downloads nothing, so the app should carry no such attribute and open
+  without a prompt, although it is not signed [INFERRED; the workflow checks that the attribute is absent]. If macOS
+  does ask, right-click the app, choose Open, and confirm once.
+- The app runs the panel with the Python that installed it, so the Dock and the menu bar may show "Python" rather than
+  "World Engine" [UNVERIFIED].
 
 ## 1. Install
 
@@ -210,6 +298,10 @@ winget uninstall -e --id Python.Python.3.13         # Windows
 | `git clone` asks for a password | use a GitHub personal access token, or `gh auth login` first |
 | Windows: the window closes at once after a double-click | open PowerShell in the folder and run `.\scripts\run.cmd` to read the message |
 | Anything else after an upgrade | delete `.venv` and the world (section 4) and open the app again |
+| The panel: `This Python has no tkinter` | macOS with Homebrew: `brew install python-tk@3.13`; or install Python 3.13 from python.org, which includes tkinter. Windows: run the Python installer again, choose Modify, tick "tcl/tk and IDLE" |
+| The panel shows Running, but Stop is greyed out ("started without a run file") | a server of an older engine, or of another folder: stop it with Ctrl+C where it was started |
+| The panel says another program uses the port | close that program, or choose another port in the panel's settings |
+| The macOS app says the folder is gone | the `world-engine` folder was moved: open the panel from its new place (`scripts/panel.command`) and press **Install app** again |
 
 A world built on one computer opens on another, but the same seed does not give exactly the same world on different
 machines: the numbers differ in many fields (README, "Worlds from another system").

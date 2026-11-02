@@ -2,7 +2,8 @@
 # what the README tells a person to run: the launcher in scripts/ from nothing, a second time (every step skipped), the
 # tests that do not build whole worlds, and the server in the background as a person starts it, asked for the page and
 # the API, then stopped. An Intel Mac shows the launcher's refusal (the pinned numba has no wheels for it), the Docker
-# job builds and runs the image, and the last job sets the worlds that each system built side by side.
+# job builds and runs the image, and the last job sets the worlds that each system built side by side. The control panel
+# (panel/) is opened on each system with setup-python's Python, which has tkinter, and drives the launcher there.
 name: Local run
 
 on:
@@ -18,6 +19,7 @@ on:
       - "src/worldengine/cli.py"
       - "src/worldengine/server.py"
       - "viewer/**"
+      - "panel/**"
       - ".github/workflows/local-run.yml"
   workflow_dispatch:
     inputs:
@@ -135,6 +137,84 @@ jobs:
           taskkill /PID $p.Id /T /F | Out-Null
           Get-Content server.log, server.err
           if ($second -ne 2) { Write-Host "a second server on the port was not refused (exit $second)"; exit 1 }
+
+      # 4b. The control panel (panel/), on setup-python's Python (the system's Python a person has; it includes tkinter):
+      #     its window, every state, and the control layer that starts and stops the engine as its buttons do.
+      - name: Panel, self-test of the window (scripts/panel.command --self-test)
+        if: ${{ !cancelled() && runner.os == 'macOS' }}
+        run: scripts/panel.command --python "$(command -v python)" --self-test
+      - name: Panel, self-test of the window (under xvfb; Linux is not a target)
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        continue-on-error: true
+        run: xvfb-run -a python panel/world_engine_panel.py --self-test
+      - name: Panel, self-test of the window (scripts\panel.cmd -SelfTest, which finds Python as run.ps1 does)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: cmd
+        run: scripts\panel.cmd -SelfTest
+      - name: Panel, Start, Running, Stop through its control layer; and a server started from a terminal, stopped by it
+        if: ${{ !cancelled() }}
+        run: |
+          python - <<'EOF'
+          import os, subprocess, sys, time
+          sys.path.insert(0, "panel")
+          import control
+          c = control.Controller()
+          c.settings["port"] = 8767
+          assert c.status().state == control.STOPPED, c.status()
+          c.start()                                          # the real launcher of scripts/, detached, without a browser
+          assert c.wait_running(600), c.log_text()
+          st = c.status()
+          print("started:", st.state, st.url, st.world, "pid", st.pid, "owned" if st.owned else "")
+          assert st.state == control.RUNNING and st.owned and st.can_stop, st
+          print("stop:", c.stop())
+          assert c.status().state == control.STOPPED and not c.child_running()
+          print("--- launcher.log"); print(c.log_text())
+          # as a person starts it in a terminal; the panel did not start it and must find it by its run file
+          cmd = control.launcher_command(8768, os.path.abspath("worlds/first.zarr"))
+          p = subprocess.Popen(cmd, stdout=open("foreign.log", "w"), stderr=subprocess.STDOUT)
+          other = control.Controller()
+          other.settings["port"] = 8768
+          assert control.wait_until(lambda: other.status().state == control.RUNNING, 600), open("foreign.log").read()
+          st = other.status()
+          assert not st.owned and st.can_stop and st.pid, st
+          print("stop of a server started elsewhere:", other.stop())
+          p.wait(60)
+          assert other.status().state == control.STOPPED
+          assert not os.path.exists(".worldengine/server-8768.json")
+          print("--- foreign.log"); print(open("foreign.log").read())
+          EOF
+      - name: Panel, the shortcut (scripts\panel.cmd -InstallShortcut into a folder of the runner, not the Desktop)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP "shortcuts"
+          cmd /c scripts\panel.cmd -InstallShortcut -ShortcutDir $dest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $lnk = Join-Path $dest "World Engine.lnk"
+          if (-not (Test-Path $lnk)) { Write-Host "no $lnk"; exit 1 }
+          $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+          Write-Host "target: $($s.TargetPath) $($s.Arguments)"; Write-Host "icon: $($s.IconLocation)"
+          if ($s.TargetPath -notlike "*pythonw.exe" -or $s.Arguments -notlike "*world_engine_panel.py*") { exit 1 }
+      - name: Panel, the app (scripts/panel.command --install-app into a folder of the runner); its structure
+        if: ${{ !cancelled() && runner.os == 'macOS' }}
+        run: |
+          scripts/panel.command --python "$(command -v python)" --install-app --dest "$RUNNER_TEMP/apps"
+          app="$RUNNER_TEMP/apps/World Engine.app"
+          plutil -lint "$app/Contents/Info.plist"
+          test -x "$app/Contents/MacOS/world-engine"
+          test -s "$app/Contents/Resources/world-engine.icns"
+          if xattr -p com.apple.quarantine "$app" 2>/dev/null; then echo "the app is quarantined"; exit 1; fi
+          echo "no quarantine attribute on the app"
+          spctl --assess --type execute -vv "$app" || echo "(spctl: an unsigned app is not assessed as accepted; Gatekeeper asks only for quarantined apps)"
+      - name: Panel, the app opened as the Finder opens it (open -W ... --args --self-test)
+        if: ${{ !cancelled() && runner.os == 'macOS' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          out="$RUNNER_TEMP/app-self-test.txt"
+          open -W -n "$RUNNER_TEMP/apps/World Engine.app" --args --self-test --self-test-out "$out"
+          cat "$out"
+          grep -q "self-test passed" "$out"
 
       # 5. What this system built, for the comparison of the systems (the last job).
       - name: The world's fingerprints on this system
