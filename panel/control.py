@@ -61,9 +61,32 @@ class Probe:
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # 127.0.0.1 never goes through a proxy
 
 
+CONNECT_S = 5.0   # how long a connection may take to be refused: on Windows a closed port of this computer is refused
+                  # only after about 2 s, so a shorter wait reads "nothing listens" as "something is busy" (the first run
+                  # of the workflow on windows-latest; on macOS and Linux it is refused at once)
+
+
+def listening(port, host="127.0.0.1", timeout=CONNECT_S):
+    """True if something accepts connections on the port, False if the connection is refused, None if it neither
+    accepts nor refuses within `timeout`."""
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except (socket.timeout, TimeoutError):
+        return None
+    except OSError:
+        return False
+
+
 def probe(port, host="127.0.0.1", timeout=3.0) -> Probe:
     """Ask GET /api/world. The engine answers with its Server header "WorldEngine/<version>" and a world that has
-    cells, fields and a seed; an open port alone is not the engine."""
+    cells, fields and a seed; an open port alone is not the engine. Whether anything listens is asked first, with time
+    enough for Windows to refuse (CONNECT_S), so that `timeout` bounds only the wait for the answer."""
+    there = listening(port, host, max(timeout, CONNECT_S))
+    if there is False:
+        return Probe("nothing")
+    if there is None:
+        return Probe("busy")
     try:
         with _OPENER.open(f"http://{host}:{int(port)}/api/world", timeout=timeout) as r:
             server_header = r.headers.get("Server", "")

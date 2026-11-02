@@ -115,12 +115,15 @@ def test_serve_writes_its_run_file_and_the_panel_stops_it_by_asking(geometry_sto
     port = free_port()
     p, log = serve_process(geometry_store, port, run_dir)
     info = control.read_run_file(port)
-    assert info["pid"] == p.pid and info["port"] == port and info["world"] == str(Path(geometry_store).resolve())
+    # the run file names the process that serves. On Windows the Python of a venv is a small program that starts the
+    # real interpreter as its child, so that process is not the one Popen started (seen on windows-latest)
+    assert info["pid"] == p.pid or (control.ON_WINDOWS and control.pid_alive(info["pid"]))
+    assert info["port"] == port and info["world"] == str(Path(geometry_store).resolve())
     assert info["url"] == f"http://127.0.0.1:{port}/" and len(info["stop_token"]) == 32 and info["engine_version"]
     c = control.Controller()
     c.settings["port"] = port
     st = c.status()
-    assert st.state == control.RUNNING and st.pid == p.pid and st.can_stop and not st.owned
+    assert st.state == control.RUNNING and st.pid == info["pid"] and st.can_stop and not st.owned
     assert "asked to stop" in c.stop()
     assert control.wait_until(lambda: p.poll() is not None, 30) and p.returncode == 0
     assert "stopped (asked by the control panel)" in output(log)
