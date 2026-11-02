@@ -1,5 +1,7 @@
 # World engine
 
+**To install, open, close, upgrade or delete it on macOS, Windows or Ubuntu, step by step: [docs/RUNNING.md](docs/RUNNING.md).**
+
 A generator for a planet's geography, natural systems and climate, in which every feature follows
 from a stated physical cause. The design is in the design document "World engine design: physical
 causes, replaceable processes"; this folder is its build. What was measured, what the rounds of
@@ -19,6 +21,8 @@ section 13 first: the northern continents of the Earth twin are still far too co
 standard build takes longer than its profile allows.
 
 ## Run it on your computer
+
+The commands for every system, from cloning to deleting, are in [docs/RUNNING.md](docs/RUNNING.md). This section says what the launcher does and what was measured.
 
 One command installs the engine into a folder of its own (`.venv`, inside the repository), builds the
 default world once into `worlds/first.zarr` and opens it in the browser. Run it again later and it skips
