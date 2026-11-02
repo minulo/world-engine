@@ -200,7 +200,7 @@ def test_a_server_without_a_token_is_stopped_by_its_pid(geometry_store, run_dir)
     c = control.Controller()
     c.settings["port"] = port
     said = c.stop()
-    assert f"process {p.pid}" in said and "asked" not in said
+    assert f"process {info['pid']}" in said and "asked" not in said           # (on Windows not p.pid: see above)
     assert control.wait_until(lambda: p.poll() is not None, 30)
     assert c.status().state == control.STOPPED
     if sys.platform != "win32":
