@@ -8,11 +8,14 @@ container needs. Anything it keeps between requests equals what a fresh computat
 """
 from __future__ import annotations
 
+import hmac
 import json
 import mimetypes
+import os
 import socket
 import sys
 import threading
+import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -255,6 +258,7 @@ def _asked(q, name, kind=str):
 class _Handler(BaseHTTPRequestHandler):
     service: WorldService = None
     viewer_dir: Path = VIEWER_DIR
+    stop_token: str = None
     server_version = "WorldEngine/" + __version__
 
     def log_message(self, fmt, *args):                       # quiet by default
@@ -309,6 +313,20 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"error": f"the server could not answer ({type(e).__name__}: {e})"}, 500)
 
 
+    def do_POST(self):
+        """POST /api/stop, with the header X-World-Engine-Stop holding the token of the run file: the server stops as on
+        Ctrl+C. For the control panel (panel/), which on Windows has no other clean way to stop a server it did not
+        start. The token is in the run file only, which only this computer's user can read; and a header of its own
+        makes a browser ask the server first (a CORS preflight, which this server never allows), so no web page sends it."""
+        given = self.headers.get("X-World-Engine-Stop", "")
+        if urlparse(self.path).path != "/api/stop" or not self.stop_token:
+            return self._json({"error": f"no such request: POST {urlparse(self.path).path}"}, 404)
+        if not hmac.compare_digest(given.encode("utf-8"), self.stop_token.encode("utf-8")):
+            return self._json({"error": "the stop request needs the token of the run file"}, 403)
+        self._json({"stopping": True})
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
+
+
 class _Server(ThreadingHTTPServer):
     """The standard threaded server, except that a port another server listens on is refused on every system.
     HTTPServer asks for SO_REUSEADDR. On Linux and macOS that only lets a stopped server's port be taken again at once;
@@ -324,12 +342,54 @@ class _Server(ThreadingHTTPServer):
         super().server_bind()
 
 
-def make_server(store_path, host="127.0.0.1", port=8765, viewer_dir=None) -> ThreadingHTTPServer:
+def make_server(store_path, host="127.0.0.1", port=8765, viewer_dir=None, stop_token=None) -> ThreadingHTTPServer:
     """A server for one world store. Call serve_forever() on the result, and shutdown() to stop it. Port 0 takes a
-    free port; server_address then holds the one taken. A port that is in use raises OSError."""
+    free port; server_address then holds the one taken. A port that is in use raises OSError. With a stop_token the
+    server also stops when it is POSTed to /api/stop with that token (_Handler.do_POST)."""
     service = WorldService(StoreView(store_path))
-    handler = type("Handler", (_Handler,), {"service": service, "viewer_dir": Path(viewer_dir) if viewer_dir else VIEWER_DIR})
+    handler = type("Handler", (_Handler,), {"service": service, "viewer_dir": Path(viewer_dir) if viewer_dir else VIEWER_DIR,
+                                            "stop_token": stop_token})
     return _Server((host, port), handler)
+
+
+def run_dir():
+    """The folder in which `serve` says that it runs, for the control panel (panel/control.py): <repository>/.worldengine,
+    or the folder that WORLDENGINE_RUN_DIR names. None where the engine is not run from a repository."""
+    if os.environ.get("WORLDENGINE_RUN_DIR"):
+        return Path(os.environ["WORLDENGINE_RUN_DIR"])
+    root = Path(__file__).resolve().parents[2]
+    return root / ".worldengine" if (root / "pyproject.toml").is_file() else None
+
+
+def write_run_file(server, store_path, stop_token=None):
+    """Write <run_dir>/server-<port>.json, which tells the control panel that this process serves on the port: its pid,
+    the address, the world, when it started, the engine's version and the token of POST /api/stop. Written whole or
+    not at all; where the folder cannot be written (in the container, /app belongs to root) nothing is written, and
+    None is returned."""
+    folder = run_dir()
+    if folder is None:
+        return None
+    host, port = server.server_address[:2]
+    path = folder / f"server-{port}.json"
+    info = {"pid": os.getpid(), "port": port, "host": host, "url": local_url(server), "world": str(Path(store_path).resolve()),
+            "started_at": time.time(), "engine_version": __version__, "stop_token": stop_token}
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        part = folder / f".server-{port}.json.{os.getpid()}"
+        part.write_text(json.dumps(info, indent=1), encoding="utf-8")
+        os.replace(part, path)
+    except OSError:
+        return None
+    return path
+
+
+def remove_run_file(path):
+    """Remove the run file when the server stops (nothing happens if it is gone already)."""
+    if path is not None:
+        try:
+            Path(path).unlink()
+        except OSError:
+            pass
 
 
 def local_url(server) -> str:

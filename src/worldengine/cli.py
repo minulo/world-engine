@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import signal
 import sys
 import threading
@@ -57,9 +58,10 @@ def open_browser(url) -> bool:
 
 
 def _serve(args) -> int:
-    from .server import check, local_url, make_server
+    from .server import check, local_url, make_server, remove_run_file, write_run_file
+    token = secrets.token_hex(16)                            # for POST /api/stop, from the control panel (panel/)
     try:
-        srv = make_server(args.store, host=args.host, port=args.port)
+        srv = make_server(args.store, host=args.host, port=args.port, stop_token=token)
     except FileNotFoundError:
         raise
     except OSError as e:                                     # the port is in use, or not this program's to take
@@ -71,32 +73,37 @@ def _serve(args) -> int:
     url = local_url(srv)
     if args.host not in ("127.0.0.1", "localhost"):
         print(f"note: listening on {args.host}, so other machines that reach this one can open the viewer too")
-    if args.check:                                           # serve, ask, answer, stop: for the launchers and the workflow
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        try:
-            for line in check(srv):
-                print("check:", line, flush=True)
-        except (OSError, RuntimeError, ValueError, KeyError) as e:
-            print(f"check failed at {url}: {type(e).__name__}: {e}", file=sys.stderr)
-            return 1
-        finally:
-            srv.shutdown()
-            srv.server_close()
-        print(f"check passed: the viewer and the world were served at {url}")
-        return 0
-    print(f"viewer at {url}  (stop with Ctrl+C)", flush=True)
-    if args.open:
-        open_browser(url)
-    before = _stop_on_sigterm()
+    run_file = write_run_file(srv, args.store, token)        # removed again however the server stops, short of a kill
     try:
-        srv.serve_forever()
-    except KeyboardInterrupt:
-        print("stopped", flush=True)
+        if args.check:                                       # serve, ask, answer, stop: for the launchers and the workflow
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            try:
+                for line in check(srv):
+                    print("check:", line, flush=True)
+            except (OSError, RuntimeError, ValueError, KeyError) as e:
+                print(f"check failed at {url}: {type(e).__name__}: {e}", file=sys.stderr)
+                return 1
+            finally:
+                srv.shutdown()
+                srv.server_close()
+            print(f"check passed: the viewer and the world were served at {url}")
+            return 0
+        print(f"viewer at {url}  (stop with Ctrl+C)", flush=True)
+        if args.open:
+            open_browser(url)
+        before = _stop_on_sigterm()
+        try:
+            srv.serve_forever()                              # returns after POST /api/stop
+            print("stopped (asked by the control panel)", flush=True)
+        except KeyboardInterrupt:
+            print("stopped", flush=True)
+        finally:
+            srv.server_close()
+            if before is not None:
+                signal.signal(signal.SIGTERM, before)
+        return 0
     finally:
-        srv.server_close()
-        if before is not None:
-            signal.signal(signal.SIGTERM, before)
-    return 0
+        remove_run_file(run_file)
 
 
 def _stop_on_sigterm():
