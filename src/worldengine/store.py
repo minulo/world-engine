@@ -302,6 +302,55 @@ class MemoryView(WorldView):
         return dict(self._w.group_records.get(group, {}))
 
 
+class DayView(WorldView):
+    """A world with the weather of one day beside it, worked out on request with its cause records (Engine.day_view).
+    The day's fields, tables, drivers and lineage are its own; everything else is read from the world it stands on,
+    so explain() walks from a day's field back into the climate it was drawn around. Nothing of the day is stored."""
+
+    def __init__(self, base, day, values, drivers, lineage, additive, patterns, borrowed=()):
+        self.base, self.day = base, int(day)
+        self._fields = {k: v for k, v in values.items() if not k.startswith("table:")}
+        self._tables = {k[len("table:"):]: v for k, v in values.items() if k.startswith("table:")}
+        self._drivers = drivers
+        a = dict(base.attrs)
+        a["lineage"] = {**(a.get("lineage") or {}), **lineage}
+        a["drivers"] = {**(a.get("drivers") or {}), **{f: sorted(t) for f, t in drivers.items()}}
+        a["additive"] = sorted(set(a.get("additive") or []) | set(additive))
+        a["explanations"] = patterns
+        if borrowed:
+            a["notices"] = list(a.get("notices") or []) + [{"kind": "patterns_borrowed", "fields": sorted(borrowed)}]
+        self.attrs = a
+
+    @property
+    def values(self) -> dict:
+        """The day's fields and tables, as Engine.day_weather returns them."""
+        return {**self._fields, **{"table:" + t: v for t, v in self._tables.items()}}
+
+    def day_fields(self) -> list:
+        return sorted(self._fields)
+
+    def field(self, name):
+        return self._fields[name] if name in self._fields else self.base.field(name)
+
+    def field_names(self):
+        return sorted(set(self.base.field_names()) | set(self._fields))
+
+    def driver(self, field, term):
+        return self._drivers[field][term] if field in self._drivers else self.base.driver(field, term)
+
+    def table(self, name):
+        return dict(self._tables[name]) if name in self._tables else self.base.table(name)
+
+    def push_arrays(self, push_id):
+        return self.base.push_arrays(push_id)
+
+    def mesh_array(self, name):
+        return self.base.mesh_array(name)
+
+    def group_members(self, group):
+        return self.base.group_members(group)
+
+
 class StoreView(WorldView):
     """A world store on disk, read only. What has been read is kept, up to KEEP_BYTES, so that one "why" answer after
     another does not read the same arrays again: a store is written once and never changes."""

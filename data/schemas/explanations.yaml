@@ -35,6 +35,7 @@ values:
             base: {type: boolean}
             always: {type: boolean}
             aside: {type: boolean}
+            follow_first: {type: boolean}
             group: {type: string}
       cases:
         type: list
