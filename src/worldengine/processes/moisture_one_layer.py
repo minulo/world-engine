@@ -79,19 +79,11 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from ..library import operators as op
+from ..library.evaporation import saturation_vapour_density
 from ..library.transport import Ladder, evaporation_from_humidity, rain_from_humidity
-from ..library.units import M_PER_KM, SECONDS_PER_DAY, ZERO_CELSIUS_IN_K
+from ..library.units import M_PER_KM, SECONDS_PER_DAY
 from ..mesh import get_mesh
 from ..process import Process
-
-
-def saturation_vapour_density(temperature_k, s):
-    """Mass of water vapour that a cubic metre of air can hold (kg/m3), from the saturation pressure over water.
-    Below the formula's lowest temperature the value at that temperature is used."""
-    temperature_k = np.maximum(temperature_k, s["lowest_temperature_k"])
-    t_c = temperature_k - ZERO_CELSIUS_IN_K
-    pressure = s["pressure_at_zero_pa"] * np.exp(s["exponent_factor"] * t_c / (temperature_k - s["exponent_offset_k"]))
-    return pressure / (s["vapour_gas_constant_j_kg_k"] * temperature_k)
 
 
 class OneLayerMoisture(Process):

@@ -614,7 +614,7 @@ from worldengine.library import lakes as lk                             # noqa: 
 from worldengine.library.snow import degree_day_melt, snow_year         # noqa: E402
 from worldengine.library.soil_water import bucket_month, bucket_repeating, bucket_year    # noqa: E402
 
-from conftest import YEAR_S                                             # noqa: E402
+from conftest import YEAR_S, first_version_data                                           # noqa: E402
 
 MONTH_S = YEAR_S / 12
 MONTH_DAYS = MONTH_S / 86400.0
@@ -1744,7 +1744,7 @@ def test_snow_holds_the_winter_back_and_the_thaw_sends_it_down_the_rivers():
     celsius = np.array([-5.0] * 6 + [8.0] * 6)
     sun = np.array([40.0] * 6 + [330.0] * 6)
     hh, area, sea, d, out, reads = watered(ground, (m.area * R * R)[away > 60].sum() * 400.0, 40.0, celsius, sun,
-                                           snowfall=np.array([40.0] * 6 + [0.0] * 6))
+                                           snowfall=np.array([40.0] * 6 + [0.0] * 6), constants={"snow": {"daily_spread_k": 0.0}})    # the plain rule
     f = out.fields
     land = np.flatnonzero(~sea.fields["ocean_mask"])
     thaw = 4.0 * MONTH_DAYS * 8.0                                                 # 974 mm: the 240 mm are gone after a quarter of the month
@@ -1774,7 +1774,8 @@ def test_snow_holds_the_winter_back_and_the_thaw_sends_it_down_the_rivers():
 def test_where_snow_never_melts_the_excess_leaves_as_ice_down_the_same_paths():
     m = get_mesh(4)
     ground, away = cone(m)
-    hh, area, sea, d, out, reads = watered(ground, (m.area * R * R)[away > 60].sum() * 400.0, 20.0, -10.0, 100.0, snowfall=20.0)
+    hh, area, sea, d, out, reads = watered(ground, (m.area * R * R)[away > 60].sum() * 400.0, 20.0, -10.0, 100.0, snowfall=20.0,
+                                           constants={"snow": {"daily_spread_k": 0.0}})                                  # the plain rule
     f = out.fields
     wet = sea.fields["ocean_mask"]
     land = ~wet
@@ -1789,12 +1790,13 @@ def test_a_month_just_above_freezing_melts_four_millimetres_a_day_for_each_degre
     """The degree-day factor as the parameter file ships it, through the process: six months at -5 C with 100 mm of
     snow each, then months at +1 C. Each of those can melt 4 mm a day for the one degree, 121.75 mm a month: the
     600 mm take five months to go, and the store at the end of each is 478.25, 356.5, 234.75, 113 and 0 mm. With
-    half the factor the snow would never go at all."""
+    half the factor the snow would never go at all. (The plain rule: the days of each month at its mean. Since build
+    step 6 they scatter around it, and the test of that is the next one.)"""
     m = get_mesh(4)
     ground, away = cone(m)
     celsius = np.array([-5.0] * 6 + [1.0] * 6)
     hh, area, sea, d, out, reads = watered(ground, (m.area * R * R)[away > 60].sum() * 400.0, np.array([100.0] * 6 + [0.0] * 6),
-                                           celsius, 200.0, snowfall=np.array([100.0] * 6 + [0.0] * 6))
+                                           celsius, 200.0, snowfall=np.array([100.0] * 6 + [0.0] * 6), constants={"snow": {"daily_spread_k": 0.0}})
     f = out.fields
     land = np.flatnonzero(~sea.fields["ocean_mask"])
     melt = 4.0 * MONTH_DAYS * (float(np.float32(274.15)) - 273.15)                # (the temperature is stored in single precision)
@@ -1888,8 +1890,22 @@ def test_hydrology_says_so_when_the_soil_has_not_settled_or_water_has_nowhere_to
     assert len(notes) == 1 and "still changing" in notes[0]["what"] and notes[0]["years_followed"] == 1
 
 
-def test_until_soils_exist_every_soil_holds_the_bucket_of_manabe():
-    hh = Harness(level=3)
+def test_with_days_scattered_around_the_month_a_month_at_freezing_melts_on_its_warmer_days():
+    """Build step 6: the days of a month scatter around its mean as a normal distribution, so the degrees above freezing
+    that a month has are s phi(x / s) + x Phi(x / s). At the freezing point that is s / sqrt(2 pi); far above it, the
+    plain rule; far below, nothing."""
+    s, days, factor = 5.0, 30.0, 4.0
+    at = degree_day_melt(np.array([273.15, 273.15 + 30.0, 273.15 - 30.0]), 273.15, factor, days, s)
+    assert at[0] == pytest.approx(factor * days * s / np.sqrt(2 * np.pi), rel=1e-12)
+    assert at[1] == pytest.approx(factor * days * 30.0, rel=1e-6) and at[2] < 1e-6
+    plain = degree_day_melt(np.array([273.15 - 2.0, 273.15 + 2.0]), 273.15, factor, days)
+    scattered = degree_day_melt(np.array([273.15 - 2.0, 273.15 + 2.0]), 273.15, factor, days, s)
+    assert plain[0] == 0.0 and scattered[0] > 0.0 and scattered[1] > plain[1]         # the warmer days melt, below freezing too
+
+
+def test_the_first_soils_hold_the_bucket_of_manabe_everywhere(tmp_path):
+    """The first version of Soils (build step 2), which step 7 replaced: its file stays, and so does this test."""
+    hh = Harness(level=3, data_dir=first_version_data(tmp_path))
     sea = hh.mesh.lat < 0
     out = hh.run("Soils", reads={"ocean_mask": sea})
     assert np.all(out.fields["soil_water_capacity"][~sea] == 150.0) and not out.fields["soil_water_capacity"][sea].any()

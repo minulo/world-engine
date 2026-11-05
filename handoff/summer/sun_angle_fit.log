@@ -1,0 +1,14 @@
+degree 1: coefficients [ 2.288 -3.56 ], largest miss 0.164 of P2 (0.033 of albedo)
+   -57.5: P2 +0.567; July +1.723 at cosine 0.16; January +0.083 at 0.62
+   -27.5: P2 -0.180; July +0.426 at cosine 0.52; January -0.476 at 0.78
+     2.5: P2 -0.497; July -0.363 at cosine 0.74; January -0.278 at 0.72
+    32.5: P2 -0.067; July -0.434 at cosine 0.76; January +0.615 at 0.47
+    52.5: P2 +0.444; July -0.060 at cosine 0.66; January +1.485 at 0.23
+    72.5: P2 +0.864; July +0.661 at cosine 0.46; January +2.288 at 0.00
+degree 2: coefficients [ 0.334  4.584 -7.547], largest miss 0.030 of P2 (0.006 of albedo)
+   -57.5: P2 +0.567; July +0.872 at cosine 0.16; January +0.279 at 0.62
+   -27.5: P2 -0.180; July +0.668 at cosine 0.52; January -0.654 at 0.78
+     2.5: P2 -0.497; July -0.436 at cosine 0.74; January -0.281 at 0.72
+    32.5: P2 -0.067; July -0.572 at cosine 0.76; January +0.822 at 0.47
+    52.5: P2 +0.444; July +0.075 at cosine 0.66; January +0.984 at 0.23
+    72.5: P2 +0.864; July +0.854 at cosine 0.46; January +0.334 at 0.00

@@ -1,0 +1,104 @@
+# The first versions of three slots, as models.yaml held them at the end of build step 3: Albedo with its own rule
+# for snow and ice, Whittaker's chart with the Koppen-Geiger class, and one soil capacity everywhere. Steps 6 and 7
+# replaced them; their files stay, and tests/test_processes.py and tests/test_water.py keep testing them on a copy
+# of the data that names them again (conftest.first_version_data). The biome field takes its classes from the list
+# of Whittaker's chart (biomes.yaml, key biomes).
+slots:
+  Albedo:
+    implementation: worldengine.processes.albedo_surface_table:SurfaceTableAlbedo
+    standing: Rule
+    model: 'A table sets reflection by surface type (sea, land, snow and ice), with a constant share for cloud and more reflection
+      at low sun angles. Ice lies on the sea where the year''s mean temperature is below -10 C (North, Cahalan and Coakley
+      1981). Snow lies on land where Hydrology''s snow store held snow in the last round: land is white by the share of the
+      ground under snow on the month''s average.'
+    ignores: Where clouds actually form, plant cover, dust, sea ice that comes and goes with the seasons, the darkening of
+      old snow and of snow under trees.
+    wrong_where: 'The cloud decks of cool subtropical seas and the cloud bands of the tropics: every sky has the same share
+      of cloud. Too much land is white all year: a fifth of the default world''s, and a third of the Earth twin''s [MEASURED:
+      docs/BUILD_NOTES.md, sections 4.6 and 8], where a tenth of Earth''s land lies under ice [DOCUMENTED: National Snow and
+      Ice Data Center, Glacier Quick Facts]. EnergyBalance gives the land summers too weak to melt the snow, and snow that
+      outlasts a summer reflects the next one''s sunlight; the two have not been told apart [INFERRED]. A planet can still
+      freeze over, more easily than in fuller models [UNVERIFIED: recalled]; the process says so in a note when snow and ice
+      cover more than a third of the surface.'
+    writes:
+    - albedo
+    constants:
+      cloud_share: 0.255
+      low_sun_term: 0.202
+      surface:
+        sea: 0.07
+        land: 0.2
+        ice: 0.658
+      ice_ramp_k: 2.0
+      note_when_covered_above: 0.333
+  Biomes:
+    implementation: worldengine.processes.biomes_whittaker_koppen:WhittakerKoppen
+    standing: Established
+    model: Whittaker's chart of mean yearly temperature against yearly precipitation, with the Köppen-Geiger climate class
+      of Peel, Finlayson and McMahon 2007 computed alongside.
+    ignores: Seasons (the chart sees only yearly values), soils, fire, grazing, competition over time, and the level of carbon
+      dioxide.
+    wrong_where: 'The edges of savanna and grassland that fire sets, and climates with one very dry season [INFERRED: the
+      chart knows the year''s mean temperature and the year''s rain alone; not measured against a map of biomes]. A climate
+      off the chart takes the nearest biome on it.'
+    writes:
+    - climate_class
+    - biome
+    - vegetation_cover
+    constants:
+      chart:
+        from_file:
+          file: biomes
+          key: biomes
+      chart_scale:
+        temperature_c: 45.0
+        precipitation_cm: 450.0
+      mm_per_cm: 10.0
+      limited_by_cold:
+      - tundra
+      - ice
+      limited_by_dryness:
+      - subtropical_desert
+      - temperate_grassland_desert
+      - woodland_shrubland
+      koppen:
+        months: 12
+        summer_months_north:
+        - 4
+        - 5
+        - 6
+        - 7
+        - 8
+        - 9
+        arid_per_degree_mm: 2.0
+        arid_summer_rain_mm: 28.0
+        arid_even_rain_mm: 14.0
+        season_share: 0.7
+        arid_factor: 10.0
+        desert_factor: 5.0
+        arid_hot_c: 18.0
+        tropical_coldest_c: 18.0
+        rainforest_driest_mm: 60.0
+        monsoon_base_mm: 100.0
+        monsoon_divisor: 25.0
+        warm_month_c: 10.0
+        cold_coldest_c: 0.0
+        dry_summer_mm: 40.0
+        dry_summer_ratio: 3.0
+        dry_winter_ratio: 10.0
+        hot_summer_c: 22.0
+        warm_summer_months: 4
+        severe_winter_c: -38.0
+        frost_warmest_c: 0.0
+  Soils:
+    implementation: worldengine.processes.soils_uniform:UniformSoil
+    standing: Rule
+    model: Every soil holds the same depth of water, the field capacity of Manabe's bucket. A stand-in until the Soils process
+      of build step 7.
+    ignores: 'Everything that makes soils differ: rock, slope, climate, age, plants.'
+    wrong_where: 'Sand and bare rock, which hold far less; deep loams, which hold more [UNVERIFIED: recalled]. No other soil
+      property is written yet.'
+    writes:
+    - soil_water_capacity
+    constants:
+      capacity_mm: 150.0

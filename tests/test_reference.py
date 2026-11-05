@@ -597,7 +597,10 @@ def test_the_twins_relief_is_made_afresh_from_the_checked_file_and_a_planted_one
     models = ref.earth_twin_models(yaml.safe_load((DATA / "models.yaml").read_text(encoding="utf-8")), m)
     constants = models["slots"]["Isostasy"]["constants"]
     assert constants == {"file": "earth_relief_level3.npy", "sha256": digest, "folder_from_env": ref.RELIEF_FOLDER_VARIABLE}
-    assert not set(ref.WITHOUT_CRUST) & set(models["slots"]) and "Drainage" in models["slots"]
+    # no slot of the crust is filled by its own model: Lithology holds the stand-in for the ground's history that Soils
+    # reads (build step 7), and nothing else of WITHOUT_CRUST is there
+    assert not (set(ref.WITHOUT_CRUST) - {"Lithology"}) & set(models["slots"]) and "Drainage" in models["slots"]
+    assert models["slots"]["Lithology"]["implementation"].endswith(":GroundWithoutHistory")
     assert all(s["history_length_my"] == s["round_length_my"] for s in ref.earth_twin_overrides(DATA, m)["stages"]["stages"]
                if s["clock"] == "geological")
     words = ref.earth_twin_explanations(yaml.safe_load((DATA / "explanations.yaml").read_text(encoding="utf-8")))

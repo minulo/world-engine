@@ -1,0 +1,14 @@
+# docker compose up: build the image, build the preview world into the volume "worlds" at the first start, and serve
+# it at http://localhost:8765/ (to this machine alone, as the engine's own server does by default).
+services:
+  worldengine:
+    build: .
+    image: worldengine
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - worlds:/app/worlds
+    environment:
+      WORLDENGINE_PROFILE: preview
+volumes:
+  worlds:

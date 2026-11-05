@@ -171,6 +171,8 @@ def test_the_viewer_is_served_to_this_machine_alone_unless_asked_otherwise(geome
     made = []
 
     class Stopped:
+        server_address = ("127.0.0.1", 8765)
+
         class RequestHandlerClass:
             class service:
                 warnings = staticmethod(lambda: [])
@@ -178,7 +180,10 @@ def test_the_viewer_is_served_to_this_machine_alone_unless_asked_otherwise(geome
         def serve_forever(self):
             raise KeyboardInterrupt
 
-    monkeypatch.setattr(server, "make_server", lambda path, host, port: made.append((host, port)) or Stopped())
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(server, "make_server", lambda path, host, port, **kw: made.append((host, port)) or Stopped())
     assert cli.main(["serve", str(geometry_store)]) == 0
     assert cli.main(["serve", str(geometry_store), "--host", "0.0.0.0", "--port", "9000"]) == 0
     assert made == [("127.0.0.1", 8765), ("0.0.0.0", 9000)]

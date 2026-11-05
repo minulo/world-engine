@@ -132,7 +132,7 @@ class BucketHydrology(Process):
 
         # 1. snow
         could_melt = degree_day_melt(temperature, ctx.shared["freezing_point_k"], c["snow"]["melt_mm_per_day_per_k"],
-                                     month_seconds / SECONDS_PER_DAY)
+                                     month_seconds / SECONDS_PER_DAY, c["snow"]["daily_spread_k"])
         snow, melted, ice, white = snow_year(snowfall, could_melt, c["snow"]["ice_after_years"], c["snow"]["full_cover_mm"])
 
         # 2. the air's demand for water, from ground and from open water

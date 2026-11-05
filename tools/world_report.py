@@ -46,10 +46,14 @@ def report(world, say=print):
           f"equator (within 5 degrees) {mean(yearly, np.abs(m.lat) < 5):.1f}")
     say(f"  half the yearly swing at 40-60 degrees: land {mean(swing, mid & land):.1f}, sea {mean(swing, mid & wet):.1f}; largest {swing.max():.1f}")
     say(f"  mean albedo {mean(f['albedo'].astype(np.float64).mean(axis=0)):.3f}")
-    white = v.driver("albedo", "from_snow_and_ice").astype(np.float64) > 0.05
+    if "snow_ice_cover" in v.field_names():                   # build step 6: the cover of snow and ice itself
+        white = f["snow_ice_cover"].astype(np.float64) > 0.5
+    else:                                                     # before it, the whiteness Albedo gave snow and ice
+        white = v.driver("albedo", "from_snow_and_ice").astype(np.float64) > 0.05
     say(f"  land under snow in every month {share(land & white.all(axis=0)) / share(land):.2f} of land, in some month "
           f"{share(land & white.any(axis=0)) / share(land):.2f}; land whose warmest month is below freezing "
-          f"{share(land & (t.max(axis=0) < 0)) / share(land):.2f}; sea under ice {share(wet & white.all(axis=0)) / share(wet):.3f} of the sea")
+          f"{share(land & (t.max(axis=0) < 0)) / share(land):.2f}; sea under ice {share(wet & white.all(axis=0)) / share(wet):.3f} of the sea "
+          f"all year, {share(wet & white.any(axis=0)) / share(wet):.3f} in some month")
     by_band = lambda lo, hi: mean(swing, land & (np.abs(m.lat) >= lo) & (np.abs(m.lat) < hi))
     say(f"  half the yearly swing over land by latitude: 20-40 {by_band(20, 40):.1f}, 40-50 {by_band(40, 50):.1f}, "
           f"50-60 {by_band(50, 60):.1f}, 60-70 {by_band(60, 70):.1f}")
