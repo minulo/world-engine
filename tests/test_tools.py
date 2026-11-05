@@ -18,7 +18,7 @@ from worldengine.engine import Engine
 # every script, with the arguments it cannot do without
 TOOLS = {"earth_rivers": [], "earth_relief": [], "earth_demand": [], "earth_twin": [], "fetch_reference_data": [],
          "world_report": ["no_such.zarr"], "why_scan": ["no_such.zarr"], "make_biomes_yaml": ["no_such_folder"],
-         "viewer_check": ["no_such.zarr", "out"], "refusal_audit": []}
+         "viewer_check": ["no_such.zarr", "out"], "refusal_audit": [], "compare_worlds": ["no_such.zarr", "no_such.zarr"]}
 TRIALS = {"climate_round_cost": [], "crust_points_trial": []}
 
 
@@ -87,7 +87,7 @@ def test_a_script_refuses_a_value_it_cannot_use_in_words_that_name_it(name, argu
     assert stop.value.code == 2 and words in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("name", ["world_report", "why_scan", "viewer_check", "make_biomes_yaml"])
+@pytest.mark.parametrize("name", ["world_report", "why_scan", "viewer_check", "make_biomes_yaml", "compare_worlds"])
 def test_a_script_that_reads_a_store_says_so_when_there_is_none(name, capsys):
     assert tool(name).main(TOOLS[name]) == 2
     said = capsys.readouterr().err

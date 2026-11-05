@@ -2,7 +2,8 @@
 # what the README tells a person to run: the launcher in scripts/ from nothing, a second time (every step skipped), the
 # tests that do not build whole worlds, and the server in the background as a person starts it, asked for the page and
 # the API, then stopped. An Intel Mac shows the launcher's refusal (the pinned numba has no wheels for it), the Docker
-# job builds and runs the image, and the last job sets the worlds that each system built side by side. The control panel
+# job builds and runs the image, and the last job sets the worlds that each system built side by side, by their
+# fingerprints and by the size of their differences (tools/compare_worlds.py). The control panel
 # (panel/) is opened on each system with setup-python's Python, which has tkinter, and drives the launcher there.
 name: Local run
 
@@ -240,6 +241,17 @@ jobs:
           name: fingerprint-${{ matrix.os }}
           path: fingerprint-${{ matrix.os }}.json
           if-no-files-found: warn
+      - name: The world itself, in one zip file (a store is about 1,300 files)
+        if: ${{ !cancelled() }}
+        run: $VPY -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', 'worlds', 'first.zarr')" "world-${{ matrix.os }}"
+      - uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: world-${{ matrix.os }}
+          path: world-${{ matrix.os }}.zip
+          compression-level: 0                 # the store's chunks are compressed already
+          retention-days: 14
+          if-no-files-found: warn
 
   intel-mac:
     # macos-13 was retired in December 2025; macos-15-intel is the Intel image GitHub offers until autumn 2027.
@@ -299,11 +311,19 @@ jobs:
                  "build_seconds": round(a["meta"]["build_seconds"], 1)}
           json.dump(out, open("/out/fingerprint-docker.json", "w"), indent=1)
           print("docker", platform.machine(), "world", a["world_fingerprint"][:16])
+          import shutil
+          shutil.make_archive("/out/world-docker", "zip", "/app/worlds", "first.zarr")   # the world itself, for the last job
           EOF
       - uses: actions/upload-artifact@v6
         with:
           name: fingerprint-docker
           path: fingerprint-docker.json
+      - uses: actions/upload-artifact@v6
+        with:
+          name: world-docker
+          path: world-docker.zip
+          compression-level: 0
+          retention-days: 14
 
   compare:
     name: The worlds of the systems, side by side
@@ -337,3 +357,74 @@ jobs:
               f.write("## The preview world built on each system\n\n" + text + "\n\nA difference is information, not a failure: "
                       "bit-for-bit equality across systems is not claimed (README, \"Run it on your computer\").\n")
           EOF
+
+      # How large the differences are: each system's world against the one built on ubuntu-latest, field by field.
+      - uses: actions/checkout@v6
+        with:
+          path: engine
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: engine/requirements.lock
+      - name: Install the pinned packages (the tool reads the stores with the engine's own reader)
+        run: python -m pip install -q -r engine/requirements.lock
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: world-*
+          merge-multiple: true
+          path: worlds
+      - name: How far the worlds differ, field by field (tools/compare_worlds.py against ubuntu-latest)
+        run: |
+          python - <<'EOF'
+          import glob, json, os, subprocess, sys, zipfile
+          summary = open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8")
+          os.makedirs("comparisons", exist_ok=True)
+          worlds = {}
+          for z in sorted(glob.glob("worlds/world-*.zip")):
+              system = os.path.basename(z)[len("world-"):-len(".zip")]
+              with zipfile.ZipFile(z) as f:
+                  f.extractall(f"worlds/{system}")
+              worlds[system] = f"worlds/{system}/first.zarr"
+          summary.write("\n## How far the worlds differ (tools/compare_worlds.py)\n\n")
+          if "ubuntu-latest" not in worlds:
+              summary.write(f"The world of ubuntu-latest was not uploaded; nothing to compare against (worlds: {sorted(worlds)}).\n")
+              print("no world from ubuntu-latest; worlds:", sorted(worlds))
+              sys.exit(0)
+          rows = ["| system | verdict | fields the same bit for bit | fields beyond float32 rounding (or differing) on some cell | "
+                  "ocean_mask cells differing | largest difference, as a share of the field's range |", "|---|---|---|---|---|---|"]
+          failed = []
+          for system in sorted(worlds):
+              if system == "ubuntu-latest":
+                  continue
+              out = f"comparisons/{system}.json"
+              done = subprocess.run([sys.executable, "engine/tools/compare_worlds.py", worlds["ubuntu-latest"], worlds[system],
+                                     "--json", out, "--markdown", "comparisons/details.md", "--title", f"{system} against ubuntu-latest"])
+              if done.returncode != 0:                     # the tool failed: that, and only that, fails the job
+                  failed.append(system)
+                  rows.append(f"| {system} | the tool failed (exit {done.returncode}) | | | | |")
+                  continue
+              r = json.load(open(out, encoding="utf-8"))
+              c, fields = r.get("counts", {}), r["fields"]
+              beyond = sum(1 for f in fields.values() if "shapes" in f or f.get("cells_beyond_rounding", f.get("cells_differing", 0)))
+              numbers = [(float(f["largest_relative"]), n) for n, f in fields.items() if "largest_relative" in f]
+              worst = max(numbers) if numbers else (0.0, "")
+              sea = fields.get("ocean_mask", {})
+              rows.append(f"| {system} | {r['verdict']} | {c.get('fields_identical', '')} of {c.get('fields', '')} | {beyond} | "
+                          f"{sea.get('cells_differing', '')} of {sea.get('cells', '')} | {worst[0]:.2e} ({worst[1]}) |")
+          summary.write("\n".join(rows) + "\n\nThe verdicts, their thresholds and every number are explained at the head of "
+                        "tools/compare_worlds.py; the whole measurement of each system is in the artifact world-comparisons. "
+                        "A difference is information, not a failure.\n\n")
+          if os.path.exists("comparisons/details.md"):
+              summary.write(open("comparisons/details.md", encoding="utf-8").read())
+          summary.close()
+          print("\n".join(rows))
+          if failed:
+              sys.exit(f"compare_worlds.py failed for: {', '.join(failed)}")
+          EOF
+      - uses: actions/upload-artifact@v6
+        if: ${{ !cancelled() }}
+        with:
+          name: world-comparisons
+          path: comparisons/
+          if-no-files-found: warn

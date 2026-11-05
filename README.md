@@ -96,7 +96,13 @@ the 138 fields of the preview world, the one built in Docker differed from the o
 the one built on Windows in 88 and the one built on macOS in 96, among them the mesh's own cell areas [MEASURED: run
 40146705857, the job "The worlds of the systems, side by side"]. The numba loops are compiled for the processor they
 run on, and numpy chooses its routines by processor too, so two machines may round differently [INFERRED]. How far
-the worlds differ, in the last digits or in their continents, was not measured: the job compares fingerprints only.
+the worlds differ, in the last digits or in their continents, was not measured on that run: the job compared
+fingerprints only. `python tools/compare_worlds.py STORE_A STORE_B [--json OUT]` measures it for two stores: for every
+field the largest difference, the share of the cells that differ beyond the rounding of a float32, the share of the
+cells whose class differs, the rows of every table, and a verdict (identical, rounding noise, grown differences, or a
+different planet; its thresholds are explained at the head of the tool). The workflow now uploads each system's world
+and runs the tool on each against the world of ubuntu-latest; it has not run with that change yet, so no result is
+quoted here.
 The numbers this README and the notes quote are those of the build machine. A world built on one system opens on any other: nothing refuses a world for its fingerprints.
 The viewer shows a warning when the engine's code or the lock file differ from those that built it.
 
