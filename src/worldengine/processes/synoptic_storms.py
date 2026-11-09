@@ -5,10 +5,11 @@ births are drawn at random where and when the storm maps are high: mid-latitude 
 density of StormClimatology, tropical cyclones in proportion to its genesis potential, each map's month against its
 year, so that a stated number a day on the year's mean comes more often in the stormy season. Tropical cyclones follow the
 beta-and-advection model: the steering wind plus a steady drift caused by the planet's spin, toward the pole and the
-west [DOCUMENTED in the design: Emanuel et al. 2006; the engine has one steering wind, not the two heights of the model;
-the size of the drift is UNVERIFIED]. Mid-latitude storms follow the steering wind alone (the design's extension). A
-mid-latitude storm grows and fades over a set life; a tropical cyclone holds the strength its sea allows and fades over
-land and cold water [INFERRED].
+west [DOCUMENTED in the design: Emanuel et al. 2006; the engine has one steering wind, not the two heights of the model.
+The size of the drift is DOCUMENTED: Gonzalez et al. 2015, abstract, beta "causes tropical cyclones to propagate
+poleward and westward at approximately 2 m s-1"]. Mid-latitude storms follow the steering wind alone (the design's
+extension). A mid-latitude storm grows and fades over a set life; a tropical cyclone holds the strength its sea allows
+and fades over land and cold water [INFERRED].
 Weather keeps no state (design, Layer 3): the storms alive on a day are found by drawing again the births of the days
 of a look-back window, each keyed by its own date, and following each track forward day by day. No storm lives longer
 than the window, so any day comes out the same however it is reached.
