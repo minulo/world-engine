@@ -17,6 +17,7 @@ from conftest import TOY
 from worldengine import store
 from worldengine.engine import Engine, EngineError, engine_for_store
 from worldengine.library import days as dy
+from worldengine.library.units import SECONDS_PER_DAY
 from worldengine.params import ParameterError
 from worldengine.scheduler import Refused
 from worldengine.store import StoreView
@@ -183,7 +184,7 @@ STEPS = {"grove": "year", "flock": "month", "barrel": "day"}
 STAGE_OF_SLOT = {"Barrel": "barrel", "Flock": "flock", "Grove": "grove"}
 STEP_FIELDS = {name: dict(family="Toy", unit="none", shape="cell", kind="number", dtype="float64", default=0.0)
                for name in ("flock", "flock_saw", "flock_heat", "grove", "grove_days", "grove_year")}
-DAYS_IN_YEAR = toy("planet")["year_length_s"] / 86400.0          # 365.256 days, as in data/planet.yaml
+DAYS_IN_YEAR = toy("planet")["year_length_s"] / SECONDS_PER_DAY  # 365.256 days, as in data/planet.yaml
 
 
 def steps_engine(**kw):
@@ -201,7 +202,7 @@ def steps_overrides(order=("grove", "flock", "barrel"), steps=None, barrel="toy_
                   "constants": {"keep": 0.5, "share": 0.1, "jitter": 0.01, "heat": 0.001}},
         "Grove": {"implementation": "toy_processes:YearlyGrove", "writes": ["grove", "grove_days", "grove_year"],
                   "constants": {"keep": 0.9, "share": 0.2}}})
-    models["slots"] = {s: c for s, c in models["slots"].items() if STAGE_OF_SLOT.get(s, order[0]) in order}
+    models["slots"] = {s: c for s, c in models["slots"].items() if s not in STAGE_OF_SLOT or STAGE_OF_SLOT[s] in order}
     fields = toy("fields")
     fields["fields"].update(FIELDS)
     fields["fields"].update(STEP_FIELDS)
@@ -346,7 +347,7 @@ ELSEWISE = [
      "by a year. A run continues only with the stages and the steps it began with"),
     (dict(order=("flock", "barrel")), "this engine's: stage barrel by a day, stage flock by a month. A run continues only "
      "with the stages and the steps it began with"),
-    (dict(planet={"year_length_s": 360 * 86400.0}), "the run store's calendar has 365.25636574074076 days in a year and 12 "
+    (dict(planet={"year_length_s": 360 * SECONDS_PER_DAY}), "the run store's calendar has 365.25636574074076 days in a year and 12 "
      "months; this engine's has 360.0 days and 12 months. A run continues only on the calendar it began on"),
 ]
 
@@ -359,8 +360,15 @@ def test_a_run_continues_only_with_the_stages_the_steps_and_the_calendar_it_bega
     assert said in str(err.value)
 
 
-@pytest.mark.parametrize("year_s,said", [(6 * 86400.0, "stage flock steps by a month, but a month of this planet lasts 0.5 days"),
-                                         (0.5 * 86400.0, "stage grove steps by a year, but a year of this planet lasts 0.5 days")],
+def test_a_run_cannot_continue_from_a_run_store_that_is_not_there(world, tmp_path):
+    with pytest.raises(FileNotFoundError) as err:
+        steps_engine().run_dated(world, tmp_path / "second", last_day=60, continue_from=tmp_path / "nowhere")
+    assert f"no run store at {tmp_path / 'nowhere'}" in str(err.value)
+    assert not (tmp_path / "second").exists()
+
+
+@pytest.mark.parametrize("year_s,said", [(6 * SECONDS_PER_DAY, "stage flock steps by a month, but a month of this planet lasts 0.5 days"),
+                                         (0.5 * SECONDS_PER_DAY, "stage grove steps by a year, but a year of this planet lasts 0.5 days")],
                          ids=["a month", "a year"])
 def test_a_step_shorter_than_a_day_is_refused(year_s, said):
     with pytest.raises(ParameterError) as err:

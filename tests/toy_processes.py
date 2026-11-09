@@ -732,7 +732,6 @@ RainReader = _declared("RainReader", reads=("toy_rain",), writes=("herd",))
 BarrelReader = _declared("BarrelReader", stage="climate", reads_lagged=("barrel",), writes=("x",))
 LaggedClimateReader = _declared("LaggedClimateReader", reads_lagged=("a",), writes=("herd",))
 BarrelHeat = _declared("BarrelHeat", adds_to={"toy_heat": "herd_breath"})
-ClimateReader = _declared("ClimateReader", reads=("a",), writes=("herd",))
 
 
 # ------------------------------------------------------------------------------- steps of a month and a year (dated steps)
