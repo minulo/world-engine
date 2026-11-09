@@ -295,7 +295,7 @@ def test_the_workflows_comparison_runs_the_tool_on_each_world_and_fails_only_whe
     jobs = _workflow()["jobs"]
     zip_code = re.search(r'-c "([^"]+)"', _step(jobs["native"], "The world itself, in one zip file")["run"]).group(1)
     script = _heredoc(_step(jobs["compare"], "How far the worlds differ")["run"])
-    script = script.replace("engine/tools/compare_worlds.py", str(ROOT / "tools" / "compare_worlds.py"))
+    script = script.replace("engine/tools/compare_worlds.py", (ROOT / "tools" / "compare_worlds.py").as_posix())  # no \ in a literal
     work = tmp_path / "job"
     (work / "worlds").mkdir(parents=True)
     for system, world in (("ubuntu-latest", built[0]), ("docker", built[1]), ("macos-latest", changed)):
