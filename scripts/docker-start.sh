@@ -10,7 +10,7 @@ PORT=${WORLDENGINE_PORT:-8765}
 if [ -e "$WORLD" ]; then
     echo "The world $WORLD exists; it is served as it is."
 else
-    echo "Building the $PROFILE world into $WORLD: one to two minutes for the preview, 40 to 80 for the standard one."
+    echo "Building the $PROFILE world into $WORLD: one to two minutes for the preview, about 45 minutes for the standard one."
     python -m worldengine build --profile "$PROFILE" --out "$WORLD"
 fi
 echo "On the machine that runs Docker, the viewer is at http://localhost:<the port published with -p>/ (8765 in the README)."

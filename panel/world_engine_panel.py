@@ -396,7 +396,7 @@ class Panel:
         world = self.c.world
         if not messagebox.askokcancel(
                 "Rebuild the world?", f"Delete the world {world} and build it again?\n\nThe engine is stopped first if it "
-                f"runs. Building the preview world takes one to two minutes; the standard one 40 to 80.",
+                f"runs. Building the preview world takes one to two minutes; the standard one about 45 minutes.",
                 icon="warning", parent=self.root):
             return
 
