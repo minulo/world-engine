@@ -49,6 +49,11 @@ FIELDS = ("river_discharge", "runoff", "runoff_annual", "lake_fraction", "lake_l
           "snow_water", "snow_cover", "potential_evapotranspiration", "drainage_area", "basin_id", "depression_id",
           "spill_elevation", "flow_receiver", "slope", "soil_water_capacity",
           "ocean_mask", "subsidence", "biome", "surface_temperature", "precipitation")
+# the fields of the invented layer magic (data/fantasy/magic.yaml), read where a world has them: each of their answers must
+# say that its rule is invented, and give the numbers and classes the world holds
+MAGIC_FIELDS = ("mana_density", "mana_source", "frozen_mana", "ley_flow", "wild_magic", "aura", "spent_mana_heat")
+INVENTED = "By the invented rules of the magic layer"
+FIELDS = FIELDS + MAGIC_FIELDS
 NUMBER = r"-?\d[\d,]*(?:\.\d+)?(?:e[+-]?\d+)?"         # a number as a sentence prints it: 1,234 or 0.05 or 1.2e-05
 PLACE = re.compile(r"([\d.]+)° ([NS]), ([\d.]+)° ([EW])")
 BROKEN = [(re.compile(pattern), what) for pattern, what in (
@@ -86,7 +91,7 @@ def scan(view, cells=None, fields=FIELDS) -> list:
     have = set(view.field_names())
     fields = [f for f in fields if f in have]
     wanted = set(fields) | {"ocean_mask", "lake_fraction", "runoff", "snow_water", "snow_cover", "river_discharge", "flow_receiver",
-                           "depression_id", "elevation", "sea_depth", "height_above_sea", "biome"}
+                           "depression_id", "elevation", "sea_depth", "height_above_sea", "biome", "snow_ice_cover"} | set(MAGIC_FIELDS)
     f = {name: np.asarray(view.field(name)) for name in wanted if name in have}
     n = view.attrs["meta"]["cells"]
     lat, lon = np.asarray(view.mesh_array("lat")), np.asarray(view.mesh_array("lon"))
@@ -130,6 +135,7 @@ def scan(view, cells=None, fields=FIELDS) -> list:
         limits = {**{name: "what limits plant life here is cold" for name in constants["limited_by_cold"]},
                   **{name: "what limits plant life here is drought" for name in constants["limited_by_dryness"]}}
         biome_names = view.specs["biome"]["categories"]
+    springs = set(np.asarray(view.table("wellsprings")["cell"]).tolist()) if "aura" in fields else set()
     problems = []
     for cell in (range(n) if cells is None else cells):
         cell = int(cell)
@@ -188,6 +194,38 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                 parts = [number(x) for x in re.findall(rf"({NUMBER}) mm/month", re.sub(r"\([^)]*\)", "", first.split(":", 1)[1]))]
                 if not parts or abs(sum(parts) - value) > 0.012 * sum(abs(x) for x in parts) + 0.02:
                     wrong(f"gives parts that add up to {sum(parts):.4g} mm/month, where the field holds {value:.4g}")
+            if field in MAGIC_FIELDS:                         # an invented rule is never told as if it were physics
+                for step in chain:
+                    if step["field"] in MAGIC_FIELDS and "writer" in step and INVENTED not in step["text"]:
+                        wrong("tells a rule of the magic layer without saying that it is invented", step["text"])
+            if field in ("mana_density", "mana_source") and ":" in first and value > 0:
+                unit = "thaum/km²" if field == "mana_density" else "thaum/km²/yr"
+                parts = [number(x) for x in re.findall(rf"({NUMBER}) {unit}(?!/)", re.sub(r"\([^)]*\)", "", first.split(":", 1)[1]))]
+                if not parts or abs(sum(parts) - value) > 0.012 * sum(abs(x) for x in parts) + 0.02:
+                    wrong(f"gives parts that add up to {sum(parts):.4g} {unit}, where the field holds {value:.4g}")
+            if field == "frozen_mana":
+                no_ice = f["snow_ice_cover"][:, cell].max() == 0.0
+                must("no mana is frozen here", no_ice)
+                if not no_ice:
+                    said = read(rf"ice here holds ({NUMBER}) thaum/km² of frozen mana", "frozen mana in thaum/km²")
+                    if said and not close(said[0], value):
+                        wrong(f"gives {said[0]:g} thaum/km² of frozen mana, where the field holds {value:.4g}")
+            elif field == "ley_flow":
+                must("it is sea, and salt water grounds mana", wet)
+                must_not("it is sea", not wet)
+            elif field == "wild_magic":
+                said = read(rf"wild magic here is ({NUMBER}) on a scale from 0 to 1", "wild magic from 0 to 1")
+                if said and not close(said[0], value):
+                    wrong(f"gives {said[0]:g} for wild magic, where the field holds {value:.4g}")
+            elif field == "aura":
+                name = view.specs["aura"]["categories"][int(f["aura"][cell])]
+                must(f"the aura here is of the class {name.replace('_', ' ')}:")
+                must("a wellspring, listed in the table of wellsprings", name == "wellspring")
+                if (name == "wellspring" and cell not in springs) or (cell in springs and name not in ("wellspring", "wild")):
+                    wrong("calls a cell a wellspring that the table of wellsprings does not list, or the other way round")
+            elif field == "spent_mana_heat":
+                must("spent mana gives no heat here", value == 0)
+                must("spent mana delivers", value > 0)
             if field == "runoff":
                 must("This cell is sea", wet)
                 must("wholly under a lake", not wet and full)

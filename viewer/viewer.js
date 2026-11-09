@@ -23,6 +23,9 @@ const MAPS = {
   diverging: ["#2b3f8f", "#5c86c9", "#a9c8e8", "#f2f2f2", "#f0b8a0", "#d6694d", "#9b1c1c"],
   terrain: ["#0a1f4d", "#1b4a8a", "#3f86c2", "#9fd0e6", "#5f9d58", "#b8b56a", "#b08a57", "#8a6a55", "#f4f4f4"],
   water: ["#ece6d6", "#d3e3df", "#a6d0e2", "#6aaede", "#3b82c9", "#1f58a6", "#123a7a", "#0a2352"],
+  // the fantasy layer magic (data/fantasy/magic.yaml names them in its fields' display)
+  aether: ["#0d0b1e", "#2a1b5c", "#4b2a8f", "#7a35b8", "#b23fb5", "#e0609a", "#f59a6b", "#ffd166", "#fff6d5"],
+  wild: ["#10161c", "#1f3b4d", "#24676b", "#3e9a6a", "#9bc53d", "#f2c14e", "#f2784b", "#ef476f"],
 };
 const SPLIT_AT = { terrain: 4 };          // where a map breaks at zero: water colours below, land colours above
 const FIELD_MAP = {
@@ -267,7 +270,8 @@ async function selectField() {
   if (!inHistory() && state.filming) toggleFilm();
   $("monthrow").style.opacity = isMonthly() ? 1 : 0.4; $("month").disabled = $("play").disabled = !isMonthly();
   if (!isMonthly() && state.playing) togglePlay();
-  const [mapName, split0, scale] = FIELD_MAP[state.field] || ["viridis", false];
+  const shown = s.display && MAPS[s.display.map] ? [s.display.map, false, s.display.scale] : null;   // a map that fields.yaml names
+  const [mapName, split0, scale] = FIELD_MAP[state.field] || shown || ["viridis", false];
   let lo = 0, hi = 1, split = false, log = false;
   const legend = $("legend"); legend.textContent = "";
   if (cat) {
@@ -461,6 +465,9 @@ async function start() {
   const m = w.meta;
   $("worldinfo").textContent = `${m.cells.toLocaleString()} cells · profile ${m.profile} · seed ${w.seed} · engine ${w.engine_version}`;
   const msgs = [...w.notices, ...w.warnings];
+  if (m.fantasy && m.fantasy.length)                        // an invented layer laid over the physics (data/fantasy/)
+    msgs.unshift(`This world carries the invented fantasy layer ${m.fantasy.join(", ")}: the fields it adds follow made-up rules ` +
+                 "and claim nothing about any real world.");
   $("month").max = m.months;
   if (w.weather && w.weather.why_not) msgs.push(w.weather.why_not);
   if (w.weather && Object.keys(w.weather.fields).length) {        // the fields of a day join the list: worked out on request

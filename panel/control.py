@@ -29,6 +29,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 8765
 DEFAULT_WORLD = "worlds/first.zarr"
+MAGIC = "magic"                            # the fantasy layer the box "Magic (invented physics)" lays over (data/fantasy/)
+MAGIC_WORLD = "worlds/first-magic.zarr"    # the default world with it, as scripts/run.sh --fantasy magic names it
 APP_NAME = "World Engine"
 ON_WINDOWS = sys.platform == "win32"
 ON_MAC = sys.platform == "darwin"
@@ -249,8 +251,9 @@ def worlds(repo=REPO) -> list:
 
 
 def load_settings(repo=REPO) -> dict:
-    """The panel's settings in .worldengine/panel.json: the port, the world, and the shortcuts it installed."""
-    out = {"port": DEFAULT_PORT, "world": DEFAULT_WORLD, "shortcuts": []}
+    """The panel's settings in .worldengine/panel.json: the port, the world, whether a world to build gets the invented
+    layer magic, and the shortcuts it installed."""
+    out = {"port": DEFAULT_PORT, "world": DEFAULT_WORLD, "magic": False, "shortcuts": []}
     try:
         saved = json.loads((run_dir(repo) / "panel.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -260,6 +263,8 @@ def load_settings(repo=REPO) -> dict:
             out["port"] = saved["port"]
         if isinstance(saved.get("world"), str) and saved["world"].strip():
             out["world"] = saved["world"]
+        if isinstance(saved.get("magic"), bool):
+            out["magic"] = saved["magic"]
         if isinstance(saved.get("shortcuts"), list):
             out["shortcuts"] = [s for s in saved["shortcuts"] if isinstance(s, str)]
     return out
@@ -316,16 +321,28 @@ def remove(path, repo=REPO, allowed_outside=()) -> bool:
 
 
 # ---------------------------------------------------------------------------------------------- the launcher
-def launcher_command(port, world, repo=REPO, windows=ON_WINDOWS) -> list:
+def launcher_command(port, world, repo=REPO, windows=ON_WINDOWS, fantasy=None) -> list:
     """The launcher of scripts/ as a person runs it, without a browser: it makes .venv, installs the packages and
-    builds the world when they are missing, then serves. The panel repeats none of that."""
+    builds the world when they are missing, then serves. The panel repeats none of that. `fantasy` names an invented
+    layer for a world that is built (data/fantasy/: magic); a world that exists is served as it is."""
     repo = Path(repo)
     if windows:
         shell = shutil.which("powershell") or os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),
                                                            "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
         return [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(repo / "scripts" / "run.ps1"),
-                "-NoBrowser", "-Port", str(port), "-World", str(world)]
-    return ["/bin/sh", str(repo / "scripts" / "run.sh"), "--no-browser", "--port", str(port), "--world", str(world)]
+                "-NoBrowser", "-Port", str(port), "-World", str(world)] + (["-Fantasy", fantasy] if fantasy else [])
+    return ["/bin/sh", str(repo / "scripts" / "run.sh"), "--no-browser", "--port", str(port), "--world", str(world)] + \
+        (["--fantasy", fantasy] if fantasy else [])
+
+
+def world_for_magic(world, magic) -> str:
+    """The world the panel names when the box "Magic (invented physics)" is ticked or cleared: the default world moves
+    to the default magic world and back; a world of the person's own choosing stays as it is."""
+    if magic and world == DEFAULT_WORLD:
+        return MAGIC_WORLD
+    if not magic and world == MAGIC_WORLD:
+        return DEFAULT_WORLD
+    return world
 
 
 def step_state(line):
@@ -428,11 +445,18 @@ class Controller:
         p = Path(world or self.world)
         return p if p.is_absolute() else self.repo / p
 
-    def set_settings(self, port=None, world=None):
+    @property
+    def magic(self) -> bool:
+        return bool(self.settings.get("magic"))
+
+    def set_settings(self, port=None, world=None, magic=None):
         if port is not None:
             self.settings["port"] = check_port(port)
         if world is not None and str(world).strip():
             self.settings["world"] = str(world).strip()
+        if magic is not None and bool(magic) != self.magic:
+            self.settings["magic"] = bool(magic)
+            self.settings["world"] = world_for_magic(self.settings["world"], bool(magic))
         try:
             save_settings(self.settings, self.repo)
         except OSError:
@@ -560,7 +584,7 @@ class Controller:
         if probe(port).kind == "other":
             raise ControlError(f"Another program uses port {port}. Close it, or choose another port in the panel.")
         cmd = self._launcher(port, self.world_path()) if callable(self._launcher) else \
-            launcher_command(port, self.world_path(), self.repo)
+            launcher_command(port, self.world_path(), self.repo, fantasy=MAGIC if self.magic else None)
         run_dir(self.repo).mkdir(parents=True, exist_ok=True)
         env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
         kwargs = {"creationflags": NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP} if ON_WINDOWS else {"start_new_session": True}
