@@ -10,6 +10,7 @@
   closed_divergence()  the divergence of a transport with no flow across a coast
   upwind_heating()     the heat that a flow across the edges brings to each cell, in advective form
   returned_from_aloft()  the heat that air sinking where a surface flow spreads out brings, by a closed overturning
+  aloft_paths()        what returned_from_aloft() takes from the flow alone, for a flow used with several temperatures
 
 All lengths are in metres here: each function takes the planet radius where it needs one.
 """
@@ -145,7 +146,25 @@ def upper_branch_solver(mesh):
     return spla.splu(lap.tocsc())
 
 
-def returned_from_aloft(mesh, q: np.ndarray, temperature: np.ndarray, radius: float, solver=None) -> np.ndarray:
+def aloft_paths(mesh, q: np.ndarray, solver=None):
+    """What returned_from_aloft() takes from the surface flow alone, worked out once for a flow that is used with
+    several temperatures: where air rises and sinks, the flow aloft and the order in which the cells are taken.
+    An empty tuple where no air rises."""
+    i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
+    spreads = np.bincount(i, weights=q, minlength=mesh.n) - np.bincount(j, weights=q, minlength=mesh.n)  # out less in
+    sinks, rises = np.maximum(spreads, 0.0), np.maximum(-spreads, 0.0)
+    if rises.sum() <= 0.0:
+        return ()
+    sources = rises - sinks
+    sources[0] = 0.0                                           # the held cell (its equation follows from the others)
+    chi = (solver or upper_branch_solver(mesh)).solve(sources)
+    aloft_q = (mesh.edge_dual / mesh.edge_dist) * (chi[i] - chi[j])          # from the first cell to the second, aloft
+    upstream, downstream = np.where(aloft_q > 0, i, j), np.where(aloft_q > 0, j, i)
+    start, incoming = _incoming(downstream, mesh.n)
+    return sinks, rises, np.argsort(-chi, kind="stable"), upstream, start, incoming, np.abs(aloft_q)
+
+
+def returned_from_aloft(mesh, q: np.ndarray, temperature: np.ndarray, radius: float, solver=None, paths=None) -> np.ndarray:
     """The other half of what a surface flow q (m3/s across each edge) does to temperature, as K m/s: air that gathers
     in a cell rises out of it, flows aloft, and sinks where the surface flow spreads out, replacing the air that left.
     upwind_heating counts what flows in sideways at the surface; this counts what sinks in from above. The flow aloft
@@ -153,36 +172,38 @@ def returned_from_aloft(mesh, q: np.ndarray, temperature: np.ndarray, radius: fl
     (its potential solves -L chi = rising - sinking on the mesh's graph Laplacian). Along it the air keeps the
     temperature it rose with, mixed where streams join, so air sinks at the temperature of the air that rose nearest
     upstream of it. Together with upwind_heating it moves heat and neither makes nor destroys it: their sum over the
-    planet, weighted by area, is zero (a closed overturning of one layer)."""
-    i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
-    spreads = np.bincount(i, weights=q, minlength=mesh.n) - np.bincount(j, weights=q, minlength=mesh.n)  # out less in
-    sinks, rises = np.maximum(spreads, 0.0), np.maximum(-spreads, 0.0)
-    if rises.sum() <= 0.0:
+    planet, weighted by area, is zero (a closed overturning of one layer).
+    `paths`, from aloft_paths() for the same q, saves working out again what depends on the flow alone."""
+    if paths is None:
+        paths = aloft_paths(mesh, q, solver)
+    if not paths:
         return np.zeros(mesh.n)
-    sources = rises - sinks
-    sources[0] = 0.0                                           # the held cell (its equation follows from the others)
-    chi = (solver or upper_branch_solver(mesh)).solve(sources)
-    aloft_q = (mesh.edge_dual / mesh.edge_dist) * (chi[i] - chi[j])          # from the first cell to the second, aloft
-    upstream, downstream = np.where(aloft_q > 0, i, j), np.where(aloft_q > 0, j, i)
-    aloft = _aloft_temperature(np.argsort(-chi, kind="stable"), rises, np.asarray(temperature, dtype=np.float64),
-                               upstream, downstream, np.abs(aloft_q))
+    sinks, rises, order, upstream, start, incoming, flow = paths
+    aloft = _aloft_temperature(order, rises, np.asarray(temperature, dtype=np.float64), upstream, start, incoming, flow)
     return sinks * (aloft - temperature) / (mesh.area * radius * radius)
 
 
 @njit(cache=True)
-def _aloft_temperature(order, rises, temperature, upstream, downstream, flow):
-    """The temperature of the air aloft over each cell: what rose there and what flows in from upstream, mixed. Cells
-    are taken from the highest potential down, so every cell upstream of one is done before it."""
-    n = rises.size
+def _incoming(downstream, n):
+    """The edges that flow into each cell aloft, cell by cell in edge order: those of cell c are
+    incoming[start[c]:start[c + 1]]."""
     count = np.zeros(n + 1, dtype=np.int64)
-    for e in range(flow.size):
+    for e in range(downstream.size):
         count[downstream[e] + 1] += 1
     start = np.cumsum(count)
     fill = start[:-1].copy()
-    incoming = np.empty(flow.size, dtype=np.int64)
-    for e in range(flow.size):
+    incoming = np.empty(downstream.size, dtype=np.int64)
+    for e in range(downstream.size):
         incoming[fill[downstream[e]]] = e
         fill[downstream[e]] += 1
+    return start, incoming
+
+
+@njit(cache=True)
+def _aloft_temperature(order, rises, temperature, upstream, start, incoming, flow):
+    """The temperature of the air aloft over each cell: what rose there and what flows in from upstream, mixed. Cells
+    are taken from the highest potential down, so every cell upstream of one is done before it."""
+    n = rises.size
     aloft = temperature.copy()
     for k in range(n):
         c = order[k]

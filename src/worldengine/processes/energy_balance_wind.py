@@ -61,18 +61,23 @@ class WindEnergyBalance(Process):
                            c["heat_capacity_sea_j_m2_k"] / c["sea_heat_capacity_j_m3_k"])
         capacity = np.where(sea, c["sea_heat_capacity_j_m3_k"] * stirred, c["heat_capacity_land_j_m2_k"])
         waves = min(int(c["time_waves"]), months // 2)
+        # The yearly mean (wave 0) does not depend on how slowly a cell warms, so its solver is kept for the whole climate
+        # run; the solvers of the waves are prepared again only when the stirred depth changes. Each is a function of
+        # its matrix alone, and its key holds everything the matrix is made of (docs/notes_pending/build-speed.md).
+        if ("laplacian", mesh.level) not in ctx.memo:
+            ctx.memo[("laplacian", mesh.level)] = op.laplacian_matrix(mesh)
+        lap = ctx.memo[("laplacian", mesh.level)]
+        steady_key = ("energy balance, yearly mean", mesh.level, b, spread)
+        if steady_key not in ctx.memo:
+            ctx.memo[steady_key] = spla.splu((sp.diags(area * b) - spread * lap).tocsc())
         key = ("energy balance", mesh.level, waves, b, spread, capacity.tobytes(), ctx.planet["year_length_s"], sea.tobytes())
         if key not in ctx.memo:                                          # prepared again only when the stirred depth changes
             for old in [k for k in ctx.memo if isinstance(k, tuple) and k and k[0] == "energy balance"]:
-                del ctx.memo[old]                                        # one prepared solver is kept at a time
-            lap = op.laplacian_matrix(mesh)
+                del ctx.memo[old]                                        # one prepared set of wave solvers is kept at a time
             year_rate = TWO_PI / ctx.planet["year_length_s"]
-            solvers = []
-            for k in range(waves + 1):
-                diag = area * (b + 1j * k * year_rate * capacity) if k else area * b
-                solvers.append(spla.splu((sp.diags(diag) - spread * lap).tocsc()))
-            ctx.memo[key] = (lap, solvers)
-        lap, solvers = ctx.memo[key]
+            ctx.memo[key] = [spla.splu((sp.diags(area * (b + 1j * k * year_rate * capacity)) - spread * lap).tocsc())
+                             for k in range(1, waves + 1)]
+        solvers = [ctx.memo[steady_key]] + ctx.memo[key]
         forcing = absorbed - a + other                                   # W/m2, month by cell
 
         def solve(f):
@@ -90,10 +95,12 @@ class WindEnergyBalance(Process):
         if ("upper branch", mesh.level) not in ctx.memo:                 # the flow aloft of the wind's overturning
             ctx.memo[("upper branch", mesh.level)] = oc.upper_branch_solver(mesh)
         upper = ctx.memo[("upper branch", mesh.level)]
+        paths = [oc.aloft_paths(mesh, flows[m], upper) for m in range(months)]          # the same in every pass
         sea_level_c = solve(forcing)
         for _ in range(int(c["wind_heat_passes"])):
             carried = np.stack([column * (oc.upwind_heating(mesh, flows[m], sea_level_c[m], radius)
-                                          + oc.returned_from_aloft(mesh, flows[m], sea_level_c[m], radius, upper)) for m in range(months)])
+                                          + oc.returned_from_aloft(mesh, flows[m], sea_level_c[m], radius, upper, paths[m]))
+                                for m in range(months)])
             sea_level_c = solve(forcing + carried)
         cooling = -ctx.shared["lapse_rate_k_per_km"] * height / M_PER_KM
         ctx.write("surface_temperature", sea_level_c + ZERO_CELSIUS_IN_K + cooling)
