@@ -262,18 +262,19 @@ in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 997 tests; with the Earth data, under an hour where it was built
+    python -m pytest                    # 1,131 tests; with the Earth data, under an hour where it was built
     python -m pytest --ignore=tests/test_world.py     # all but the whole-world tests, as the workflow runs them
 
 Without the Earth data, the second command ran in 3 min 11 s on the 4-core machine of "Run it on your computer"
 (838 passed, 119 skipped), and `tests/test_world.py`, which builds whole worlds, in 13 min 49 s on its own
 [MEASURED].
 
-Of the 997 tests, 37 are expected failures, all in `tests/test_earth.py`: patterns of Earth, and one condition of
+Of the 1,131 tests, 37 are expected failures, all in `tests/test_earth.py`: patterns of Earth, and one condition of
 the design (the closed Caspian), that the engine is known to miss, each with the number measured.
 `python -m pytest -rx` prints them. They are not the whole list of known errors: the notes' sections
-4.4, 4.6, 8 and 13 to 22 name misses that no test states. Without the Earth data the 119 tests that
-need it are skipped.
+4.4, 4.6, 8 and 13 to 30 name misses that no test states. Without the Earth data the 119 tests that
+need it are skipped, and without tkinter the 2 tests of the control panel's window. With both, on the build
+machine on 2026-11-09: 1,092 passed, 37 expected failures, none failed [MEASURED].
 
 Extra checks that are not part of the test run:
 
