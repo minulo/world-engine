@@ -1,0 +1,79 @@
+== OceanCurrents: worldengine.processes.ocean_wind_driven:WindDrivenOcean (53 s)
+  climate rounds                                                 32
+  settled                                                        True
+  land 40-60 N, warmest month C                                     10.21   (Earth 18.38)
+  land 40-60 N, coldest month C                                    -13.72   (Earth -12.67)
+  land 40-60 N, year C                                              -2.35   (Earth 3.45)
+  sea 40-60 N, year C                                                3.77   (Earth 7.79)
+  sea 40-60 N, July C                                                8.04   (Earth 13.06)
+  planet, year C                                                    13.35   (Earth 13.96)
+  northern half, year C                                             11.83   (Earth 14.61)
+  southern half, year C                                             14.84   (Earth 13.25)
+  tropics less polar caps, year K                                   40.01   (Earth 39.96)
+  ocean's heat northward across -40, PW                             -0.40
+  ocean's heat northward across -20, PW                             -1.04
+  ocean's heat northward across 0, PW                               -0.52
+  ocean's heat northward across 20, PW                               0.68
+  ocean's heat northward across 26.5, PW                             0.41
+  ocean's heat northward across 40, PW                               0.22
+  ocean's heat northward across 60, PW                               0.16
+  sea loses to the air less rain and rivers, Atlantic 35 S to 66 N, Sv and mm a year     0.49   221.53
+  sea loses to the air less rain and rivers, Pacific 35 S to 66 N, Sv and mm a year     0.79   183.34
+  sea loses to the air less rain and rivers, Indian 35 S to 30 N, Sv and mm a year     0.12    76.88
+  eastward wind over the sea at 55 to 60 S, m/s                      2.40
+== OceanCurrents: worldengine.processes.ocean_wind_and_density:WindAndDensityOcean (53 s)
+  climate rounds                                                 19
+  settled                                                        True
+  land 40-60 N, warmest month C                                     11.28   (Earth 18.38)
+  land 40-60 N, coldest month C                                    -13.09   (Earth -12.67)
+  land 40-60 N, year C                                              -1.48   (Earth 3.45)
+  sea 40-60 N, year C                                                4.94   (Earth 7.79)
+  sea 40-60 N, July C                                                9.48   (Earth 13.06)
+  planet, year C                                                    13.48   (Earth 13.96)
+  northern half, year C                                             12.33   (Earth 14.61)
+  southern half, year C                                             14.60   (Earth 13.25)
+  tropics less polar caps, year K                                   39.07   (Earth 39.96)
+  ocean's heat northward across -40, PW                             -0.53
+  ocean's heat northward across -20, PW                             -1.03
+  ocean's heat northward across 0, PW                               -0.13
+  ocean's heat northward across 20, PW                               1.18
+  ocean's heat northward across 26.5, PW                             0.86
+  ocean's heat northward across 40, PW                               0.43
+  ocean's heat northward across 60, PW                               0.20
+  sea loses to the air less rain and rivers, Atlantic 35 S to 66 N, Sv and mm a year     0.49   218.55
+  sea loses to the air less rain and rivers, Pacific 35 S to 66 N, Sv and mm a year     0.78   180.01
+  sea loses to the air less rain and rivers, Indian 35 S to 30 N, Sv and mm a year     0.12    82.58
+  eastward wind over the sea at 55 to 60 S, m/s                      2.53
+  the overturning's alone across -40, PW                            -0.11
+  the overturning's alone across -20, PW                             0.02
+  the overturning's alone across 0, PW                               0.30
+  the overturning's alone across 26.5, PW                            0.44
+  the overturning's alone across 40, PW                              0.20
+  the overturning's alone across 60, PW                              0.04
+  sinking, all, Sv                                                  20.40
+  sinking, North Atlantic and Arctic (north of 40 N, 80 W to 30 E), Sv     5.35
+  sinking, North Pacific (north of 20 N, 110 E to 100 W), Sv         7.69
+  sinking, south of 40 S, Sv                                         5.63
+  sinking, North Atlantic 40-50 N (80 W to 0), Sv                    3.88
+  sinking, North Atlantic 20-40 N (80 W to 5 W), Sv                  1.03
+  sinking, Labrador and Nordic seas 50-80 N (70 W to 30 E), Sv       1.04
+  sinking, North Pacific 40-50 N, Sv                                 1.95
+  sinking, North Pacific 20-40 N west of 180 (Japan Sea within), Sv     4.57
+  sinking, north of 80 N, at the edge of the polar sea that goes round, Sv     2.24
+  sinking between -90 and -60, Sv                                    1.69
+  sinking between -60 and -40, Sv                                    3.94
+  sinking between 20 and 40, Sv                                      5.62
+  sinking between 40 and 50, Sv                                      5.83
+  sinking between 50 and 60, Sv                                      1.06
+  sinking between 60 and 90, Sv                                      2.26
+  salinity, North Atlantic 50-65 N, psu                             34.38
+  salinity, North Pacific 45-60 N, psu                              33.01
+  salinity, subtropical North Atlantic 20-35 N, psu                 37.44
+  salinity, subtropical North Pacific 20-35 N, psu                  37.83
+  salinity, Southern Ocean 50-60 S, psu                             31.99
+  salinity, Arctic, north of 70 N, psu                              32.35
+  salinity, lowest and highest, psu                                 20.39    39.82
+  bands that go round, degrees                                   [(-64.1, -59.8), (-59.8, -55.5), (82.5, 86.8), (86.8, 91.2)]
+  region 0: 6597 cells, -55 to 82 degrees                        {'strength_m3_s': 15.99, 'depth_m': 291.22696, 'reduced_gravity_m_s2': 0.03555, 'sinking_density_kg_m3': 1026.51391, 'upper_density_kg_m3': 1022.79959, 'from_mixing_m3_s': 22.53, 'southern_wind_m3_s': 1.62, 'eddies_m3_s': 8.16, 'resistance_per_s': 0.00019}
+  region 1: 263 cells, -83 to -64 degrees                        {'strength_m3_s': 0.08, 'depth_m': 103.06184, 'reduced_gravity_m_s2': 0.00197, 'sinking_density_kg_m3': 1023.58437, 'upper_density_kg_m3': 1023.37854, 'from_mixing_m3_s': 2.42, 'southern_wind_m3_s': -0.53, 'eddies_m3_s': 1.82, 'resistance_per_s': 0.00027}
+  passes in the last round                                       1

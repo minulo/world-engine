@@ -1,0 +1,7 @@
+ spreading W/m2/K  band misfit K (rms)  tropics-polar K   Earth  settled     s
+            0.530                 3.06             40.8    40.0     True    60
+            0.545                 2.99             40.1    40.0     True    59
+            0.560                 2.94             39.5    40.0     True    60
+            0.570                 2.91             39.1    40.0     True    60
+smallest misfit: 0.57 (2.91 K)
+the fall from the tropics to the poles equals Earth's (40.0 K) at 0.549
