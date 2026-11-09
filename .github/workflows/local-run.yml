@@ -241,8 +241,8 @@ jobs:
           name: fingerprint-${{ matrix.os }}
           path: fingerprint-${{ matrix.os }}.json
           if-no-files-found: warn
-      - name: The world itself, in one zip file (a store is about 1,300 files)
-        if: ${{ !cancelled() }}
+      - name: The world itself, in one zip file (the preview store is 1,681 files), for the last job
+        if: ${{ !cancelled() && hashFiles('worlds/first.zarr/zarr.json') != '' }}
         run: $VPY -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', 'worlds', 'first.zarr')" "world-${{ matrix.os }}"
       - uses: actions/upload-artifact@v6
         if: ${{ !cancelled() }}
@@ -383,16 +383,20 @@ jobs:
           worlds = {}
           for z in sorted(glob.glob("worlds/world-*.zip")):
               system = os.path.basename(z)[len("world-"):-len(".zip")]
-              with zipfile.ZipFile(z) as f:
-                  f.extractall(f"worlds/{system}")
+              try:
+                  with zipfile.ZipFile(z) as f:
+                      f.extractall(f"worlds/{system}")
+              except zipfile.BadZipFile as problem:        # the tool, given what is there, says that it holds no world
+                  print(f"{z} is not a whole zip file: {problem}")
               worlds[system] = f"worlds/{system}/first.zarr"
           summary.write("\n## How far the worlds differ (tools/compare_worlds.py)\n\n")
           if "ubuntu-latest" not in worlds:
               summary.write(f"The world of ubuntu-latest was not uploaded; nothing to compare against (worlds: {sorted(worlds)}).\n")
               print("no world from ubuntu-latest; worlds:", sorted(worlds))
               sys.exit(0)
-          rows = ["| system | verdict | fields the same bit for bit | fields beyond float32 rounding (or differing) on some cell | "
-                  "ocean_mask cells differing | largest difference, as a share of the field's range |", "|---|---|---|---|---|---|"]
+          rows = ["| system | verdict | fields the same bit for bit | fields beyond the float32 rounding (or differing) on some "
+                  "cell | fields beyond the noise threshold on more than a few cells | ocean_mask cells differing | largest "
+                  "difference, as a share of the field's range |", "|---|---|---|---|---|---|---|"]
           failed = []
           for system in sorted(worlds):
               if system == "ubuntu-latest":
@@ -402,16 +406,14 @@ jobs:
                                      "--json", out, "--markdown", "comparisons/details.md", "--title", f"{system} against ubuntu-latest"])
               if done.returncode != 0:                     # the tool failed: that, and only that, fails the job
                   failed.append(system)
-                  rows.append(f"| {system} | the tool failed (exit {done.returncode}) | | | | |")
+                  rows.append(f"| {system} | the tool failed (exit {done.returncode}) | | | | | |")
                   continue
               r = json.load(open(out, encoding="utf-8"))
-              c, fields = r.get("counts", {}), r["fields"]
-              beyond = sum(1 for f in fields.values() if "shapes" in f or f.get("cells_beyond_rounding", f.get("cells_differing", 0)))
-              numbers = [(float(f["largest_relative"]), n) for n, f in fields.items() if "largest_relative" in f]
-              worst = max(numbers) if numbers else (0.0, "")
-              sea = fields.get("ocean_mask", {})
-              rows.append(f"| {system} | {r['verdict']} | {c.get('fields_identical', '')} of {c.get('fields', '')} | {beyond} | "
-                          f"{sea.get('cells_differing', '')} of {sea.get('cells', '')} | {worst[0]:.2e} ({worst[1]}) |")
+              c, sea = r.get("counts", {}), r["fields"].get("ocean_mask", {})
+              largest = f"{float(c['largest_relative']):.2e} ({c['largest_relative_field']})" if c.get("largest_relative_field") else ""
+              rows.append(f"| {system} | {r['verdict']} | {c.get('fields_identical', '')} of {c.get('fields', '')} | "
+                          f"{c.get('fields_beyond_rounding', '')} | {c.get('fields_beyond_noise', '')} | "
+                          + (f"{sea['cells_differing']} of {sea['cells']}" if "cells_differing" in sea else "") + f" | {largest} |")
           summary.write("\n".join(rows) + "\n\nThe verdicts, their thresholds and every number are explained at the head of "
                         "tools/compare_worlds.py; the whole measurement of each system is in the artifact world-comparisons. "
                         "A difference is information, not a failure.\n\n")
