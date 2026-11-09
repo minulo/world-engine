@@ -43,9 +43,9 @@ def _merge(base, changes, where=None):
 class Harness(Engine):
     """An engine that runs no stage: it holds the data files and a mesh, and runs single processes on request."""
 
-    def __init__(self, level: int = 4, data_dir=DEFAULT_DATA_DIR, planet: dict | None = None, seed: int = 1):
+    def __init__(self, level: int = 4, data_dir=DEFAULT_DATA_DIR, planet: dict | None = None, seed: int = 1, fantasy=()):
         self.log = lambda msg: None
-        self.params = Parameters(data_dir)
+        self.params = Parameters(data_dir, fantasy=fantasy)      # fantasy: invented layers of data/fantasy/ (magic)
         self.level = level
         self.mesh = get_mesh(level)
         self._planet = _merge(self.params["planet"], planet)

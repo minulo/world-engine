@@ -180,14 +180,42 @@ def fingerprint(value) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
+FANTASY_DIR = "fantasy"         # data/fantasy/<name>.yaml: invented layers, laid over the files only when asked for
+
+
+def fantasy_layers(data_dir=DEFAULT_DATA_DIR) -> list:
+    """The names of the fantasy layers a data directory offers (with the engine's own where it has none)."""
+    found = {p.stem for d in (Path(data_dir) / FANTASY_DIR, DEFAULT_DATA_DIR / FANTASY_DIR) if d.is_dir() for p in d.glob("*.yaml")}
+    return sorted(found)
+
+
+def _added(base, adds, where):
+    """The base with the entries of a fantasy layer added, key by key. A layer only adds: a key it names that the base
+    holds already must be a map on both sides, and is entered; anything else would change the real physics."""
+    out = dict(base or {})
+    for k, v in (adds or {}).items():
+        if k not in out:
+            out[k] = v
+        elif isinstance(v, dict) and isinstance(out[k], dict):
+            out[k] = _added(out[k], v, f"{where}.{k}")
+        else:
+            raise ParameterError(f"{where}.{k}: the fantasy layer would change this entry, which the parameter files hold "
+                                 f"already; a fantasy layer only adds to them")
+    return out
+
+
 class Parameters:
     """All parameter files of one data directory, checked against their schemas.
 
     `data` maps a file's stem to its parsed content; `text` keeps each file exactly as written,
     so that a world store can hold a full copy of what made it.
+
+    `fantasy` names invented layers (data/fantasy/<name>.yaml) to lay over the files. A layer only adds entries; the
+    files it adds to keep the text of what they became, and models.yaml lists the layers under `fantasy`, so that a
+    world store's own copy of its parameters says which layers made it and rebuilds the same engine.
     """
 
-    def __init__(self, data_dir, overrides: dict | None = None):
+    def __init__(self, data_dir, overrides: dict | None = None, fantasy=()):
         self.data_dir = Path(data_dir)
         schema_dir = self.data_dir / "schemas"
         if not schema_dir.exists():                          # a data directory without schemas uses the engine's own
@@ -207,6 +235,10 @@ class Parameters:
                 raise ParameterError(f"override names {stem!r}, which is not a parameter file")
             self.data[stem] = value
             self.text[stem] = yaml.safe_dump(value, sort_keys=False)
+        if isinstance(fantasy, str):
+            fantasy = (fantasy,)
+        for name in fantasy:
+            self._lay_over(name, schema_dir)
         # category lists and rule tables named by fields.yaml or models.yaml (biomes.yaml, soils.yaml, rocks.yaml)
         self.extra_files = {}
         for extra in sorted(p.stem for p in self.data_dir.glob("*.yaml") if p.stem not in FILES):
@@ -219,6 +251,33 @@ class Parameters:
                 validate(self.data[stem], schema, f"{stem}.yaml")
             elif stem in FILES:
                 raise ParameterError(f"{stem}.yaml has no schema in {schema_dir}")
+
+    def _lay_over(self, name, schema_dir):
+        """Add the entries of the fantasy layer `name` to the parameter files."""
+        offered = fantasy_layers(self.data_dir)
+        if not isinstance(name, str) or name not in offered:
+            raise ParameterError(f"there is no fantasy layer named {name!r} (there are: {', '.join(offered) or 'none'})")
+        if name in self.fantasy:
+            raise ParameterError(f"the fantasy layer {name} is named twice; a layer is laid over the files once")
+        path = self.data_dir / FANTASY_DIR / f"{name}.yaml"
+        if not path.exists():
+            path = DEFAULT_DATA_DIR / FANTASY_DIR / f"{name}.yaml"
+        where = f"{FANTASY_DIR}/{name}.yaml"
+        _, layer = _load_yaml(path)
+        schema = schema_dir / "fantasy.yaml"
+        validate(layer, _load_yaml(schema if schema.exists() else DEFAULT_DATA_DIR / "schemas" / "fantasy.yaml")[1], where)
+        for stem, adds in layer["adds"].items():
+            if stem not in FILES:
+                raise ParameterError(f"{where}: adds to {stem}, which is not one of the parameter files ({', '.join(FILES)})")
+            self.data[stem] = _added(self.data[stem], adds, f"{where}: {stem}")
+        self.data["models"] = {**self.data["models"], "fantasy": self.fantasy + [name]}
+        for stem in set(layer["adds"]) | {"models"}:
+            self.text[stem] = yaml.safe_dump(self.data[stem], sort_keys=False)
+
+    @property
+    def fantasy(self) -> list:
+        """The fantasy layers laid over these files, in the order they were laid."""
+        return list((self.data.get("models") or {}).get("fantasy") or [])
 
     def __getitem__(self, stem):
         return self.data[stem]

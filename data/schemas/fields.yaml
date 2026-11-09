@@ -15,6 +15,11 @@ keys:
         default: {type: any}
         range: {type: list, length: 2, items: {type: number}, nullable: true}
         categories: {type: list, items: {type: string}}
+        colors: {type: list, items: {type: string}}            # display colours of the classes of a category field
+        display:                                                 # how the viewer colours a number field
+          type: map
+          required: [map]
+          keys: {map: {type: string}, scale: {type: string, choices: [linear, log]}}
         categories_from:
           type: map
           required: [file, key]

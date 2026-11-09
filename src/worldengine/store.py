@@ -102,6 +102,8 @@ def field_specs(engine) -> dict:
         out[name] = {"family": s.family, "unit": s.unit, "shape": s.shape, "kind": s.kind, "dtype": s.dtype,
                      "range": list(s.range) if s.range else None, "categories": list(s.categories) if s.categories else None,
                      "label": s.is_label, "description": s.description}
+        if s.display:                                        # only where fields.yaml gives one, so that other worlds keep their form
+            out[name]["display"] = dict(s.display)
     return out
 
 
@@ -115,6 +117,8 @@ def category_colors(engine) -> dict:
             cols = [c.get("color") if isinstance(c, dict) else None for c in items]
             if any(cols):
                 out[name] = cols
+        elif e.get("colors"):                                # colours given with the classes themselves
+            out[name] = list(e["colors"])
     return out
 
 

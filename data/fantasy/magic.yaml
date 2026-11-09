@@ -1,0 +1,197 @@
+# The fantasy layer "magic": mana, with invented physics that runs through the engine's own machinery.
+#
+# Off unless asked for: `python -m worldengine build --fantasy magic`, `scripts/run.sh --fantasy magic`,
+# `scripts\run.cmd -Fantasy magic`, or the control panel's box "Magic (invented physics)". The layer only adds to the
+# parameter files (the engine refuses a layer that would change an entry they hold), so a world built without it is the
+# world it always was, bit for bit.
+#
+# [INVENTED] marks a rule of the fantasy layer: made up, not a claim about any real world. Every constant below is one.
+# The theory they make up, with its equations, is in docs/notes_pending/magic.md ("Thaumic theory").
+about: "Mana: made by moving plates, volcanic fire, old ground, living land and storms; spread like heat, fastest along ley lines (plate boundaries and rivers) and slowest across the sea; grounded by salt water, locked by ice, taken up by life, lost as it decays. Invented: a rule of this layer is no claim about any real world."
+adds:
+  models:
+    shared:
+      mana_storm_track_reference: 1.0          # storminess counts the yearly storm-track density in units of this (e-foldings) [INVENTED]
+      mana_cyclone_reference: 4.0              # ... and the yearly genesis potential of tropical cyclones in units of this [INVENTED]
+    slots:
+      Mana:
+        implementation: worldengine.processes.mana_thaumic_spreading:ThaumicSpreading
+        standing: Invented
+        model: "Invented thaumic theory: mana is made where plates close or part, by volcanic fire, by old continental ground, by living land and by storms; it spreads like heat, along ley lines (plate boundaries on land, rivers) fastest and under salt water slowest; it decays into heat, salt water grounds it, ice locks it and life takes up a share. The yearly steady state, solved as one sparse linear system."
+        ignores: "Everything real: the layer is invented and claims nothing about any real world. Within its own rules: drift of mana with the wind, the seasons, any limit to how much mana a place can hold."
+        wrong_where: "Everywhere, as a claim about any real world: it is not one. Within its own rules the spreading is as coarse as the mesh: a ley line is one cell wide, and on the preview mesh the spreading length of plain land is under two cells [INFERRED: 395 km against cells about 220 km apart]."
+        writes: [mana_density, mana_source, frozen_mana, ley_flow, spent_mana_heat, "table:wellsprings"]
+        constants:
+          half_life_years: 12.0                  # free mana decays into heat with this half-life [INVENTED]; long against a year, so that
+                                                 #  the yearly steady state stands for every month (docs/notes_pending/magic.md)
+          frozen_half_life_years: 120.0          # mana that ice has locked decays ten times more slowly [INVENTED]
+          conductivity_land_km2_per_year: 9000.0 # how readily plain land spreads mana [INVENTED]; with the half-life above, a spreading
+                                                 #  length of sqrt(9000 / (ln 2 / 12)) = 395 km
+          sea_conductivity_share: 0.05           # salt water grounds mana: the sea spreads it at this share of land's rate [INVENTED]
+          ley:
+            boundary_gain: 10.0                  # a plate boundary on land multiplies the conductivity by 1 + this, at the boundary itself;
+                                                 #  under salt water there is no ley line [INVENTED]
+            boundary_width_km: 150.0             # ... fading with the distance from the boundary over this length [INVENTED]
+            river_gain: 20.0                     # running water carries mana: a river reach adds up to this many times plain land's
+                                                 #  conductivity to the edge it runs along [INVENTED]
+            river_half_discharge_m3_s: 2000.0    # ... half of that at this discharge, a share Q / (Q + this) [INVENTED]
+          sources:                               # what each kind of source makes, thaum per km² per year [INVENTED, all]
+            plate_motion_thaum_km2_yr: 15.0      # at a boundary closing or parting at the reference speed
+            plate_motion_reference_m_per_year: 0.05
+            plate_motion_width_km: 150.0         # fading with the distance from the boundary over this length
+            fire_thaum_km2_yr: 25.0              # at the volcanism index 1
+            old_ground_thaum_km2_yr: 2.0         # continental ground of great age, approached as 1 - exp(-age / the age below)
+            old_ground_age_my: 100.0
+            life_thaum_km2_yr: 8.0               # land wholly shaded by plants all year
+            storm_thaum_km2_yr: 0.3              # at storminess 1 (the shared references above)
+          losses:
+            ice_locking_per_year: 0.1            # ice covering the whole cell all year locks this share of the free mana each year [INVENTED]
+            life_uptake_per_year: 0.02           # land wholly shaded by plants takes up this share each year [INVENTED]
+            sea_grounding_per_year: 0.25         # salt water grounds mana: the sea takes this share of its mana each year, spent as heat [INVENTED]
+          spent_mana_heat_w_m2_per_thaum_km2_yr: 0.0   # spent mana warms the world: heat per thaum decayed [INVENTED]. 0: the layer
+                                                 #  cannot change the climate. Above 0 it warms where mana decays, through surface_heat_flux
+          wellspring_lowest_thaum_km2: 150.0     # a cell that holds at least this and at least as much as each neighbour is a wellspring [INVENTED]
+      Aura:
+        implementation: worldengine.processes.aura_thresholds:ThresholdAura
+        standing: Invented
+        model: "Invented aura rules: wild magic where a steep fall of mana meets storms; each place's aura by the first rule that holds: wild, a wellspring of Mana's table, then strong, steady, faint or a dead zone by the density."
+        ignores: "Everything real: the layer is invented. Within its own rules: any effect of wild magic on the mana it comes from, and the seasons."
+        wrong_where: "Everywhere, as a claim about any real world: it is not one. Within its own rules the fall of mana is taken across one cell, as coarse as the mesh."
+        writes: [wild_magic, aura]
+        constants:
+          wild:
+            fall_reference_thaum_km2_per_km: 0.35  # wild_magic = 1 - exp(-(fall / this) * (storminess / the next)) [INVENTED]
+            storminess_reference: 2.0            # the storminess (Mana's count of storm tracks and cyclone potential) that counts as stormy [INVENTED]
+            wild_from: 0.5                       # wild magic at least this makes the aura wild [INVENTED]
+          classes:                               # the lowest density of each aura [INVENTED]; below the first, a dead zone
+            faint_from_thaum_km2: 20.0
+            steady_from_thaum_km2: 50.0
+            strong_from_thaum_km2: 100.0
+
+  fields:
+    fields:
+      mana_density:
+        {family: "Magic (invented)", unit: "thaum/km²", shape: cell, kind: number, range: [0, 1.0e+9],
+         display: {map: aether},
+         description: "Invented, the fantasy layer magic: how much free mana the ground holds, in thaums per square kilometre. The yearly steady state of what plates, fire, old ground, life and storms make, spread like heat and lost as it decays."}
+      mana_source:
+        {family: "Magic (invented)", unit: "thaum/km²/yr", shape: cell, kind: number, range: [0, 1.0e+9],
+         display: {map: aether},
+         description: "Invented, the fantasy layer magic: the mana made here each year, by plates closing or parting, volcanic fire, old continental ground, living land and storms."}
+      frozen_mana:
+        {family: "Magic (invented)", unit: "thaum/km²", shape: cell, kind: number, range: [0, 1.0e+12],
+         display: {map: aether, scale: log},
+         description: "Invented, the fantasy layer magic: mana that ice has locked away from the free mana. It decays more slowly than free mana."}
+      ley_flow:
+        {family: "Magic (invented)", unit: "thaum/km/yr", shape: cell, kind: number, range: [0, 1.0e+12],
+         display: {map: aether},
+         description: "Invented, the fantasy layer magic: how much mana flows through the cell each year, per kilometre of its width; the most along the ley lines, plate boundaries on land and rivers, which carry mana fastest."}
+      spent_mana_heat:
+        {family: "Magic (invented)", unit: "W/m²", shape: month_cell, kind: number, range: [0, 1.0e+4],
+         description: "Invented, the fantasy layer magic: heat delivered to the surface by mana as it decays or is grounded at sea, a member of surface_heat_flux. Zero unless the layer's feedback constant is set above zero."}
+      wild_magic:
+        {family: "Magic (invented)", unit: "0 to 1", shape: cell, kind: number, range: [0, 1],
+         display: {map: wild},
+         description: "Invented, the fantasy layer magic: how wild the magic runs, from 0 to 1: high where the density of mana falls steeply and storms pass."}
+      aura:
+        {family: "Magic (invented)", unit: category, shape: cell, kind: category,
+         categories: [dead_zone, faint, steady, strong, wellspring, wild],
+         colors: ["#44444f", "#5b5f97", "#3f8fbf", "#9b5de5", "#ffd166", "#ef476f"],
+         description: "Invented, the fantasy layer magic: the aura of a place: wild where wild magic runs high, a wellspring where mana peaks, else strong, steady, faint or a dead zone by the density of mana."}
+
+  tables:
+    tables:
+      wellsprings:
+        description: "Invented, the fantasy layer magic: one row per wellspring, a cell that holds at least the layer's lowest density for one and at least as much mana as each neighbour, strongest first: its cell, place, density, the kind of source that made the most of its mana (cause: 0 plates closing or parting, 1 volcanic fire, 2 old continental ground, 3 living land, 4 storms) and that kind's share of the density."
+        columns: {cell: int32, latitude: float64, longitude: float64, mana_density: float64, cause: int16, cause_share: float64}
+
+  explanations:
+    Mana:
+      mana_density:
+        says: "By the invented rules of the magic layer, mana here stands at {value}, the sum of what each kind of source makes and spreads here:"
+        says_zero: "By the invented rules of the magic layer, no mana reaches this cell: no source within reach makes any."
+        form: sum
+        drivers:
+          from_plate_motion: {says: "plates closing or parting give {v}, highest, up its slope from here, at {at}", at: plate_motion_at, follows: [mana_source]}
+          from_fire: {says: "volcanic fire gives {v}, highest, up its slope from here, at {at}", at: fire_at, follows: [mana_source]}
+          from_old_ground: {says: "old continental ground gives {v}, highest, up its slope from here, at {at}", at: old_ground_at, follows: [mana_source]}
+          from_life: {says: "living land gives {v}, highest, up its slope from here, at {at}", at: life_at, follows: [mana_source]}
+          from_storms: {says: "storms give {v}, highest, up its slope from here, at {at}", at: storms_at, follows: [mana_source]}
+          plate_motion_at: {cell: true}
+          fire_at: {cell: true}
+          old_ground_at: {cell: true}
+          life_at: {cell: true}
+          storms_at: {cell: true}
+      mana_source:
+        says: "By the invented rules of the magic layer, the sources here make {value} of mana:"
+        says_zero: "By the invented rules of the magic layer, nothing makes mana here: no plate boundary, fire, old continental ground, plant or storm."
+        form: sum
+        drivers:
+          plate_motion: {says: "plates closing or parting near here make {v}", follows: [convergence_rate]}
+          fire: {says: "volcanic fire makes {v}", follows: [volcanism]}
+          old_ground: {says: "old continental ground seeps {v}", follows: [surface_age, crust_type]}
+          life: {says: "living land breathes out {v}", follows: [vegetation_cover]}
+          storms: {says: "storms spark {v}", follows: [storm_track_density, tc_genesis_potential]}
+      frozen_mana:
+        says: "By the invented rules of the magic layer, ice here holds {value} of frozen mana: snow or ice covers {ice} of the cell on the year's average, and ice takes mana out of the free mana and keeps it, losing it more slowly than free mana decays."
+        follows: [snow_ice_cover, mana_density]
+        drivers:
+          ice: {unit: percent_from_share}
+          state: {names: [no_ice, ice]}
+        cases:
+          - when: {state: no_ice}
+            says: "By the invented rules of the magic layer, no mana is frozen here: no snow or ice lies here in any month."
+            follows: [snow_ice_cover]
+      ley_flow:
+        says: "By the invented rules of the magic layer, {value} of mana flows through here, and the ground here conducts it {conducts} as well as plain land:"
+        follows: [mana_density]
+        drivers:
+          ley:
+            names: [plain_land, plate_boundary, river, plate_boundary_and_river, sea]
+            says_by:
+              plain_land: "it is plain ground"
+              plate_boundary: "a plate boundary runs here, and plate boundaries are ley lines"
+              river: "a river runs here, and running water carries mana"
+              plate_boundary_and_river: "a plate boundary and a river meet here, and both carry mana"
+              sea: "it is sea, and salt water grounds mana"
+            follows_by:
+              plate_boundary: [mana_density, convergence_rate]
+              river: [mana_density, river_discharge]
+              plate_boundary_and_river: [mana_density, convergence_rate, river_discharge]
+              sea: [mana_density, ocean_mask]
+          conducts: {unit: times}
+      spent_mana_heat:
+        says: "By the invented rules of the magic layer, spent mana delivers {value} of heat to the surface here: {spent} of mana decays or is grounded here each year, and the heat of each thaum spent is a constant of the layer."
+        follows: [mana_density]
+        drivers:
+          spent: {unit: "thaum/km²/yr"}
+          feedback: {names: [set_to_zero, above_zero]}
+        cases:
+          - when: {feedback: set_to_zero}
+            says: "By the invented rules of the magic layer, spent mana gives no heat here: {spent} of mana decays or is grounded here each year, but the layer's heat per thaum spent is zero, so spent mana warms nothing."
+            ends: "The chain ends here, at a constant of the magic layer: the heat of a thaum spent, set to zero."
+    Aura:
+      wild_magic:
+        says: "By the invented rules of the magic layer, wild magic here is {value} on a scale from 0 to 1: magic runs wild where mana falls steeply and storms pass, and here mana falls by {fall} while the storminess is {storminess}."
+        unit: ""
+        follows: [mana_density, storm_track_density]
+        drivers:
+          fall: {unit: "thaum/km² per km"}
+          storminess: {unit: ""}
+      aura:
+        says: "By the invented rules of the magic layer, the aura here is of the class {value}:"
+        follows: [mana_density]
+        drivers:
+          rule:
+            names: [dead_zone, faint, steady, strong, wellspring, wild]
+            says_by:
+              dead_zone: "mana stands at {density}, too little for any aura to show"
+              faint: "mana stands at {density}, enough for a faint aura"
+              steady: "mana stands at {density}, enough for a steady aura"
+              strong: "mana stands at {density}, enough for a strong aura"
+              wellspring: "mana stands at {density} and no neighbouring cell holds more: a wellspring, listed in the table of wellsprings"
+              wild: "wild magic stands at {wildness}, high enough to make the aura wild, whatever the density"
+            follows_by:
+              wild: [wild_magic]
+          density: {unit: "thaum/km²"}
+          wildness: {unit: ""}
