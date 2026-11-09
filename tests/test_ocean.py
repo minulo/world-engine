@@ -1,9 +1,16 @@
-"""Known answers of OceanCurrents (design, Layer 9; build step 4), on inputs built so that the result is known."""
+"""Known answers of OceanCurrents (design, Layer 9; build step 4), on inputs built so that the result is known.
+
+The slot's default is the second version since the overturning driven by density was added (tests/test_overturning.py
+holds its own known answers). These tests run the first version, the wind-driven ocean alone, which stays in its file;
+the western-side test runs both, since the second carries the first's loops unchanged."""
 import numpy as np
 import pytest
 
 from conftest import DATA
 from worldengine.testing import Harness
+
+FIRST = "worldengine.processes.ocean_wind_driven:WindDrivenOcean"
+SECOND = "worldengine.processes.ocean_wind_and_density:WindAndDensityOcean"
 
 
 @pytest.fixture(scope="module")
@@ -34,13 +41,22 @@ def inputs(h, sea, wind, temperature=None):
             "cell_area": g["cell_area"]}
 
 
-def test_in_a_closed_basin_under_a_steady_wind_the_current_is_strongest_on_the_western_side(h):
+def at_rest(h, sea):
+    """What the second version reads beyond the first's: a deep sea with no ice, no rain, no evaporation, no rivers."""
+    every = lambda x: np.broadcast_to(np.asarray(x, dtype=np.float64), (h.months, h.mesh.n)).copy()
+    return {"sea_depth": np.where(sea, 4000.0, 0.0), "snow_ice_cover": every(0.0), "ocean_evaporation": every(0.0),
+            "precipitation": every(0.0), "river_discharge": every(0.0)}
+
+
+@pytest.mark.parametrize("version", [FIRST, SECOND])
+def test_in_a_closed_basin_under_a_steady_wind_the_current_is_strongest_on_the_western_side(h, version):
     """The western-side test of the design (Layer 9, build step 4): friction closes the loop with a narrow, fast current
     on the western side (Stommel 1948). Measured: the mean speed in the western fifth of the basin against the
     eastern fifth, along its middle latitudes; the condition, written with the test, asks at least twice."""
     lat_range, lon_range = (15.0, 55.0), (-60.0, 0.0)
     sea = basin(h, lat_range, lon_range)
-    out = h.run("OceanCurrents", reads=inputs(h, sea, zonal_wind(h, lat_range, 8.0)))
+    reads = inputs(h, sea, zonal_wind(h, lat_range, 8.0))
+    out = h.run("OceanCurrents", implementation=version, reads=reads if version == FIRST else {**reads, **at_rest(h, sea)})
     loops = out.drivers["ocean_current"]["loops"]
     speed = np.linalg.norm(loops, axis=1)
     m = h.mesh
@@ -58,7 +74,8 @@ def test_in_a_closed_basin_under_a_steady_wind_the_current_is_strongest_on_the_w
 def test_no_wind_moves_no_water_and_carries_no_heat(h):
     sea = basin(h)
     t = 270.0 + 30.0 * np.cos(np.deg2rad(h.mesh.lat))
-    out = h.run("OceanCurrents", reads=inputs(h, sea, np.zeros((h.months, h.mesh.n, 3)), np.broadcast_to(t, (h.months, h.mesh.n)).copy()))
+    out = h.run("OceanCurrents", implementation=FIRST,
+                reads=inputs(h, sea, np.zeros((h.months, h.mesh.n, 3)), np.broadcast_to(t, (h.months, h.mesh.n)).copy()))
     assert np.abs(out.fields["ocean_current"]).max() == 0.0
     assert np.abs(out.fields["upwelling"]).max() == 0.0
     assert np.abs(out.fields["ocean_heat_convergence"]).max() == 0.0
@@ -74,7 +91,7 @@ def test_wind_along_a_west_coast_toward_the_equator_brings_up_cold_water_and_the
     v_north = np.where((m.lat > 10) & (m.lat < 40), -6.0, 0.0)      # wind toward the equator, in the north
     wind = np.broadcast_to(v_north[:, None] * m.north, (h.months, m.n, 3)).copy()
     t = np.broadcast_to(273.0 + 30.0 * np.cos(np.deg2rad(m.lat)), (h.months, m.n)).copy()
-    out = h.run("OceanCurrents", reads=inputs(h, sea, wind, t))
+    out = h.run("OceanCurrents", implementation=FIRST, reads=inputs(h, sea, wind, t))
     up = out.fields["upwelling"].mean(axis=0)
     assert up[coast].mean() > 0
     q = out.fields["ocean_heat_convergence"]

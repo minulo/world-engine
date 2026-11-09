@@ -62,9 +62,9 @@ def test_a_closed_basin_saltier_toward_its_north_pole_sinks_there_and_carries_he
     """The sea evaporates more in its northern half than in its southern, under the same temperatures in both: its north
     grows saltier, so the densest water lies at its northern end, and the deep water forms there. The upper water
     flows north from where the deep water rises to where it sinks, warm across the equator, and the overturning
-    carries heat north across it. Measured on the commit that wrote this test: 5.8 Sv sink, all of it north of 40 N
-    (0.89 of it north of 50 N), the north 2.8 psu saltier on the mean than the south, and the overturning carries
-    0.18 PW north across the equator."""
+    carries heat north across it. Measured on the commit that wrote this test: 6.3 Sv sink, all of it north of 40 N
+    (0.91 of it north of 50 N), the north 2.6 psu saltier on the mean than the south, and the overturning carries
+    0.19 PW north across the equator."""
     m = h.mesh
     sea = mirrored_basin(h)
     out = run(h, sea, warm_equator(h), np.where(m.lat > 0, 120.0, 80.0), 100.0)
@@ -81,8 +81,8 @@ def test_a_closed_basin_saltier_toward_its_north_pole_sinks_there_and_carries_he
 
 def test_a_mirror_symmetric_basin_carries_no_heat_across_its_equator(h):
     """The same sea with the same freshwater balance in both halves: the two ends are equally dense, share the sinking
-    equally, and the overturning carries as much heat north as south. What is left is rounding: 4e6 W when this test
-    was written, against 1.8e14 W in the sea of the test above, and the test allows a millionth of the latter."""
+    equally, and the overturning carries as much heat north as south. What is left is rounding: 0.05 W when this test
+    was written, against 1.9e14 W in the sea of the test above, and the test allows a millionth of the latter."""
     m = h.mesh
     sea = mirrored_basin(h)
     out = run(h, sea, warm_equator(h), 100.0 + 20.0 * np.cos(np.deg2rad(2 * m.lat)), 100.0)
@@ -92,7 +92,7 @@ def test_a_mirror_symmetric_basin_carries_no_heat_across_its_equator(h):
     heat = out.drivers["ocean_heat_convergence"]["carried_by_overturning"]
     poleward = (heat.mean(axis=0) * m.area * h.planet["radius_m"] ** 2)[sea & (np.abs(m.lat) > 40)].sum()
     assert poleward > 0                                     # it does carry heat: toward both poles
-    assert abs(across_the_equator(h, heat)) < 1e-6 * 1.8e14
+    assert abs(across_the_equator(h, heat)) < 1e-6 * 1.9e14
 
 
 def test_the_overturning_moves_heat_and_makes_none(h):

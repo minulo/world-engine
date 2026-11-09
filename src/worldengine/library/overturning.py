@@ -132,7 +132,7 @@ def salinity(mesh, sea: np.ndarray, flows: sp.spmatrix, mixing: np.ndarray, gain
     For each sea cell, in psu m3/s: what the flows bring (flows @ S, an upwind matrix of divergence-free flows and of
     the overturning's surface branch), what mixing along the sides brings (mixing, m3/s per side, times the
     difference), what the rising deep water brings, rise (S_deep - S), and the salt that the freshwater balance
-    leaves, gain (psu m3/s: the mean salinity times evaporation less rain and rivers). The deep water of a region
+    leaves, gain (psu m3/s: a salinity times evaporation less rain and rivers). The deep water of a region
     holds the salt of the water that sinks in it: sum of sink (S - S_deep) = 0. Salt is kept: what the freshwater
     balance leaves over each connected sea is spread over it by area first, and each connected sea's mean is the
     given mean. Returns (S per cell, zero on land; S_deep per region, the mean where the region has no sinking)."""
@@ -243,21 +243,35 @@ def channel_sides(mesh, sea: np.ndarray, band: np.ndarray, goes_round: np.ndarra
             "length_m": mesh.edge_dual[e] * radius * facing, "width_m": run[band[outer]] * band_rad * radius}
 
 
-def overturn(mesh, c, *, sea, deep, region, sides, water_k, open_months, gain, loops_q, ekman_q, spin_abs, gravity,
-             radius, solver, start=None) -> dict:
-    """The overturning of every region, with the salinity it leaves, worked out in passes: the salinity under the
-    freshwater balance, the wind's loops and mixing; the density it gives; where the deep water forms and how much;
-    then the salinity again with the overturning's own flow, and so on, a set number of times.
+def overturn(mesh, c, *, sea, deep, region, sides, water_k, ice, lost, loops_q, ekman_q, spin_abs, gravity,
+             radius, solver, lifting, start=None) -> dict:
+    """The overturning of every region, with the salinity it leaves, worked out in passes: from a salinity, the density
+    it gives; where the deep water forms and how much; the steady salinity under the freshwater balance, the wind's
+    loops, mixing and the overturning's own flow; the salinity moved a set share of the way to it; and again, until it
+    moves less than a set amount on the sea's mean or a set number of passes is done.
 
     c holds the constants (models.yaml, OceanCurrents.constants.overturning). water_k (months, n) is the sea's
-    temperature, held at or above the freezing point of sea water; open_months (months, n) is True where less than
-    half of a cell lies under ice; gain (n) is the salt that the freshwater balance leaves (psu m3/s); loops_q and
+    temperature, held at or above the freezing point of sea water; ice (months, n) is the share of each cell under
+    ice; lost (n) is the water the sea loses to the air less what rain and rivers give it (m3/s). Where the sea loses
+    water its salt stays behind, the mean salinity times the water lost; where rain and
+    rivers give more than the air takes, they dilute the water's own salt, the salinity of the last pass (or of the
+    round before, and the mean in a sea at rest) held between nothing and the mean, so that rivers pouring into a
+    bay cannot take its salt below nothing, and an evaporating bay cannot feed on its own salt [INFERRED]; loops_q and
     ekman_q are the wind's loops and its surface drift across each side (m3/s); spin_abs (n) is |f|, held off zero
-    near the equator; solver is branch_solver's for these regions. start, where given, is the salinity the passes
-    begin from (the last round's); without it they begin from the salinity of a sea with no overturning.
+    near the equator; solver is branch_solver's for these regions; lifting (n) is the rate at which the wind's drift
+    lifts the water beneath the surface on the year's mean (m/s, down where negative). start, where given, is the
+    salinity the passes begin from (the last round's); without it they begin from the salinity of a sea with no
+    overturning.
 
-    In each region the deep water forms in its densest open water that lies over deep sea (sinking_weights, by each
-    cell's densest open month). How much forms follows the balance of Gnanadesikan 1999 (pycnocline_depth): the sinking
+    In each region the deep water forms in its densest open water that lies over deep sea (sinking_weights). Ice is
+    a lid: a month counts with the density of its water lowered by the contrast times the logarithm of the share of
+    the cell that is open, so that water under ice all month counts not at all, and a cell's sinking falls in
+    proportion to its open share, smoothly as the ice comes and goes. Each cell counts its month of densest open
+    water. Where the wind's drift presses the light upper water down, deep water forms less readily, and where it lifts
+    the water beneath, as in a cyclonic gyre, more readily [INFERRED: after the preconditioning of deep convection that
+    Marshall and Schott 1999 describe, as recalled]: the water counts as lighter by the contrast times
+    ln(1 + exp(-w / w0)), with w the lifting and w0 a set scale, a little where the wind lifts and in proportion to the
+    pressing down where it presses. How much forms follows the balance of Gnanadesikan 1999 (pycnocline_depth): the sinking
     g' D^2 / eps, with g' from the sinking water's density over the mean density of the region's surface water and
     eps a set multiple of |f| where the water sinks, is fed by mixing over the region's whole area and, where the
     region borders a latitude that goes round, by the wind's drift across that border less the eddies' return."""
@@ -272,24 +286,31 @@ def overturn(mesh, c, *, sea, deep, region, sides, water_k, open_months, gain, l
     share = c["branch_share"]
     nothing = np.zeros(mesh.n)
     if start is None:                                       # from rest: the salinity of a sea without an overturning
-        salt, deep_salt = salinity(mesh, sea, loop_flows, mixing, gain, nothing, nothing, region, c["mean_salinity_psu"])
+        salt, deep_salt = salinity(mesh, sea, loop_flows, mixing, c["mean_salinity_psu"] * lost, nothing, nothing, region,
+                                   c["mean_salinity_psu"])
     else:
         salt = np.where(sea, start, 0.0)
         deep_salt = np.full(int(region.max()) + 1 if (region >= 0).any() else 0, c["mean_salinity_psu"])
     rise, sink, q, chi, winter, rows = nothing, nothing, np.zeros(i.size), nothing, np.full(mesh.n, -np.inf), {}
     contrast, eddy = c["sinking_contrast_kg_m3"], c["eddy_diffusivity_m2_s"]
-    for _ in range(int(c["passes"])):
+    used = 0
+    for used in range(1, int(c["passes"]) + 1):
         density = sea_water_density(water_k, salt[None, :], *eos)
-        winter = np.where(open_months, density, -np.inf).max(axis=0)
+        with np.errstate(divide="ignore"):
+            counted = density + contrast * np.log(np.clip(1.0 - ice, 0.0, 1.0))      # -inf under ice all month
+        counted = counted - contrast * np.logaddexp(0.0, -lifting / c["lifting_scale_m_s"])[None, :]
+        month = np.argmax(counted, axis=0)
+        reach_of = np.take_along_axis(counted, month[None, :], axis=0)[0]
+        winter = np.where(np.isfinite(reach_of), np.take_along_axis(density, month[None, :], axis=0)[0], -np.inf)
         yearly = density.mean(axis=0)
-        candidate = deep & (region >= 0) & np.isfinite(winter)
+        candidate = deep & (region >= 0) & np.isfinite(reach_of)
         rise, sink, rows = np.zeros(mesh.n), np.zeros(mesh.n), {}
         for r in np.unique(region[region >= 0]):
             cells = region == r
             here = candidate & cells
             if not here.any():
                 continue
-            weight = sinking_weights(np.where(here, winter, -np.inf), np.where(here, area_m2, 0.0), contrast)
+            weight = sinking_weights(np.where(here, reach_of, -np.inf), np.where(here, area_m2, 0.0), contrast)
             sinking_density = float((weight * np.where(here, winter, 0.0)).sum() / weight.sum())
             upper = float((yearly[cells] * area[cells]).sum() / area[cells].sum())
             reduced_gravity = gravity * (sinking_density - upper) / c["reference_density_kg_m3"]
@@ -309,13 +330,18 @@ def overturn(mesh, c, *, sea, deep, region, sides, water_k, open_months, gain, l
             rows[int(r)] = {"strength_m3_s": strength, "depth_m": d, "reduced_gravity_m_s2": reduced_gravity,
                             "sinking_density_kg_m3": sinking_density, "upper_density_kg_m3": upper,
                             "from_mixing_m3_s": from_mixing, "southern_wind_m3_s": float(ekman_in.sum()),
-                            "eddies_m3_s": float(eddy * d * reach.sum()), "resistance_per_s": resistance,
-                            "sinking_cells": int((weight > 0).sum())}
+                            "eddies_m3_s": float(eddy * d * reach.sum()), "resistance_per_s": resistance}
         q, chi, rise = surface_branch(mesh, rise, sink, solver)
         flows = loop_flows + share * upwind_matrix(mesh, q)
-        salt, deep_salt = salinity(mesh, sea, flows, mixing, gain, share * rise, share * sink, region, c["mean_salinity_psu"])
+        diluted = np.clip(salt, 0.0, c["mean_salinity_psu"])
+        steady, deep_salt = salinity(mesh, sea, flows, mixing, lost * np.where(lost < 0, diluted, c["mean_salinity_psu"]),
+                                     share * rise, share * sink, region, c["mean_salinity_psu"])
+        moved = float((np.abs(steady - salt) * area)[sea].sum() / area[sea].sum())
+        salt = salt + c["salt_relaxation"] * (steady - salt)     # the salt moves part of the way to the steady state
+        if moved <= c["salt_settled_psu"]:
+            break
     return {"salinity": salt, "deep_salinity": deep_salt, "winter_density": np.where(np.isfinite(winter), winter, np.nan),
-            "rise": rise, "sink": sink, "flow": q, "potential": chi, "regions": rows}
+            "rise": rise, "sink": sink, "flow": q, "potential": chi, "regions": rows, "passes": used}
 
 
 def heat(mesh, q: np.ndarray, rise: np.ndarray, sink: np.ndarray, region: np.ndarray, water_k: np.ndarray,

@@ -7,7 +7,7 @@ names, the deep circulation driven by density, worked out from causes so that it
 
 Salt (Assembled). The sea's surface salinity is the steady balance of a layer as deep as the one whose temperature the
 loops carry: the salt that the freshwater balance leaves (evaporation from the sea less rain on it and the rivers that
-reach it, as a flux of salt at the sea's mean salinity, Moisture's and Hydrology's fields of this round), carried by
+reach it, Moisture's and Hydrology's fields of this round, as a flux of salt at the water's own salinity), carried by
 the wind's loops and by the overturning's own upper water, and mixed along every side by eddies. Salt is kept: what
 the freshwater balance of a connected sea leaves over is spread over it, and its mean is the planet's.
 
@@ -19,12 +19,14 @@ Where the deep water forms. The sea is cut into regions: the latitudes at which 
 planet are taken out, for there no coast holds up the east-west difference of pressure that a north-south flow in
 the balance of the spin needs, and the rest falls into connected regions (on Earth the Atlantic, Indian and Pacific
 join south of Africa and Australia into one region north of the Drake Passage, and the seas around Antarctica make
-another). In each region the deep water forms in its densest open water over deep sea: in a month in which less than
-half the cell lies under ice (ice is a lid), over sea deeper than a set depth, and where the wind's drift lifts the
-water beneath on the year's mean, so that the light upper water is thin there (cyclonic gyres; anticyclonic ones
-press it down) [INFERRED: after the preconditioning of deep convection that Marshall and Schott 1999 describe, as
-recalled]. Every such cell within a set contrast of the region's densest sinks, in proportion to its area and to how
-far it passes that mark, so that two ends of a basin that are equally dense share the sinking equally.
+another). In each region the deep water forms in its densest open water over sea deeper than a set depth. Each
+cell counts the month of its densest water, made lighter in the count by ice (a lid: water under ice all month counts
+not at all) and by the wind's drift where it presses the light upper water down, as over an anticyclonic gyre (where
+the drift lifts the water beneath, as in a cyclonic gyre, the light layer is thin) [INFERRED: after the
+preconditioning of deep convection that Marshall and Schott 1999 describe, as recalled]. A cell's share of the
+sinking is its area times a factor that falls by e for every set contrast by which its water counts as lighter than
+the region's densest, so that two ends of a basin that are equally dense share the sinking equally, and the sinking
+moves smoothly as the densities change (a sharp choice left the climate unsettled, MEASURED).
 
 How much forms (Gnanadesikan 1999, the balance of the light upper water's volume as restated by Gnanadesikan, de Boer
 and Mignone 2007, eqs. 2 and 3): the sinking g' D^2 / eps equals what mixing lifts over the region, 2 Kv A / D, plus
@@ -37,8 +39,10 @@ where the eddies return more than the wind brings, more water sinks there).
 The upper water flows from where the deep water rises to where it sinks: a potential flow within each region. It
 carries heat (in the advective form of the loops' heat, with a share of the gap between the surface and the deep
 water) and salt; the deep water rises at the temperature of the water that sank in its region that month, so the
-overturning moves heat and makes none. The salinity and the overturning are worked out together, a set number of
-times in each round: salt sets density, density sets the sinking, and the overturning's flow carries salt.
+overturning moves heat and makes none. The salinity and the overturning are worked out together in passes, from the
+last round's salinity: salt sets density, density sets the sinking, the overturning's flow carries salt, and the
+salinity moves part of the way to the steady state of those flows, until it moves less than a set amount or a set
+number of passes is reached.
 
 Ignores: deep water made by the salt that freezing sea ice leaves behind (Antarctic Bottom Water forms under ice; here
 ice is a lid), the layers of the deep sea and the depth at which each water mass spreads, the time the deep water
@@ -46,11 +50,15 @@ takes to travel (the overturning is steady within a year), the sills and straits
 mixing of the Southern Ocean's channel itself, the salt of the deep sea beyond the sinking water's, and the seasons of
 the overturning.
 Wrong where: the overturning chooses between states that feed themselves (salty water sinks, and its flow brings more
-salt), and it chooses from rest in every round: a planet whose ocean could hold either state gets the one reached
-from no overturning. Every water mass that sinks fills the same deep sea. The upper water's path is a potential
-flow, not the western boundary currents that carry it on Earth. The Southern Ocean's terms rest on the wind of
-Circulation, which is weak over the twin's Southern Ocean. A latitude that goes round is found on the mesh's cells in
-bands of a set width: a gap narrower than a band can be missed, and an aquaplanet has no region and no overturning.
+salt); each climate run starts from a sea with no overturning, so a planet whose ocean could hold either state gets
+the one reached from there. On Earth's relief (the preview twin) the deep water forms at about 40 to 50 degrees north
+in both northern oceans and in the subtropical North Pacific, where Earth's forms in the North Atlantic beyond 55
+degrees: the twin's subtropical North Pacific holds 37.8 psu (Earth's about 35, UNVERIFIED: recalled), and its
+northern seas are colder and more often frozen than Earth's [MEASURED: docs/notes_pending/ocean-overturning.md]. Every water mass that sinks fills the same deep sea. The upper water's path
+is a potential flow, not the western boundary currents that carry it on Earth. The Southern Ocean's terms rest on the
+wind of Circulation, which is weak over the twin's Southern Ocean, and they apply at the edge of any sea that goes
+round, a polar sea among them. A latitude that goes round is found on the mesh's cells in bands of a set width: a gap
+narrower than a band can be missed, and an aquaplanet has no region and no overturning.
 """
 import numpy as np
 import scipy.sparse.linalg as spla
@@ -151,8 +159,8 @@ class WindAndDensityOcean(Process):
                               ov.branch_solver(mesh, region))
         region, sides, solver = ctx.memo[gkey]
         water = np.maximum(temp, o["freezing_point_k"])
-        lifted = rise.mean(axis=0) >= 0.0
-        consts = {**o, "reference_density_kg_m3": rho, "loop_share": share, "salt_layer_m": c["heat_layer_depth_m"]}
+        consts = {**o, "reference_density_kg_m3": rho, "loop_share": share, "salt_layer_m": c["heat_layer_depth_m"],
+                  "lifting_scale_m_s": o["lifting_scale_m_yr"] / ctx.planet["year_length_s"]}
         f_floor = 2 * spin * np.sin(np.deg2rad(c["mixing_spin_floor_deg"]))
         out = {"salinity": np.zeros(mesh.n), "winter_density": np.zeros(mesh.n), "rise": np.zeros(mesh.n),
                "sink": np.zeros(mesh.n), "flow": np.zeros(mesh.edge_cells.shape[0]), "potential": np.zeros(mesh.n),
@@ -160,10 +168,10 @@ class WindAndDensityOcean(Process):
         kept = ctx.read_lagged("sea_surface_salinity").astype(np.float64)     # the sea keeps its salt from round to round
         start = kept if np.isfinite(kept[sea]).all() else None                 # (missing in the first round: from rest)
         if sea.any():
-            out = ov.overturn(mesh, consts, sea=sea, deep=deep & lifted, region=region, sides=sides, water_k=water,
-                              open_months=ice < 0.5, gain=o["mean_salinity_psu"] * lost, loops_q=loops_q, ekman_q=drift_q,
+            out = ov.overturn(mesh, consts, sea=sea, deep=deep, region=region, sides=sides, water_k=water,
+                              ice=ice, lost=lost, loops_q=loops_q, ekman_q=drift_q,
                               spin_abs=np.maximum(np.abs(f), f_floor), gravity=ctx.planet["surface_gravity_m_s2"],
-                              radius=radius, solver=solver, start=start)
+                              radius=radius, solver=solver, lifting=rise.mean(axis=0), start=start)
         branch = o["branch_share"]
         heat_over = rho * cp * branch * ov.heat(mesh, out["flow"], out["rise"], out["sink"], region, water, radius)
         made = heat_loops + heat_drift + heat_up + heat_over
