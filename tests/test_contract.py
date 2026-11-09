@@ -18,7 +18,11 @@ ALLOWED_NUMBERS = {0, 1, 2, 3, 4, 0.5, -1}
 
 
 def slots():
-    return yaml.safe_load((DATA / "models.yaml").read_text(encoding="utf-8"))["slots"]
+    """The slots of models.yaml and those the fantasy layers of data/fantasy/ add: the contract holds for both."""
+    out = yaml.safe_load((DATA / "models.yaml").read_text(encoding="utf-8"))["slots"]
+    for layer in sorted((DATA / "fantasy").glob("*.yaml")):
+        out.update(yaml.safe_load(layer.read_text(encoding="utf-8"))["adds"].get("models", {}).get("slots", {}))
+    return out
 
 
 def implementation(path) -> Process:

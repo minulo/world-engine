@@ -1,0 +1,9 @@
+# A fantasy layer (data/fantasy/<name>.yaml): what it is, and what it adds to which parameter files. The files it adds to
+# are then checked against their own schemas.
+type: map
+required: [about, adds]
+keys:
+  about: {type: string}
+  adds:
+    type: map
+    values: {type: map, values: {type: any}}

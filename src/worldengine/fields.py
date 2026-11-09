@@ -35,6 +35,8 @@ class FieldSpec:
     pushable: bool
     settle: dict | None
     description: str
+    display: dict | None = None      # how the viewer colours a number field: {map, scale}
+    colors: tuple | None = None      # display colours of the classes of a category field
 
     @property
     def is_label(self) -> bool:
@@ -181,13 +183,20 @@ class Registry:
                     raise ParameterError(f"fields.yaml.fields.{name}: the default {default!r} is not among its classes")
                 if len(cats) > np.iinfo(dtype).max:
                     raise ParameterError(f"fields.yaml.fields.{name}: {len(cats)} classes do not fit the stored type {dtype}")
+            colors = e.get("colors")
+            if colors is not None and (kind != "category" or label or len(colors) != len(cats)):
+                raise ParameterError(f"fields.yaml.fields.{name}: colors gives one display colour per class of a category "
+                                     f"field that is not a label; this field has {len(cats) if kind == 'category' else 'no'} classes")
+            if e.get("display") is not None and kind not in ("number", "direction"):
+                raise ParameterError(f"fields.yaml.fields.{name}: display names the colour map of a number; this field is of kind {kind}")
             self.fields[name] = FieldSpec(
                 name=name, family=e["family"], unit=e["unit"], shape=e["shape"], kind=kind,
                 dtype=dtype, default=default,
                 range=tuple(e["range"]) if e.get("range") is not None else None,
                 categories=tuple(cats) if cats is not None else None,
                 label_stage=label["stage"] if label else None, allow_missing=bool(e.get("allow_missing", False)),
-                pushable=bool(e.get("pushable", True)), settle=e.get("settle"), description=e.get("description", ""))
+                pushable=bool(e.get("pushable", True)), settle=e.get("settle"), description=e.get("description", ""),
+                display=e.get("display"), colors=tuple(colors) if colors is not None else None)
         for name, e in (fy.get("groups") or {}).items():
             self.groups[name] = GroupSpec(name=name, unit=e["unit"], shape=e["shape"], description=e.get("description", ""),
                                           settle=e.get("settle"))

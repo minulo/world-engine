@@ -4,6 +4,7 @@
 #   scripts/run.sh                         the first run installs and builds: a few minutes
 #   scripts/run.sh --port 9000 --world worlds/other.zarr --profile preview --seed 7
 #   scripts/run.sh --no-browser            serve without opening a browser
+#   scripts/run.sh --fantasy magic         a world with the invented layer magic (mana), worlds/first-magic.zarr
 #   scripts/run.sh --check                 install, build, serve, fetch the page and /api/world, stop (for CI)
 #
 # Each step is skipped when it is done already: the environment .venv, the packages of requirements.lock (installed
@@ -11,14 +12,14 @@
 set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-PROFILE=preview WORLD='' SEED='' PORT=8765 HOST=127.0.0.1 PYTHON='' OPEN=--open CHECK=''
-usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
-          echo "Options: --world PATH --profile NAME --seed N --port N --host ADDRESS --python EXE --no-browser --check"; }
+PROFILE=preview WORLD='' SEED='' FANTASY='' PORT=8765 HOST=127.0.0.1 PYTHON='' OPEN=--open CHECK=''
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+          echo "Options: --world PATH --profile NAME --seed N --fantasy LAYER --port N --host ADDRESS --python EXE --no-browser --check"; }
 while [ $# -gt 0 ]; do
     case "$1" in
-        --world|--profile|--seed|--port|--host|--python)
+        --world|--profile|--seed|--fantasy|--port|--host|--python)
             [ $# -ge 2 ] || { echo "run.sh: $1 needs a value" >&2; exit 2; }
-            case "$1" in --world) WORLD=$2 ;; --profile) PROFILE=$2 ;; --seed) SEED=$2 ;; --port) PORT=$2 ;;
+            case "$1" in --world) WORLD=$2 ;; --profile) PROFILE=$2 ;; --seed) SEED=$2 ;; --fantasy) FANTASY=$2 ;; --port) PORT=$2 ;;
                          --host) HOST=$2 ;; --python) PYTHON=$2 ;; esac
             shift 2 ;;
         --no-browser) OPEN=; shift ;;
@@ -30,7 +31,8 @@ done
 case "$WORLD" in ""|/*) ;; *) WORLD=$PWD/$WORLD ;; esac      # a path given is taken from where the command was run
 cd "$ROOT"
 if [ -z "$WORLD" ]; then
-    if [ "$PROFILE" = preview ] && [ -z "$SEED" ]; then WORLD=worlds/first.zarr; else WORLD=worlds/$PROFILE${SEED:+-seed$SEED}.zarr; fi
+    if [ "$PROFILE" = preview ] && [ -z "$SEED" ]; then WORLD=worlds/first${FANTASY:+-$FANTASY}.zarr
+    else WORLD=worlds/$PROFILE${SEED:+-seed$SEED}${FANTASY:+-$FANTASY}.zarr; fi
 fi
 
 say() { printf '\n== %s\n' "$*"; }
@@ -102,8 +104,8 @@ fi
 if [ -e "$WORLD" ]; then
     echo "The world $WORLD exists; it is served as it is."
 else
-    say "Building the $PROFILE world into $WORLD: one to two minutes for the preview, 40 to 80 for the standard one"
-    "$VPY" -m worldengine build --profile "$PROFILE" ${SEED:+--seed "$SEED"} --out "$WORLD"
+    say "Building the $PROFILE world into $WORLD${FANTASY:+, with the invented layer $FANTASY}: one to two minutes for the preview, 40 to 80 for the standard one"
+    "$VPY" -m worldengine build --profile "$PROFILE" ${SEED:+--seed "$SEED"} ${FANTASY:+--fantasy "$FANTASY"} --out "$WORLD"
 fi
 
 # 4. Serve it.

@@ -16,6 +16,9 @@ scripts\run.cmd -Port 9000 -World worlds\other.zarr -Profile preview -Seed 7
 scripts\run.cmd -NoBrowser
 Serve without opening a browser.
 .EXAMPLE
+scripts\run.cmd -Fantasy magic
+A world with the invented layer magic (mana), worlds\first-magic.zarr.
+.EXAMPLE
 scripts\run.cmd -Check
 Install, build, serve, fetch the page and /api/world, stop (for CI).
 #>
@@ -24,6 +27,7 @@ param(
     [string]$World = "",
     [Alias("Profile")][string]$BuildProfile = "preview",
     [string]$Seed = "",
+    [string]$Fantasy = "",
     [int]$Port = 8765,
     [Alias("Host")][string]$ListenHost = "127.0.0.1",
     [string]$Python = "",
@@ -38,8 +42,9 @@ $Root = Split-Path -Parent $PSScriptRoot
 if ($World -and -not [System.IO.Path]::IsPathRooted($World)) { $World = Join-Path (Get-Location).Path $World }  # taken from where it was run
 Set-Location $Root -ErrorAction Stop
 if (-not $World) {
-    if ($BuildProfile -eq "preview" -and -not $Seed) { $World = Join-Path "worlds" "first.zarr" }
-    else { $World = Join-Path "worlds" ("$BuildProfile" + $(if ($Seed) { "-seed$Seed" } else { "" }) + ".zarr") }
+    $layer = $(if ($Fantasy) { "-$Fantasy" } else { "" })
+    if ($BuildProfile -eq "preview" -and -not $Seed) { $World = Join-Path "worlds" ("first" + $layer + ".zarr") }
+    else { $World = Join-Path "worlds" ("$BuildProfile" + $(if ($Seed) { "-seed$Seed" } else { "" }) + $layer + ".zarr") }
 }
 
 function Say([string]$Text) { Write-Host ""; Write-Host "== $Text" }
@@ -118,9 +123,11 @@ if ($Installed -ne $Stamp) {
 if (Test-Path $World) {
     Write-Host "The world $World exists; it is served as it is."
 } else {
-    Say "Building the $BuildProfile world into ${World}: one to two minutes for the preview, 40 to 80 for the standard one"
-    $seedArgs = @(); if ($Seed) { $seedArgs = @("--seed", $Seed) }
-    & $VPy -m worldengine build --profile $BuildProfile @seedArgs --out $World
+    $with = $(if ($Fantasy) { ", with the invented layer $Fantasy" } else { "" })
+    Say "Building the $BuildProfile world into ${World}${with}: one to two minutes for the preview, 40 to 80 for the standard one"
+    $buildArgs = @(); if ($Seed) { $buildArgs = @("--seed", $Seed) }
+    if ($Fantasy) { $buildArgs += @("--fantasy", $Fantasy) }
+    & $VPy -m worldengine build --profile $BuildProfile @buildArgs --out $World
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

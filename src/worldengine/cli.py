@@ -2,6 +2,7 @@
 
     python -m worldengine order   [--profile P]
     python -m worldengine build   --profile preview --out worlds/first.zarr [--seed N] [--interventions FILE]
+                                  [--fantasy magic]       (an invented layer: mana; data/fantasy/magic.yaml)
                                   [--history-my 500 --continue-from worlds/older.zarr]
     python -m worldengine serve   worlds/first.zarr [--port 8765] [--host 127.0.0.1] [--open] [--check]
     python -m worldengine explain worlds/first.zarr --lat 48 --lon -20 --field biome
@@ -43,7 +44,8 @@ def _engine(args, log=None):
             if s.get("clock") == "geological":
                 s["history_length_my"] = float(args.history_my)
         overrides["stages"] = stages
-    return Engine(args.data, profile=args.profile, seed=args.seed, overrides=overrides or None, log=log)
+    return Engine(args.data, profile=args.profile, seed=args.seed, overrides=overrides or None, log=log,
+                  fantasy=tuple(getattr(args, "fantasy", None) or ()))
 
 
 def open_browser(url) -> bool:
@@ -137,6 +139,9 @@ def main(argv=None) -> int:
         sp.add_argument("--profile", default="preview")
         sp.add_argument("--seed", type=int, default=None, help="world seed; the default is in seeds.yaml")
         sp.add_argument("--interventions", default=None, help="a push file to use in place of interventions.yaml")
+        sp.add_argument("--fantasy", action="append", default=None, metavar="LAYER",
+                        help="lay an invented layer over the physics: magic (data/fantasy/; none by default). Its rules are "
+                             "made up, not claims about any real world")
         if name == "build":
             sp.add_argument("--out", required=True, help="path of the world store to write")
             sp.add_argument("--quiet", action="store_true")

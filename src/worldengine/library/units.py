@@ -7,6 +7,7 @@ import numpy as np
 
 SECONDS_PER_DAY = 86400.0
 M_PER_KM = 1000.0
+M2_PER_KM2 = 1.0e6
 MM_PER_M = 1000.0
 G_PER_KG = 1000.0
 PA_PER_HPA = 100.0

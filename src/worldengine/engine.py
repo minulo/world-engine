@@ -272,9 +272,9 @@ class Context:
 class Engine:
     """Loads the parameter files, computes the order, and builds a world."""
 
-    def __init__(self, data_dir, profile: str = "standard", seed=None, overrides: dict | None = None, log=None):
+    def __init__(self, data_dir, profile: str = "standard", seed=None, overrides: dict | None = None, log=None, fantasy=()):
         self.log = log or (lambda msg: None)
-        self.params = Parameters(data_dir, overrides)
+        self.params = Parameters(data_dir, overrides, fantasy)       # fantasy: invented layers of data/fantasy/, none by default
         p = self.params
         profiles = p["profiles"]["profiles"]
         if profile not in profiles:
@@ -1409,6 +1409,8 @@ class Engine:
             "settled": dict(w.settled), "climate_reruns": list(w.climate_reruns), "parameters_fingerprint": self.params.fingerprint(),
             "mesh": self.mesh.describe(), "build_seconds": time.perf_counter() - t0,
         }
+        if self.params.fantasy:                              # an invented layer: the viewer says so (a world without keeps its form)
+            w.meta["fantasy"] = self.params.fantasy
         limit = self.profile.get("run_time_limit_s")
         if limit is not None and w.meta["build_seconds"] > limit:
             w.notice("run_time_over_limit", profile=self.profile_name, seconds=round(w.meta["build_seconds"], 1), limit_s=limit)
