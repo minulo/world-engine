@@ -5,7 +5,11 @@
 # [UNVERIFIED] recalled, not looked up; [PROVISIONAL] a first value that an Earth test must tune.
 
 shared:
-  lapse_rate_k_per_km: 6.5                     # cooling of air with height [UNVERIFIED: the standard atmosphere's value]
+  lapse_rate_k_per_km: 6.5                     # cooling of air with height: the standard atmosphere's value [DOCUMENTED at second hand:
+                                               #  code that carries the U.S. Standard Atmosphere 1976 has -0.0065 K/m up to its tropopause
+                                               #  at 11,000 m; Hydrology's air below takes the same 0.0065 K/m from Davis et al. 2017, eq. 20;
+                                               #  a teaching text, Konashenok 2012, as Consensus gives it: "Average lapse rate is 6.5 deg/km".
+                                               #  The standard itself was not read: its record has no numbers]
   freezing_point_k: 273.15                     # snow on the ground melts in months warmer than this
   sea_ice_yearly_mean_below_k: 263.15          # ice lies on the sea where the mean temperature of the year is below this, -10 C.
                                                # [DOCUMENTED: North, Cahalan and Coakley 1981, eq. 15 and p. 102, put the edge of
@@ -39,19 +43,27 @@ slots:
       plate_speed_cm_per_year: [1.0, 9.0]      # [UNVERIFIED: the range of Earth's plate speeds as I recall it]
       outline: {waves: 24, wave_number: [2.0, 9.0], amplitude_rad: 0.10}        # how wavy the plate outlines are [INFERRED]
       continents:
-        fraction: 0.40                         # share of the surface that is continental crust [UNVERIFIED: about Earth's, shelves included]
+        fraction: 0.40                         # share of the surface that is continental crust, about Earth's, shelves included
+                                               # [DOCUMENTED: Cogley 1984, abstract: the continents with their submerged margins cover
+                                               #  210.4 million km2, "41% of the earth's surface"; Cawood et al. 2019, abstract: "around 40%
+                                               #  of the Earth's surface" for the last 3 billion years]
         plate_share: 0.5                       # share of plates that lean toward carrying a continent [INFERRED]
         plate_bias: 0.8                        # weight of that lean in the score [INFERRED]
         interior_weight: 0.8                   # weight of the distance from the plate's edge in the score [INFERRED]
         waves: 16
         wave_number: [1.5, 6.0]
       thickness:
-        continental_normal_m: 35000.0          # [UNVERIFIED: textbook value]; must equal Isostasy's normal thickness
+        continental_normal_m: 35000.0          # [UNVERIFIED: textbook value]; must equal Isostasy's normal thickness. Sources found give
+                                               #  other numbers: a mean of 36 km for continents whose mean height is about 120 m (Cogley
+                                               #  1984, abstract), a mean of 41.1 km (Christensen and Mooney 1995, at second hand in Yanagi
+                                               #  2011), 30 km at sea level for South America (Chapin 1996, abstract). A proposal, not applied:
+                                               #  docs/notes_pending/literature.md
         continental_excess_m: 1500.0           # mean thickness above normal, so that most continental crust stands above the sea [PROVISIONAL]
         variation_m: 2500.0                    # spread of the seeded thickness [PROVISIONAL]
         variation_waves: 32
         variation_wave_number: [3.0, 14.0]
-        oceanic_m: 7000.0                      # [UNVERIFIED: textbook value]
+        oceanic_m: 7000.0                      # [DOCUMENTED: White et al. 1992, abstract: the igneous ocean crust "averages
+                                               #  7.1+-0.8 km thick away from anomalous regions such as fracture zones and hot-spots"]
       boundaries:
         transform_ratio: 0.5                   # closing or opening slower than this share of the sliding speed counts as sliding past [INFERRED]
         minimum_speed_m_per_year: 0.002
@@ -74,7 +86,9 @@ slots:
         smoothing_km: 150.0                    # a belt has no sharp ends: the thickening is spread over this length [INFERRED]
         active_above_m: 500.0                  # thickening above this counts as mountain building acting now
       ocean_age:
-        maximum_my: 180.0                      # [UNVERIFIED: Earth's oldest floor is about this old]
+        maximum_my: 180.0                      # Earth's oldest floor is about this old [DOCUMENTED: Kawano et al. 2023, abstract: "the
+                                               #  oldest (170-180 Ma) Pacific seafloor"; Cogne et al. 2004, abstract: the area of floor
+                                               #  per unit of age falls to nothing at 180.2+-9.7 Ma]
         minimum_half_rate_m_per_year: 0.005
         equal_within_my: 0.1                   # two floors whose ages differ by less than this count as equally old [INFERRED]
       volcanism: {arc_distance_km: 200.0, arc_width_km: 150.0, ridge_width_km: 150.0}   # [INFERRED]
@@ -88,7 +102,10 @@ slots:
         flat_determinant: 1.0e-12              # three old points whose places span less than this lie in a row [INFERRED]
         equal_age_my: 0.1                      # two fronts whose summed floor ages differ by less than this count as equally old
         minimum_thickness_m: 1000.0            # erosion thins no crust below this [INFERRED]
-        maximum_thickness_m: 70000.0           # thickening stops here [UNVERIFIED: about the thickest crust on Earth, under Tibet]
+        maximum_thickness_m: 70000.0           # thickening stops here: about the thickest crust on Earth, under Tibet [DOCUMENTED: Zhu
+                                               #  et al. 2023, abstract: the Gangdese crust of southern Tibet, "the world's thickest crust",
+                                               #  reached "greater than 70 km after 32 Ma". At second hand (Yanagi 2011), Christensen and
+                                               #  Mooney 1995 give continental crust from 14 to 80 km]
         arc_becomes_continental_above_m: 20000.0   # ocean crust thickened past this is an island arc grown into continent [PROVISIONAL]
         active_above_m_per_round: 100.0        # thickening faster than this counts as mountain building acting now [PROVISIONAL]
         crust_flow: {above_m: 50000.0, length_km: 300.0}   # thicker crust flows sideways [PROVISIONAL; a departure from the design]
@@ -181,7 +198,10 @@ slots:
       area_exponent_m: 0.5                     # m with n = 1: m/n = 0.5 [UNVERIFIED: the usual value on Earth]
       coefficient_per_year: {by_level: {5: 1.2e-7, 6: 1.2e-7, 7: 1.2e-7, 8: 1.2e-7}}   # K [PROVISIONAL: tuned by eye on the preview mesh]
       reference_runoff_mm_per_year: 300.0      # the runoff that K is set for, and the runoff used before any climate [UNVERIFIED: about Earth's land mean]
-      creep_m2_per_year: 0.01                  # hillside diffusion [UNVERIFIED: a common value]
+      creep_m2_per_year: 0.01                  # hillside diffusion, a common value [DOCUMENTED that it lies within published values:
+                                               #  abstracts give about 50 cm2 a year, 0.005 m2, in northern California (Dietrich et al. 1995),
+                                               #  360 cm2, 0.036 m2 (McKean et al. 1993), and 1 to 6 m2 a thousand years on cinder cones of
+                                               #  the Golan (Ben-Asher et al. 2017)]
       sea_level_before_any_sea_m: 0.0          # the base level in the first round, before SeaLevel has run once
 
   SeaLevel:
@@ -239,7 +259,9 @@ slots:
         planet: 0.67                           #  ocean, 67 % globally. INFERRED: that cloud reflects as much per share of sky over each]
       low_sun_term: 0.202                      # times the second Legendre polynomial of sin(latitude) [DOCUMENTED: North, Cahalan and Coakley 1981, eq. 18]
       surface:
-        sea: 0.07                              # [UNVERIFIED: typical value]
+        sea: 0.07                              # [UNVERIFIED: typical value. Searched: Payne 1972, abstract, gives 0.061 under heavy
+                                               #  overcast, 0.03 for a high sun under clear sky and more at low sun, but no mean over the
+                                               #  day or the year, so it neither confirms nor contradicts this]
         bare_ground: 0.25                      # [UNVERIFIED: typical value for dry bare ground]
         under_plants: 0.15                     # [UNVERIFIED: typical value for forest; half cover gives the 0.20 of the first version]
         ice: 0.658                             # [INFERRED: gives ice-covered cells the 0.62 of North et al. 1981]
@@ -260,8 +282,25 @@ slots:
                                                #  model's temperature is the air's, which over a winter sea falls far below the water's
       sea_ice_ramp_k: 2.0                      # the change from open to covered sea is spread over this width, so that the rounds settle [INFERRED]
       full_cover_mm: 15.0                      # the ground counts as fully covered once the snow store holds this much water: Hydrology's value
-      permafrost_full_below_k: 265.15          # -8 C on the year's mean: frozen ground throughout [UNVERIFIED: a common rule of thumb for continuous permafrost]
-      permafrost_none_above_k: 272.15          # -1 C: no permafrost above [UNVERIFIED: a common rule of thumb for the edge of discontinuous permafrost]
+      permafrost_full_below_k: 265.15          # -8 C on the year's mean: frozen ground throughout, a common rule of thumb for continuous
+                                               # permafrost [DOCUMENTED: Smith and Riseborough 2002, abstract: "The transition from
+                                               #  discontinuous to continuous permafrost occurs between a MAAT of -6 to -8 C. This may
+                                               #  explain the air temperature limit for continuous permafrost cited by previous authors."
+                                               #  -8 C is the cold end of that range; the abstract names the snow cover as the critical
+                                               #  factor at that limit]
+      permafrost_none_above_k: 272.15          # -1 C: no permafrost above, a common rule of thumb for the edge of discontinuous permafrost
+                                               # [DOCUMENTED for one region: Jin et al. 2007, abstract: in northeastern China the southern
+                                               #  limit of permafrost was "empirically correlated to the -1 to 0 C isotherms of mean annual
+                                               #  air temperature" in the western Da Xing'anling, to about 0 C on the Songnen Plain and to
+                                               #  0 to +1 C in the Xiao Xing'anling; -1 C is the cold end. No global value was found]
+      # The search for a published model that the design asks for (docs/BUILD_NOTES.md, section 16.1), made on 2026-11-09:
+      # the frost number of Nelson and Outcalt 1987, "a dimensionless ratio defined by manipulation of either freezing and
+      # thawing degree-day sums", which "can be used to define an unambiguous latitudinal zonation of permafrost
+      # continuity" [DOCUMENTED: its abstract]; the engine could build the sums from the monthly temperatures and their
+      # daily spread [INFERRED]. The TTOP model (Smith and Riseborough 2002; Obu et al. 2019) needs the ground's thermal
+      # conductivity ratio and n-factors [DOCUMENTED: the abstracts of Smith and Riseborough 2002 and Garibaldi et al.
+      # 2026], which the engine has not; for sea ice, Semtner 1976 needs a lid of ice in EnergyBalance [INFERRED]. The
+      # thresholds stay until a frost number replaces them: docs/notes_pending/literature.md
 
   EnergyBalance:
     implementation: worldengine.processes.energy_balance_wind:WindEnergyBalance
@@ -284,7 +323,9 @@ slots:
       heat_capacity_sea_j_m2_k: 3.10e+8        # 4.7 B years, an ocean mixed layer of 75 m [DOCUMENTED: the same]
       time_waves: 2                            # the yearly mean plus this many waves in time (yearly, half-yearly)
       air_column_kg_m2: 2000.0                 # the mass of air whose temperature the surface wind carries, about the lowest 200 hPa [PROVISIONAL]
-      air_heat_capacity_j_kg_k: 1004.0         # [UNVERIFIED: textbook value for dry air]
+      air_heat_capacity_j_kg_k: 1004.0         # textbook value for dry air [DOCUMENTED at second hand: MetPy's constants give it as 3.5
+                                               #  times the gas constant of dry air, 1004.67 J/kg/K; Baumgartner et al. 2020, abstract: "the
+                                               #  literature provides different values" of it]
       wind_heat_passes: 3
       sea_heat_capacity_j_m3_k: 4.13e+6        # the sea's heat capacity per cubic metre: 3.10e8 J/m2/K over the 75 m of North et al. 1981
       mixed_layer_step_m: 5.0                  # the stirred depth is taken in whole steps of this, so that the solver is seldom prepared again                      # the wind's heat is worked out from the round's solution and solved again this many times
@@ -302,8 +343,13 @@ slots:
     writes: [sea_level_pressure, wind, steering_wind, subsidence, baroclinicity]
     constants:
       band_deg: 2.0                            # width of the latitude bands used for means around the planet
-      stability_per_s: 0.012                   # how strongly air resists being lifted [UNVERIFIED: typical value for Earth's lower air]
-      weather_layer_depth_m: 11000.0           # [UNVERIFIED: typical depth of Earth's weather layer]
+      stability_per_s: 0.012                   # how strongly air resists being lifted [UNVERIFIED: typical value for Earth's lower air.
+                                               #  No source with a value was found. INFERRED check: the standard atmosphere's lapse rate
+                                               #  gives sqrt(g / T (g / cp - 0.0065)) = 0.0106 at 288 K, 0.0113 at 250 K, 0.0122 at 217 K]
+      weather_layer_depth_m: 11000.0           # typical depth of Earth's weather layer [DOCUMENTED at second hand: the tropopause of the
+                                               #  U.S. Standard Atmosphere 1976 at 11 km, as code that carries it gives it; Konashenok 2012,
+                                               #  as Consensus gives it: the troposphere's "Average height is 10-11 km", "15-16 km at the
+                                               #  equator"]
       hadley_edge_factor: 1.0                  # edge = factor * sqrt(stability * depth / (spin * radius)); 30.5 degrees for Earth [INFERRED]
       hadley_edge_limits_deg: [10.0, 50.0]
       air_density_kg_m3: 1.2
@@ -360,9 +406,17 @@ slots:
     writes: [ocean_current, upwelling, mixed_layer_depth, ocean_heat_convergence]
     constants:
       air_density_kg_m3: 1.2                   # [UNVERIFIED: textbook value near the surface]
-      drag_coefficient: 1.3e-3                 # of wind on the sea [UNVERIFIED: a common value]
-      sea_water_density_kg_m3: 1025.0          # [UNVERIFIED: textbook value]
-      sea_water_heat_capacity_j_kg_k: 3990.0   # [UNVERIFIED: textbook value]
+      drag_coefficient: 1.3e-3                 # of wind on the sea, a common value [DOCUMENTED that it lies within a published range:
+                                               #  Kondo 1975, abstract: 10^3 CD = 1.11 to 1.70 for winds at 10 m of 4 to 20 m/s. A proposal,
+                                               #  not applied: Large and Pond 1981, as two ocean codes carry it (umwm, NPIOcean/kval; FVCOM
+                                               #  has the same formula), 1.2e-3 from 4 to 11 m/s, which holds the trade winds of about 5 m/s
+                                               #  that Circulation's drag is set for; 1.3e-3 is theirs at 12.5 m/s. Their abstract gives no
+                                               #  number]
+      sea_water_density_kg_m3: 1025.0          # textbook value [MEASURED with TEOS-10's own code (gsw 3.6.23): sea water of practical
+                                               #  salinity 35 at the surface weighs 1026.0 kg/m3 at 15 C, 1025.3 at 18 C, 1024.8 at 20 C]
+      sea_water_heat_capacity_j_kg_k: 3990.0   # textbook value [DOCUMENTED: TEOS-10's cp0, "The 'specific heat' for use with Conservative
+                                               #  Temperature", is 3991.86795711963 J/kg/K in its code (GSW-C, GSW-Python). MEASURED with
+                                               #  gsw 3.6.23: 3986.4 at 0 C, 3990.1 at 10 C, 4000.5 at 28 C, practical salinity 35]
       layer_depth_m: 1000.0                    # the one layer that the loops move [PROVISIONAL]
       heat_layer_depth_m: 300.0                # the part of the layer whose temperature is the surface's [PROVISIONAL]
       drift_depth_m: 50.0                      # the surface layer that the wind drifts, for the current at the surface [UNVERIFIED: a common Ekman depth]
@@ -372,7 +426,9 @@ slots:
       upwelling_efficiency: 0.1                # the share of the upwelled water's coldness that reaches the surface [PROVISIONAL]
       mixing_coefficient: 0.6                  # the Ekman depth scale, coefficient times u* / |f| [CALIBRATED on the preview Earth twin: the mean
                                                #  miss of the sea's July-January swing in four bands against CRU 1961-1990 is 2.46 K at
-                                               #  0.4, 1.59 at 0.6, 2.30 at 0.8, 3.02 at 1.2 (build step 4). The form of the scale is recalled: UNVERIFIED]
+                                               #  0.4, 1.59 at 0.6, 2.30 at 0.8, 3.02 at 1.2 (build step 4). The form of the scale is
+                                               #  DOCUMENTED: Lozovatsky et al. 2005, abstract: on a section at 53 N the mixed layer is
+                                               #  "hD ~ 0.44Lf, where Lf = u*/f is the Ekman scale"]
       mixing_spin_floor_deg: 10.0              # nearer the equator f is held at its value here [INFERRED]
       mixed_layer_m: [20.0, 150.0]             # the stirred depth is kept between these [PROVISIONAL]
       upwelling_cooling_limit_w_m2: 100.0      # soft limit of the cooling by upwelling [PROVISIONAL: about the largest seen off Peru, UNVERIFIED]
@@ -401,8 +457,10 @@ slots:
       # They are due again when Earth data is at hand.
       sinking_shift: 0.06                      # sinking air at the reference speed raises the humidity needed for a given rain by this
       exchange_coefficient: 0.95e-3            # bulk coefficient of evaporation from the sea. Measured values are 1.1 to 1.5 thousandths
-                                               # [UNVERIFIED: typical values]; lower here because the humidity of the whole column stands
-                                               # in for that of the air at the surface, which is moister
+                                               # [DOCUMENTED: Kondo 1975, abstract: 10^3 CE = 1.18 to 1.30 for winds at 10 m of 4 to 20 m/s;
+                                               #  Hicks 1972, abstract: near-neutral coefficients for heat and water vapour over water
+                                               #  bodies of several sizes, "about 1.4 x 10-3"]; lower here because the humidity of the whole
+                                               # column stands in for that of the air at the surface, which is moister
       gust_m_s: 4.0                            # wind that always stirs the sea surface, added to the surface wind [INFERRED]
       mixing_m2_s: 4.0e+6                      # spreading of vapour by all stirring the model does not resolve, storms included
       carrying_wind:                           # the flow that carries the column's vapour, made from the surface wind
@@ -434,7 +492,11 @@ slots:
       tolerance_kg_m2: 2.0e-3                  # the solver stops when its last sweep changes no column by more than this. That is
                                                # not a bound on the error: in the default world the answer then lies 0.002 to 0.012
                                                # kg/m2 from the fully settled one, and the rain within 0.03 % of it (third check)
-      saturation:                              # saturation vapour pressure over water [UNVERIFIED: the formula of Bolton 1980 as I recall it]
+      saturation:                              # saturation vapour pressure over water: the formula of Bolton 1980 [DOCUMENTED for the
+                                               #  form: Bolton 1980, abstract: "new empirical formulas ... for the saturated vapor pressure
+                                               #  of water". The numbers at second hand: 6.112 hPa exp(17.67 T / (T + 243.5)), T in C, in
+                                               #  the code of a hydrology textbook's figures (jpgannon/IntroHydro_Figures), citing Bolton
+                                               #  (1980); 273.15 - 243.5 = 29.65. The vapour's gas constant was not looked up: UNVERIFIED]
         pressure_at_zero_pa: 611.2
         exponent_factor: 17.67
         exponent_offset_k: 29.65
@@ -458,8 +520,12 @@ slots:
         melt_mm_per_day_per_k: 4.0             # degree-day factor of snow melt [DOCUMENTED: Hock 2003, eq. 1 for the rule; her Table 1
                                                #  lists 2.5 to 5.5 mm a day per degree for snow at sites without glaciers. INFERRED: 4]
         daily_spread_k: 5.0                    # the days of a month scatter around its mean by this much (one standard deviation), so
-                                               #  a month just below freezing melts on its warmer days [UNVERIFIED: about the 5 K that
-                                               #  Reeh 1991 took for Greenland, as I recall; build step 6]
+                                               #  a month just below freezing melts on its warmer days (build step 6) [DOCUMENTED: Fausto et
+                                               #  al. 2011, the opening Consensus gives: Greenland models give the standard deviation of the
+                                               #  degree-day method, after Braithwaite 1984 and Reeh 1991, "a single value which typically
+                                               #  spans the interval 4.5-5.5 C"; Reeh's own value was not read. Rogozhina et al. 2014,
+                                               #  abstract: the data do not support "uniform SD values (~ 5 C)"; in summer, where most
+                                               #  melting occurs, they are "~ 1 to 2.5 C"]
         ice_after_years: 1.0                   # where more snow falls in a year than the year can melt, the store holds this many
                                                # years of the net snowfall and what is older leaves as ice [INFERRED: a stand-in
                                                #  for snow turning to glacier ice and flowing away. The ice that leaves is the year's
@@ -501,7 +567,9 @@ slots:
           ground_reflects: 0.17
           water_reflects: 0.07                 # open water of a lake reflects less than ground, so it takes up more energy
                                                # [UNVERIFIED: the usual value for water under a high sun, the one Albedo's table
-                                               #  gives the sea. INFERRED: using the paper's formula with it for a lake]
+                                               #  gives the sea. INFERRED: using the paper's formula with it for a lake. Searched: Payne
+                                               #  1972, abstract, gives 0.03 for a high sun under clear sky and 0.061 under heavy overcast,
+                                               #  so the reason given here does not hold; the number is nearer the overcast one]
         longwave:                              # heat radiated away less what the air sends back = (b + (1 - b) sunshine)(A - T)
           a_c: 107.0                           # [DOCUMENTED: Davis et al. 2017, eq. 13: A = 107, b = 0.20, T in degrees C]
           b: 0.20
@@ -523,7 +591,8 @@ slots:
           molar_mass_air_kg: 0.028963
           molar_mass_water_kg: 0.01802
           gas_constant_j_mol_k: 8.31447
-          specific_heat_air_j_kg_k: 1004.6     # [UNVERIFIED: the usual value for dry air; the paper computes it from temperature]
+          specific_heat_air_j_kg_k: 1004.6     # the usual value for dry air; the paper computes it from temperature [DOCUMENTED at second
+                                               #  hand: MetPy's constants give 3.5 times the gas constant of dry air, 1004.67 J/kg/K]
       soil:
         critical_share: 0.75                   # the air gets its full demand while the soil holds more than this share of its
                                                # capacity [DOCUMENTED: the description of the GFDL model: "a critical value that is
@@ -544,8 +613,16 @@ slots:
     constants:
       wet_without_demand: 10.0                 # rain over demand where the air asks for nothing [INFERRED]
       depth:
-        fastest_production_m_per_year: 7.7e-5  # P0 [UNVERIFIED: recalled from Heimsath et al. 1997, 77 mm per thousand years]
-        decline_depth_m: 0.5                   # h0, the depth over which production falls by e [UNVERIFIED: recalled from the same]
+        fastest_production_m_per_year: 7.7e-5  # P0, 77 mm per thousand years [DOCUMENTED: Heimsath et al. 1999, abstract, in northern
+                                               #  California like Heimsath et al. 1997 (the same site, INFERRED: both abstracts describe the
+                                               #  same two methods there): production "declines exponentially with the thickness of soil
+                                               #  from 0.077 mm/year with no soil mantle to 0.0077 mm/year under 1 m of soil". Other sites
+                                               #  differ: 53 m/My in southeastern Australia (Heimsath et al. 2000) and 268 in the Oregon
+                                               #  Coast Range (Heimsath et al. 2001), both abstracts]
+        decline_depth_m: 0.5                   # h0, the depth over which production falls by e [UNVERIFIED: recalled from the same.
+                                               #  The tenfold fall over 1 m in the abstract above gives h0 = 1 m / ln 10 = 0.43 m; with
+                                               #  0.5 m, 1 m of soil keeps 0.135 of P0, not 0.1. The Australian site's 53 and 7 m/My give
+                                               #  0.49 m. A proposal, not applied: docs/notes_pending/literature.md]
         production_from_c: -5.0                # production grows with warmth from here ... [PROVISIONAL]
         production_full_at_c: 25.0             # ... to here, and with rain over demand up to 1 [PROVISIONAL]
         usual_warmth_and_water: 0.25           # warmth times water (each 0 to 1) at which production is P0 [PROVISIONAL: with 0.5 and a
@@ -554,7 +631,11 @@ slots:
         most_production_share: 4.0             # hot, wet ground weathers at up to this share of P0 [PROVISIONAL]
         deepest_m: 20.0
         least_time_my: 1.0                     # ground renewed in the last round has weathered about half of it [INFERRED: a round is 2 My]
-      root_depth_m: 1.5                        # the water below this is out of reach [UNVERIFIED: a common rooting depth]
+      root_depth_m: 1.5                        # the water below this is out of reach: a common rooting depth [DOCUMENTED as typical:
+                                               #  Jackson et al. 1996, abstract: the global root profile is 1 - beta^d, d in cm, with beta =
+                                               #  0.966, which puts 99.4 % of the roots above 1.5 m; Schenk and Jackson 2002, abstract: in
+                                               #  over 90 % of profiles 95 % of the roots lie in the upper 2 m. The deepest roots go further:
+                                               #  4.6 m on the global mean (Canadell et al. 1996, abstract)]
       least_capacity_mm: 10.0                  # bare rock and thin soil still hold this much in cracks [PROVISIONAL]
       water_per_metre_mm:                      # water held for plants per metre of soil, by the rock below [PROVISIONAL]
         default: 150.0
@@ -562,6 +643,14 @@ slots:
         volcanic_arc: 170.0
         old_mountain_roots: 110.0
         young_fold_belt: 120.0
+      # The search for a published model that the design asks for (docs/BUILD_NOTES.md, section 16.1), made on 2026-11-09,
+      # found none that gives the soil order from its causes: the published maps of soil classes (SoilGrids, Hengl et al.
+      # 2017) are learned from Earth's soil profiles and covariates and cannot be carried to another planet, and the
+      # mechanistic models (Kirkby 2018; SoilGen) give horizons or properties, not classes. The nearest to a published table
+      # is Gray et al. 2011: the dominant groups of the World Reference Base for 70 combinations of climate, parent rock and
+      # relief, with the right group among its top three for 58 % of its test samples. The table below stays a rule table; a
+      # replacement could follow Gray et al. 2011, and SoilGrids is the map to test the twin against:
+      # docs/notes_pending/literature.md
       orders:                                  # in order; the first that matches wins [PROVISIONAL: thresholds mine, after the orders' definitions]
         - {order: ice, where: {lasting_ice: [0.99, null]}}
         - {order: bare_rock, where: {depth_m: [null, 0.1]}}
@@ -651,20 +740,34 @@ slots:
     constants:
       storm_life_days: 4.0                     # what a storm's growth carries fades over this time [UNVERIFIED: mid-latitude storms
                                                #  live a few days]
-      saturation:                              # Moisture's numbers: the formula of Bolton 1980 [UNVERIFIED, as recalled there]
+      saturation:                              # Moisture's numbers: the formula of Bolton 1980 [as labelled there: DOCUMENTED for the
+                                               #  form, the numbers at second hand, the vapour's gas constant UNVERIFIED]
         pressure_at_zero_pa: 611.2
         exponent_factor: 17.67
         exponent_offset_k: 29.65
         vapour_gas_constant_j_kg_k: 461.5
         lowest_temperature_k: 150.0
       vapour_scale_height_m: 2500.0            # as Moisture's: turns what air can hold at the surface into what a column can hold
-      intensity_a_m_s: 28.2                    # potential intensity = A + B exp(C (T - T0)), T the sea's temperature in C
-      intensity_b_m_s: 55.8                    #  [UNVERIFIED: the form and the four numbers are recalled from DeMaria and Kaplan
-      intensity_c_per_k: 0.1813                #  1994, a fit over the Atlantic]
-      intensity_t0_c: 30.0
+      intensity_a_m_s: 28.2                    # potential intensity = A + B exp(C (T - T0)), T the sea's temperature in C, after DeMaria
+      intensity_b_m_s: 55.8                    #  and Kaplan 1994, a fit over the Atlantic [DOCUMENTED for the form and the basin: their
+      intensity_c_per_k: 0.1813                #  abstract: "An empirical relationship between climatological sea surface temperature (SST)
+      intensity_t0_c: 30.0                     #  and the maximum intensity of tropical cyclones in the North Atlantic basin is developed
+                                               #  from a 31-year sample (1962-1992)". The four numbers at second hand only: code that cites
+                                               #  the paper (MichaelFischerWx/TC-ATLAS, favorability.py; guillem/how-things-work) and a saved
+                                               #  copy of Wikipedia's "Tropical cyclone forecasting" (A = 28.2, C = 0.1813) give 28.2 + 55.8
+                                               #  exp(0.1813 (SST - 30)) m/s; TC-ATLAS calls the result knots in one comment and m/s in its
+                                               #  function. The paper's equation was not read]
       warm_enough_c: 20.0                      # below this the relation is not used and the intensity is zero [PROVISIONAL]
-      intensity_cap_m_s: 90.0                  # [PROVISIONAL: about the strongest winds measured in cyclones, UNVERIFIED]
-      gpi:                                     # |1e5 eta|^1.5 (H/50)^3 (V/70)^3 (1 + 0.1 S)^-2 [UNVERIFIED: recalled, Emanuel and Nolan 2004]
+      intensity_cap_m_s: 90.0                  # [PROVISIONAL: about the strongest winds measured in cyclones. Searched: the record is 95 m/s,
+                                               #  Hurricane Patricia in 2015, tying Typhoon Nancy of 1961 (Rogers et al. 2017, the text
+                                               #  Consensus gives; Foltz et al. 2016, abstract). A proposal, not applied:
+                                               #  docs/notes_pending/literature.md]
+      gpi:                                     # |1e5 eta|^1.5 (H/50)^3 (V/70)^3 (1 + 0.1 S)^-2, Emanuel and Nolan 2004 [DOCUMENTED at second
+                                               #  hand: the eight numbers as the xtci package carries them (wy2136/xtci, xtci/ERA5.py, "GPI
+                                               #  (Emanuel and Nolan 2004): |10**5\eta|**(3/2) * (H/50)**3 * (Vpot/70)**3 *
+                                               #  (1+0.1*Vshear)**(-2)"). Camargo, Emanuel and Sobel 2007, abstract: the four terms are the
+                                               #  vorticity at 850 hPa, the relative humidity at 600 hPa, the shear from 850 to 200 hPa and
+                                               #  the potential intensity. Neither paper's equation was read]
         vorticity_scale: 1.0e+5
         vorticity_power: 1.5
         humidity_ref: 50.0
@@ -699,11 +802,15 @@ slots:
     writes: [storm_influence, "table:storms"]
     constants:
       midlatitude_births_per_day: 6.0          # over the whole planet [PROVISIONAL: UNVERIFIED for Earth]
-      tropical_births_per_day: 0.25            # about 90 a year [UNVERIFIED: the order of Earth's yearly count of tropical cyclones]
-      beta_drift_m_s: 2.0                      # [UNVERIFIED: a few metres a second, recalled]
+      tropical_births_per_day: 0.25            # about 90 a year, the order of Earth's yearly count of tropical cyclones [DOCUMENTED:
+                                               #  Emanuel and Nolan 2004, abstract: "Some 90 tropical cyclones develop each year around the
+                                               #  globe. This number is remarkably constant, having a standard deviation of only 10."]
+      beta_drift_m_s: 2.0                      # a few metres a second [DOCUMENTED: Gonzalez et al. 2015, abstract: beta "causes
+                                               #  tropical cyclones to propagate poleward and westward at approximately 2 m s-1"]
       beta_poleward_share: 0.5                 # the drift heads as much toward the pole as toward the west [INFERRED]
-      tropical_needs_sea_c: 26.0               # a tropical cyclone holds its strength only over sea at least this warm [UNVERIFIED:
-                                               #  the usual threshold, recalled]
+      tropical_needs_sea_c: 26.0               # a tropical cyclone holds its strength only over sea at least this warm, the usual
+                                               #  threshold [DOCUMENTED: Cione 2015, abstract: "the oft-cited 26 C hurricane threshold linked
+                                               #  to hurricane maintenance", though 6 % of the hurricanes sampled lay over cooler sea]
       tropical_daily_decay: 0.5                # off warm sea it keeps this share of its strength each day [PROVISIONAL]
       tropical_reference_intensity_m_s: 70.0   # strength 1 at this potential intensity: the reference of the genesis index
       midlatitude_radius_km: 1000.0            # the reach of a storm's influence [INFERRED: the synoptic scale]
