@@ -71,6 +71,7 @@ what it does at the foot of the window.
 | **Delete…** | Asks first, with the list of what it removes: `.venv`, `worlds/`, `.worldengine/` (the panel's settings and logs) and the shortcuts or the app it installed. It does not remove the `world-engine` folder itself, Python or Git. After the panel has closed, delete the folder as section 5 says. |
 | **Details**, **Copy log**, **Open log** | Show the launcher's output, copy it (to send to someone who helps), or open its file. |
 | Settings: **Port**, **World** | The port (8765 unless you change it) and the world to serve: one of the worlds in `worlds/`, or a new name, which Start builds. The panel keeps them in `.worldengine/panel.json`. They can be changed while the engine is stopped. |
+| Settings: **Magic (invented physics)** | A world that Start builds gets the invented fantasy layer magic (mana: made-up rules, not claims about any real world). Ticking it moves the default world to `worlds/first-magic.zarr`, clearing it moves it back; a world that exists is served as it is. |
 
 When you close the panel while the engine runs, it asks whether to leave it running. **Keep running** closes the window
 and the engine goes on serving (open the panel again to stop it); **Stop and quit** stops it first.
@@ -198,12 +199,13 @@ builds `worlds/first.zarr` before it serves; later it opens at once.
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, click a cell for its values and its "why"
 answer. The day slider under "Storms and weather" steps through the days.
 
-Options (on Windows the same with one dash and a capital: `-Port`, `-Seed`, `-World`, `-Profile`, `-NoBrowser`):
+Options (on Windows the same with one dash and a capital: `-Port`, `-Seed`, `-World`, `-Profile`, `-Fantasy`, `-NoBrowser`):
 
 ```
 scripts/run.sh --port 9000                  # another port, if 8765 is taken
 scripts/run.sh --seed 7                     # another planet: built once into worlds/preview-seed7.zarr
 scripts/run.sh --profile standard           # the large world: 6.7 GB of memory, an hour or more to build
+scripts/run.sh --fantasy magic             # the invented layer magic (mana), built once into worlds/first-magic.zarr
 scripts/run.sh --no-browser                 # serve without opening a browser
 scripts/run.sh --check                      # install, build, check that it serves, and stop
 ```

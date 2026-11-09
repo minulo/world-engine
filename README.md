@@ -154,6 +154,16 @@ as far as Linux can show (docs/BUILD_NOTES.md, sections 5.3 and 6); the workflow
     python -m worldengine build --profile preview --seed 7 --out worlds/other.zarr
     python -m worldengine build --profile preview --interventions data/examples/frozen_region.yaml --out worlds/frozen.zarr
     python -m worldengine build --profile preview --interventions data/examples/place_label.yaml --out worlds/forest.zarr
+    python -m worldengine build --profile preview --fantasy magic --out worlds/first-magic.zarr   # the invented layer magic
+
+**Magic, an invented layer.** `--fantasy magic` (or `scripts/run.sh --fantasy magic`, `scripts\run.cmd -Fantasy magic`,
+or the control panel's box "Magic (invented physics)") lays the fantasy layer of `data/fantasy/magic.yaml` over the
+physics: mana, made by moving plates, volcanic fire, old ground, living land and storms, spread like heat along ley
+lines (plate boundaries and rivers), grounded by salt water, locked by ice and lost as it decays, with a "why" answer
+for every cell. Its rules are invented [INVENTED: a rule of the fantasy layer, made up, not a claim about any real
+world]; docs/notes_pending/magic.md sets them out. Without the switch nothing of it runs. With it, every other field of
+the default world stays the same bit for bit while its one feedback, "spent mana warms the world", keeps its default of
+zero [MEASURED, preview, seed 20261004].
 
 The archive that was handed over comes with `worlds/first.zarr`, the default world on the preview
 mesh, so `serve` works at once. A clone of the repository does not hold it (`worlds/` is not under
