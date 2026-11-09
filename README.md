@@ -151,6 +151,7 @@ as far as Linux can show (docs/BUILD_NOTES.md, sections 5.3 and 6); the workflow
     python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 40 to 80 minutes where it was built
     python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/ (--open opens it)
     python -m worldengine explain worlds/first.zarr --lat 18 --lon -102 --field biome
+    python -m worldengine explain worlds/first.zarr --lat 50 --lon 10 --field weather_precipitation --day 180   # why it rains, or not, that day
     python -m worldengine info worlds/first.zarr
     python -m worldengine weather worlds/first.zarr --day 180 --days 7 --lat 50 --lon 10   # a place's days, worked out on request
     python -m worldengine detail worlds/first.zarr --lat 45 --lon 10 --radius-km 500      # finer cells over one region
@@ -177,7 +178,8 @@ In the viewer: choose a field, drag to turn the globe, scroll to zoom, switch to
 the months, and click a cell for its values and its "why" answer. For elevation, ocean_mask, plate_id
 and crust_type a second slider plays the geological history as a film, one picture every 10 My. The fields
 of a day (weather temperature, rain, pressure, wind and storm influence) are in the list under "Storms and weather
-(one day)": a day slider and a play button step through the days, which the server works out on request.
+(one day)": a day slider and a play button step through the days, which the server works out on request, and a
+cell's "why" answer for such a field is that of the day shown.
 
 ### A "why" answer
 
@@ -212,6 +214,10 @@ Most of what this river carries is snow that melts in the warm months (35.9 of 5
 source), and the warmth that melts it is mostly brought: sunlight alone would hold the ground at -40.7 °C over
 the year, and heat spread from neighbouring cells and carried by the wind adds 41.8 K. Until 2026-10-25 the mouth of the
 largest river was fed by snow that never melted at 51° north (docs/BUILD_NOTES.md, sections 13 and 22).
+
+The weather of a day answers too. With `--day N` the day is worked out again, its two processes record what made
+each field, and the walk goes from the day's own part (the remembered noise of the date, the storm that passed and
+the cell it was born in) into the climate the day was drawn around.
 
 ## Earth, as a yardstick
 
@@ -265,6 +271,7 @@ Extra checks that are not part of the test run:
     python handoff/step3/relief_report.py worlds/first.zarr [older.zarr]   # relief, ocean floor, rivers and lakes
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
     python tools/why_scan.py worlds/first.zarr     # reads the "why" answers of every cell against the numbers of the cell
+                                                   # (with --day N, those of that day's weather too)
     python tools/compare_worlds.py A.zarr B.zarr   # how far two worlds differ, field by field, and a verdict
     python tools/earth_climate_patterns.py         # the patterns of steps 4 and 5 on the Earth twin, beside Earth
     python tools/gcm_compare.py RUN.json           # the engine's aquaplanet against an ExoPlaSim run (build step 10)

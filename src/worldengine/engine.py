@@ -1091,9 +1091,14 @@ class Engine:
     def weather_stages(self):
         return [s for s in self.stage_list if self.clocks[s] == "weather" and visible(self.plan.order[s])]
 
-    def day_weather(self, source, day: int) -> dict:
+    def _weather_fields(self) -> list:
+        return [f for f, st in self.stage_of.items() if self.clocks.get(st) == "weather" and not f.startswith("table:")]
+
+    def day_weather(self, source, day: int, causes: bool = False) -> dict:
         """The weather of one day, from a stored world (a StoreView or a MemoryView): the fields and tables that the
-        weather stages write. Nothing is kept between days: any day comes out the same however it is reached."""
+        weather stages write. Nothing is kept between days: any day comes out the same however it is reached. With
+        causes, the weather processes also record their drivers (the cause pass of the climate, for one day); the values
+        are the same bit for bit either way."""
         if not self.weather_stages():
             raise EngineError("this world has no weather stage: no process runs on the weather clock")
         if not isinstance(day, (int, np.integer)) or day < 0:
@@ -1102,13 +1107,59 @@ class Engine:
             self._world_from(source)
             self._weather_source = source
         w = self.world
+        for f in self._weather_fields():                     # the cause record of another day never stands beside this one
+            w.drivers.pop(f, None)
         with self._limit_threads():
             for stage in self.weather_stages():
-                self._run_round(stage, int(day), recording=False)
+                self._run_round(stage, int(day), recording=bool(causes))
         out = {f: w.fields[f] for f, st in self.stage_of.items() if self.clocks.get(st) == "weather" and f in w.fields
                and not f.startswith("table:")}
         out.update({"table:" + t: w.tables[t] for t, st in self.table_stage.items() if self.clocks.get(st) == "weather" and t in w.tables})
         return out
+
+    def day_view(self, source, day: int):
+        """The weather of one day with its cause records, as a view of the world that explain() reads like a stored one
+        (design: "weather causes when a day is recomputed on request"). The day is computed afresh from the world and the
+        date; its fields, drivers and lineage stand beside the world's own, which are read from `source` unchanged."""
+        from .store import DayView
+        values = self.day_weather(source, day, causes=True)
+        w = self.world
+        names = [f for f in values if not f.startswith("table:")]
+        drivers = {f: dict(w.drivers[f]) for f in names if f in w.drivers}
+        lineage = self._lineage(only=set(names))
+        additive = sorted({f for p in self.procs.values() for f in p.additive if f in names})
+        patterns, borrowed = self._day_patterns(source)
+        return DayView(source, int(day), values, drivers, lineage, additive, patterns, borrowed)
+
+    def _day_patterns(self, source):
+        """The sentence patterns for the answers of a day: those the world was stored with. A world stored before the
+        weather had patterns of its own borrows them from this copy of the engine's data/explanations.yaml, each only
+        where every driver it names is one that its process records today; the answers say so."""
+        from .params import DEFAULT_DATA_DIR, load_yaml_text
+        stored = source.attrs.get("explanations") or {}
+        patterns = {slot: dict(fields or {}) for slot, fields in stored.items()}
+        borrowed, own = [], None
+        for stage in self.weather_stages():
+            for step in self.plan.order[stage]:
+                proc = self.procs.get(step)
+                if proc is None:
+                    continue
+                for f in proc.writes:
+                    if f.startswith("table:") or f in patterns.get(step, {}):
+                        continue
+                    if own is None:
+                        path = DEFAULT_DATA_DIR / "explanations.yaml"
+                        own = (load_yaml_text(path.read_text(encoding="utf-8"), path.name) or {}) if path.exists() else {}
+                    pattern = (own.get(step) or {}).get(f)
+                    if not pattern:
+                        continue
+                    spoken = pattern.get("drivers") or {}
+                    named = set(spoken) | {p["at"] for p in spoken.values() if p and p.get("at")}
+                    named |= {t for case in pattern.get("cases") or [] for t in (case.get("when") or {})}
+                    if named <= set(proc.drivers.get(f, ())):
+                        patterns.setdefault(step, {})[f] = pattern
+                        borrowed.append(f)
+        return patterns, borrowed
 
     def run_dated(self, source, run_path, last_day: int, continue_from=None, first_day: int = 0):
         """Step the stages on the dated clock from first_day (or from the day after a run store's last) to last_day,
@@ -1172,10 +1223,12 @@ class Engine:
         return {f: (None if isinstance(d, float) and d != d else d)
                 for f, d in ((f, self.registry.fields[f].default) for f in self.lagged_fields if self.stage_of.get(f) == stage)}
 
-    def _lineage(self):
-        w = self.world
+    def _lineage(self, only=None) -> dict:
+        """The lineage of every field the world holds, or of the fields in `only` (those of a day). Returns the entries
+        written."""
+        w, done = self.world, {}
         for f, writer in self.plan.producer.items():
-            if f.startswith("table:") or f not in w.fields:
+            if f.startswith("table:") or f not in w.fields or (only is not None and f not in only):
                 continue
             d = self.plan.steps[writer]
             proc = self.procs.get(writer)
@@ -1207,6 +1260,8 @@ class Engine:
                 "fingerprint": fingerprint(handed), "reads": list(d["reads"]), "reads_lagged": list(d["lagged"]),
                 "groups": groups, "modified_by": modifiers,
                 "pushes": [q.id for q in pushes], "round": w.written_round.get(f)}
+            done[f] = w.lineage[f]
+        return done
 
     # ------------------------------------------------------------------ the build
     def build(self, continue_from=None) -> World:

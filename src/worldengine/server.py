@@ -2,9 +2,10 @@
 
 It opens one world store for reading only, serves the viewer page, and answers what the page
 asks for: field values, the values of one cell, the "why" answers, and the weather of a day,
-which it computes on request with the parameters the world was built with (build step 8). By
-default it listens on this machine only; `serve --host 0.0.0.0` opens it to the network, which a
-container needs. Anything it keeps between requests equals what a fresh computation gives.
+which it computes on request with the parameters the world was built with (build step 8), with
+the cause records from which the "why" answers of that day are read. By default it listens on
+this machine only; `serve --host 0.0.0.0` opens it to the network, which a container needs.
+Anything it keeps between requests equals what a fresh computation gives.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import sys
 import threading
 import time
 import urllib.request
+from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -30,6 +32,8 @@ from .store import StoreView, code_fingerprint, field_specs, lock_fingerprint
 from .library.units import SECONDS_PER_DAY
 
 VIEWER_DIR = Path(__file__).resolve().parents[2] / "viewer"
+
+KEEP_DAYS = 2                   # the days of weather kept, with their cause records: the one shown and the one asked for next
 
 # The types of the viewer's own files, fixed here. mimetypes reads them from the system, and on Windows from the
 # registry, where another program may have set .js to text/plain [DOCUMENTED: Lib/mimetypes.py of Python 3.13, "on
@@ -49,7 +53,7 @@ class WorldService:
         self._stats: dict[str, dict] = {}
         self._fields: dict[str, np.ndarray] = {}
         self._weather_lock = threading.Lock()
-        self._engine, self._engine_error, self._day, self._day_values = None, None, None, None
+        self._engine, self._engine_error, self._days = None, None, OrderedDict()
         self._set_threads()
 
     def _set_threads(self):
@@ -130,21 +134,33 @@ class WorldService:
         return {"fields": {f: specs[f] for f in names}, "writers": writers,
                 "days_per_year": eng.params["planet"]["year_length_s"] / SECONDS_PER_DAY}
 
-    def weather(self, name, day, part=None) -> bytes:
-        """One field of the weather of a day, for display (the speed or one part of a direction)."""
+    def day_view(self, day):
+        """The weather of a day with its cause records (Engine.day_view): worked out once for its field values and its
+        "why" answers, which come out the same bit for bit as when the day is worked out alone."""
         if day < 0:
             raise IndexError(f"day {day} is before the first day, 0")
+        from .engine import EngineError
         with self._weather_lock:
             eng = self._weather_engine()
             if eng is None:
                 raise KeyError(f"the days of this world cannot be computed: {self._engine_error}")
-            if self._day != day:
-                self._day_values = eng.day_weather(self.view, int(day))
-                self._day = day
-            values = self._day_values
-        if name not in values or name.startswith("table:"):
+            if day in self._days:
+                self._days.move_to_end(day)
+            else:
+                try:
+                    self._days[day] = eng.day_view(self.view, int(day))
+                except EngineError as e:                     # a world without a weather stage
+                    raise KeyError(str(e)) from None
+                while len(self._days) > KEEP_DAYS:
+                    self._days.popitem(last=False)
+            return self._days[day], eng
+
+    def weather(self, name, day, part=None) -> bytes:
+        """One field of the weather of a day, for display (the speed or one part of a direction)."""
+        view, eng = self.day_view(day)
+        if name not in view.day_fields():
             raise KeyError(f"the weather of a day holds no field named {name}")
-        return np.ascontiguousarray(self._part(values[name], eng.registry.fields[name].kind, part), dtype="<f4").tobytes()
+        return np.ascontiguousarray(self._part(view.field(name), eng.registry.fields[name].kind, part), dtype="<f4").tobytes()
 
     def _part(self, a, kind, part):
         if kind != "direction":
@@ -237,8 +253,20 @@ class WorldService:
             out["values"][name] = v
         return out
 
-    def explain(self, cell: int, field: str) -> dict:
-        return explain(self.view, cell, field)
+    def explain(self, cell: int, field: str, day=None) -> dict:
+        """The "why" answer for a field in a cell; for a field of a day, the answer of that day."""
+        spec = self.view.specs.get(field)
+        daily = spec is not None and spec["shape"] == "day_cell"
+        if day is None:
+            return explain(self.view, cell, field)           # which refuses a field of a day, asked without one
+        if spec is None:
+            raise KeyError(f"the world holds no field named {field}")
+        if not daily:
+            raise KeyError(f"{field} is not a field of a day: ask for it without a day")
+        n = self.view.meta["cells"]
+        if not (0 <= cell < n):                              # before the day is worked out
+            raise IndexError(f"cell {cell} is outside 0 to {n - 1}")
+        return explain(self.day_view(day)[0], cell, field)
 
 
 class _BadRequest(Exception):
@@ -296,7 +324,7 @@ class _Handler(BaseHTTPRequestHandler):
             if url.path == "/api/cell":
                 return self._json(s.cell(_asked(q, "id", int)))
             if url.path == "/api/explain":
-                return self._json(s.explain(_asked(q, "cell", int), _asked(q, "field")))
+                return self._json(s.explain(_asked(q, "cell", int), _asked(q, "field"), _asked(q, "day", int) if "day" in q else None))
             if url.path.startswith("/api/"):
                 return self._json({"error": f"no such request: {url.path}"}, 404)
             rel = "index.html" if url.path in ("/", "") else url.path.lstrip("/")
@@ -308,7 +336,8 @@ class _Handler(BaseHTTPRequestHandler):
             ctype = CONTENT_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             return self._send(200, path.read_bytes(), ctype + ("; charset=utf-8" if ctype.startswith("text/") or ctype.endswith("javascript") else ""))
         except (_BadRequest, KeyError, IndexError) as e:    # a wrong request, or a field, cell or month the world does not have
-            return self._json({"error": str(e).strip("'\"")}, 400)
+            said = e.args[0] if isinstance(e, KeyError) and e.args else str(e)    # (a KeyError's text is quoted; another's ends as written)
+            return self._json({"error": str(said)}, 400)
         except Exception as e:                               # a fault of the engine: say so, and keep the connection whole
             return self._json({"error": f"the server could not answer ({type(e).__name__}: {e})"}, 500)
 
