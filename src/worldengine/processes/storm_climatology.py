@@ -13,13 +13,19 @@ Tropical cyclones: the genesis potential index of Emanuel and Nolan, built from 
 potential intensity and wind shear [DOCUMENTED in the design: Camargo et al. 2007]:
     GPI = |1e5 eta|^1.5 (H / 50)^3 (Vpot / 70)^3 (1 + 0.1 Vshear)^-2,
 with eta the absolute vorticity (the planet's spin plus the curl of the surface wind), H the relative humidity in per
-cent, Vpot the potential intensity and Vshear the change of wind with height (m/s) [UNVERIFIED: the exponents and
-divisors are recalled, as published by Emanuel and Nolan 2004]. A one-layer engine has none of these at their heights:
-the humidity is the column's water against what the column could hold at its temperature (Moisture's measure), and
-the shear is the gap between the steering wind and the surface wind (my estimates [INFERRED]).
+cent, Vpot the potential intensity and Vshear the change of wind with height (m/s) [DOCUMENTED at second hand: the
+exponents and divisors as the xtci package carries them, "GPI (Emanuel and Nolan 2004): |10**5\\eta|**(3/2) *
+(H/50)**3 * (Vpot/70)**3 * (1+0.1*Vshear)**(-2)"; the abstract of Camargo, Emanuel and Sobel 2007 names the four terms
+and their heights, 850 hPa, 600 hPa and 850 to 200 hPa; neither paper's equation was read]. A one-layer engine has none
+of these at their heights: the humidity is the column's water against what the column could hold at its temperature
+(Moisture's measure), and the shear is the gap between the steering wind and the surface wind (my estimates
+[INFERRED]).
 Potential intensity, the strongest wind the sea and air could sustain, is taken from the sea's temperature by an
-empirical relation of the form A + B exp(C (T - T0)) [UNVERIFIED: the form and the constants are recalled, after DeMaria
-and Kaplan 1994]; over land and over seas too cool for the relation it is zero.
+empirical relation of the form A + B exp(C (T - T0)), after DeMaria and Kaplan 1994 [DOCUMENTED for the form: their
+abstract, "An empirical relationship between climatological sea surface temperature (SST) and the maximum intensity of
+tropical cyclones in the North Atlantic basin"; the constants at second hand, from code that cites the paper and a copy
+of an encyclopaedia page; the paper's equation was not read]; over land and over seas too cool for the relation it is
+zero.
 
 Ignores: thunderstorms; storms acting on each other; the heights that the published index reads.
 Wrong where: counts of storms; read the maps as where and when, not how many. Real storm tracks peak downwind of where

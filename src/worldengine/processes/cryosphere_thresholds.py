@@ -13,6 +13,16 @@ yearly mean is cold enough. The thresholds are parameters (design, Layer 5). In 
     and in between by a straight line. A land cell colder than the first in every month therefore has full
     permafrost, and one above freezing in every month has none (the design's known answers).
 Before this step Albedo decided for itself where snow and ice lay; it now reads snow_ice_cover from the last round.
+The two permafrost thresholds, -8 and -1 C, are rules of thumb that published work bears out at the cold end of its
+ranges [DOCUMENTED: Smith and Riseborough 2002, abstract, continuous permafrost begins between -6 and -8 C; Jin et al.
+2007, abstract, the southern limit in northeastern China lies on the -1 to +1 C isotherms of the yearly mean air
+temperature].
+A published model could replace them (the search for one that the design asks for, made on 2026-11-09): the frost
+number of Nelson and Outcalt 1987, "a dimensionless ratio defined by manipulation of either freezing and thawing
+degree-day sums" [DOCUMENTED: its abstract], which the engine could build from the monthly temperatures and their
+daily spread [INFERRED]. The TTOP model (Smith and Riseborough 2002; Obu et al. 2019) needs the ground's thermal
+conductivity ratio and n-factors [DOCUMENTED: abstracts], which the engine does not have, and a thermodynamic sea ice
+(Semtner 1976) needs a lid of ice in EnergyBalance. The rule stays until then [INFERRED].
 
 Ignores: ice that flows, glaciers carving valleys, ice ages, the insulation of the ground by snow, sea ice blown by
 the wind, and the salt of the sea beyond its freezing point.

@@ -27,9 +27,10 @@ cools by its rate times the gap to the deep water. The ocean neither makes nor l
 sea is taken back out, spread evenly over the sea [INFERRED: the closure of a model with no deep ocean].
 
 How deep the sea is stirred (a departure from the design's declarations, build step 4): the wind stirs the sea to the
-Ekman depth scale, a coefficient times the friction velocity sqrt(|tau| / rho) over |f| [UNVERIFIED: the form of the
-scale as recalled; the coefficient is PROVISIONAL], kept between two limits. EnergyBalance reads it in the next round as
-the depth of the sea that the seasons warm and cool. The diagnosis of the cold northern summers (docs/BUILD_NOTES.md,
+Ekman depth scale, a coefficient times the friction velocity sqrt(|tau| / rho) over |f| [DOCUMENTED for the form:
+Lozovatsky et al. 2005, abstract, "hD ~ 0.44Lf, where Lf = u*/f is the Ekman scale", on a section of the North Atlantic
+at 53 N; the coefficient here is CALIBRATED, data/models.yaml], kept between two limits. EnergyBalance reads it in the
+next round as the depth of the sea that the seasons warm and cool. The diagnosis of the cold northern summers (docs/BUILD_NOTES.md,
 section 4.9) found the sea's seasons the larger cause, and left the mend to the ocean: "how deep wind and cooling stir
 the sea". Cooling's share, convection in winter, is not modelled.
 
