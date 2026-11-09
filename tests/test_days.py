@@ -20,6 +20,7 @@ from worldengine.library import days as dy
 from worldengine.library.units import SECONDS_PER_DAY
 from worldengine.params import ParameterError
 from worldengine.scheduler import Refused
+from worldengine.server import WorldService
 from worldengine.store import StoreView
 from worldengine.testing import Harness
 
@@ -130,6 +131,22 @@ def test_a_stage_that_steps_by_a_month_runs_once_a_month(world, tmp_path):
     assert log["item"].tolist() == [0, 1, 2, 3] and log["value"].tolist() == [31, 30, 31, 30]    # day 100 lies in month 3
     assert kept["steps"] == {"flock": {"step": "month", "reached": 3}, "barrel": {"step": "day", "reached": 100}}
     assert kept["fields"]["flock"].max() > 0
+
+
+def test_the_server_gives_the_weather_of_a_day_and_refuses_a_day_or_a_field_it_cannot_give(world):
+    """(tools/refusal_audit.py found these three refusals of the server reached by no test.)"""
+    service = WorldService(world)
+    want = np.ascontiguousarray(day_engine().day_weather(world, 12)["toy_rain"], dtype="<f4").tobytes()
+    assert service.weather("toy_rain", 12) == want
+    with pytest.raises(IndexError, match="day -1 is before the first day, 0"):
+        service.weather("toy_rain", -1)
+    with pytest.raises(KeyError, match="the weather of a day holds no field named barrel"):
+        service.weather("barrel", 12)
+    broken = StoreView(world.path)                               # read as a world whose parameters this code cannot take
+    text = broken.attrs["parameters_text"]
+    broken.attrs["parameters_text"] = {**text, "models": text["models"].replace("toy_processes:ToyRain", "toy_processes:NoSuchRain")}
+    with pytest.raises(KeyError, match="the days of this world cannot be computed: ParameterError: models.yaml.slots.Rain"):
+        WorldService(broken).weather("toy_rain", 3)
 
 
 def test_a_world_without_a_weather_stage_has_no_days(tmp_path):
