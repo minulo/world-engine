@@ -988,7 +988,7 @@ def test_two_regions_that_overlap_agree_on_the_cells_they_share_and_one_region_t
 
 
 def test_a_refined_region_steps_across_the_edges_of_the_world_s_cells_as_it_steps_inside_them(detail):
-    """Found, then kept (docs/notes_pending/detail-edges.md): the median step between fine neighbours whose world cells
+    """Found, then kept (docs/BUILD_NOTES.md, section 25): the median step between fine neighbours whose world cells
     differ, over the median step between fine neighbours of one world cell, on the region at the highest ground. Since the
     surface is planar between the world's cell centres and what its passes leave goes in as a bump inside each cell, with
     no offset per cell, it is 1.117

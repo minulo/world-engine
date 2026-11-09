@@ -22,7 +22,7 @@ cells they share, and one region asked for twice is the same bit for bit.
 Why a planar surface. A first version laid the surface with smooth weights that fall off with the distance to each
 centre (a Gaussian 0.6 coarse spacings wide). Such weights flatten the surface near each centre and steepen it near the
 edges between coarse cells: on section 21's region its fine steps across those edges were larger than inside a cell
-even when its passes had converged and no last correction was made [MEASURED, docs/notes_pending/detail-edges.md]. A
+even when its passes had converged and no last correction was made [MEASURED, docs/BUILD_NOTES.md, section 25]. A
 surface planar between three centres has no such places, and each of its passes leaves about a third of the gap where
 the Gaussian surface's left about 0.7 [MEASURED, same place].
 
