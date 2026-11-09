@@ -73,7 +73,7 @@ Python 3.13.16) on 2026-10-25 [MEASURED]:
 | `worlds/first.zarr` on disk | 37 MB (26 MB of data in 1,681 files) |
 
 The other times in this README come from two-core machines. Plan for about 1 GB of disk and 1 GB of free memory
-for the preview world; the standard world needs 6.7 GB of memory at its peak (under "Use", below). Nothing was
+for the preview world; the standard world needs 7.2 GB of memory at its peak (under "Use", below). Nothing was
 measured on a Mac or on Windows by hand. The workflow `.github/workflows/local-run.yml` runs the launcher there,
 twice, then the tests (all but `tests/test_world.py`), then the server in the background; on its first run, on
 2026-10-25, every step passed on ubuntu-latest, macos-latest (Apple silicon) and windows-latest (through Windows
@@ -126,7 +126,7 @@ Then open http://localhost:8765/. The first start builds the preview world into 
 handles [INFERRED; not tried in Docker]. Inside the container the server listens on every address
 (`serve --host 0.0.0.0`); `-p 127.0.0.1:8765:8765` keeps it to this machine, as the engine's own server is by
 default. `-e WORLDENGINE_PROFILE=standard` builds the standard world instead, which needs Docker Desktop to have
-8 GB of memory or more [INFERRED from its peak of 6.7 GB]. The image is 782 MB [MEASURED]. Whether Docker Desktop still runs on every Intel Mac was not
+8 GB of memory or more [INFERRED from its peak of 7.2 GB]. The image is 782 MB [MEASURED]. Whether Docker Desktop still runs on every Intel Mac was not
 checked [UNVERIFIED].
 
 ## Install by hand
@@ -151,7 +151,7 @@ as far as Linux can show (docs/BUILD_NOTES.md, sections 5.3 and 6); the workflow
 
     python -m worldengine order                                  # the running order computed from the declarations
     python -m worldengine build --profile preview  --out worlds/first.zarr     # 10,242 cells; about two minutes where it was built
-    python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; 40 to 80 minutes where it was built
+    python -m worldengine build --profile standard --out worlds/big.zarr       # 163,842 cells; about 45 minutes where it was built
     python -m worldengine serve worlds/first.zarr                 # then open http://127.0.0.1:8765/ (--open opens it)
     python -m worldengine explain worlds/first.zarr --lat 18 --lon -102 --field biome
     python -m worldengine explain worlds/first.zarr --lat 50 --lon 10 --field weather_precipitation --day 180   # why it rains, or not, that day
@@ -169,7 +169,7 @@ The archive that was handed over comes with `worlds/first.zarr`, the default wor
 mesh, so `serve` works at once. A clone of the repository does not hold it (`worlds/` is not under
 version control): the second command above builds it. The times are from two-core cloud machines whose
 speed changes within a day by a factor of two (docs/BUILD_NOTES.md, section 4.7); nothing was
-timed on a laptop. The standard build holds 6.7 GB of memory at its peak.
+timed on a laptop. The standard build holds 7.2 GB of memory at its peak.
 
 The same seed and parameters always give the same world, bit for bit, on one machine with the pinned
 versions. With numpy's AVX-512 code switched off the last digits differ, so on another kind of

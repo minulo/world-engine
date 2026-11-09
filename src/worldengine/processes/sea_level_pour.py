@@ -52,9 +52,7 @@ class PouredSea(Process):
         in_main = wet & (body == main)
         above = np.where(wet, surface, height) - sea_level
         if wet.any() and not wet.all():
-            to_wet = op.arc_distance_to_set(mesh, wet)[0]
-            to_dry = op.arc_distance_to_set(mesh, ~wet)[0]
-            coast = np.where(wet, to_dry, to_wet) * radius
+            coast = op.arc_distance_across(mesh, wet) * radius
         else:
             coast = np.full(n, np.pi * radius)
         ctx.write("ocean_mask", wet)

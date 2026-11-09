@@ -86,6 +86,7 @@ class SummerSinkingCirculation(Process):
         sector_width = c["monsoon"]["sector_deg"]
         n_sectors = int(round(2 * HALF_TURN / sector_width))
         sector = np.minimum(((lon + HALF_TURN) / sector_width).astype(np.int64), n_sectors - 1)
+        occupied = np.bincount(sector, minlength=n_sectors) > 0
         temp = ctx.read("surface_temperature").astype(np.float64) + ctx.shared["lapse_rate_k_per_km"] * height / M_PER_KM
 
         band = c["band_deg"]
@@ -116,14 +117,13 @@ class SummerSinkingCirculation(Process):
             # equator, so that over a hot continent it moves far toward the summer pole (a monsoon trough)
             m_cfg = c["monsoon"]
             sector_rise = np.empty(n_sectors)
+            s_centres, s_zonal = op.zonal_means_of_groups(mesh, temp[m], band, sector, n_sectors, fill=True)
+            near = np.abs(s_centres) <= o["rising_search_deg"]
             for k in range(n_sectors):
-                in_sector = sector == k
-                if not in_sector.any():
+                if not occupied[k]:
                     sector_rise[k] = rise
                     continue
-                s_centres, s_zonal = op.zonal_mean(mesh, temp[m], band, mask=in_sector.astype(np.float64), fill=True)
-                near = np.abs(s_centres) <= o["rising_search_deg"]
-                sector_rise[k] = _soft_peak(s_centres[near], s_zonal[near], o["rising_sharpness_per_k"])
+                sector_rise[k] = _soft_peak(s_centres[near], s_zonal[k][near], o["rising_sharpness_per_k"])
             reach = min(m_cfg["rising_limit_deg"], edge - o["rising_margin_from_edge_deg"])
             kernel = np.ones(int(m_cfg["smoothing_sectors"])) / int(m_cfg["smoothing_sectors"])
             wrapped = np.concatenate([sector_rise[-len(kernel):], sector_rise, sector_rise[:len(kernel)]])

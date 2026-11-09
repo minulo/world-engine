@@ -186,6 +186,18 @@ def arc_distance_to_set(mesh: Mesh, members: np.ndarray):
     return 2.0 * np.arcsin(np.clip(0.5 * d, 0.0, 1.0)), idx[k]
 
 
+def arc_distance_across(mesh: Mesh, members: np.ndarray) -> np.ndarray:
+    """For every cell of the set, the great-circle angle to the nearest cell outside it; for every cell outside, the
+    angle to the nearest cell of the set. The set and the rest must both hold a cell. The same numbers as taking
+    arc_distance_to_set() of the set for the cells outside it and of the rest for the cells inside, with each search
+    made only for the cells whose answer is used (build-speed: half the searches)."""
+    inside, outside = np.flatnonzero(members), np.flatnonzero(~np.asarray(members, dtype=bool))
+    chord = np.empty(mesh.n)
+    chord[outside] = cKDTree(mesh.xyz[inside]).query(mesh.xyz[outside])[0]
+    chord[inside] = cKDTree(mesh.xyz[outside]).query(mesh.xyz[inside])[0]
+    return 2.0 * np.arcsin(np.clip(0.5 * chord, 0.0, 1.0))
+
+
 def zonal_mean(mesh: Mesh, f: np.ndarray, band_deg: float, mask: np.ndarray | None = None, fill: bool = False):
     """Area-weighted mean of a field in latitude bands. Returns the band centres (degrees) and the means; for a
     field with one slice per month, the means of every month.
@@ -211,4 +223,30 @@ def zonal_mean(mesh: Mesh, f: np.ndarray, band_deg: float, mask: np.ndarray | No
     if fill and np.isnan(out).any():
         have = ~np.isnan(out)
         out = np.interp(centres, centres[have], out[have])
+    return centres, out
+
+
+def zonal_means_of_groups(mesh: Mesh, f: np.ndarray, band_deg: float, group: np.ndarray, groups: int, fill: bool = False):
+    """zonal_mean() of one field within each group of cells, all groups at once: row k holds what
+    zonal_mean(mesh, f, band_deg, mask=(group == k).astype(np.float64), fill=fill) returns, bit for bit. The sums are
+    taken over the same cells in the same order: the cells outside a group, which add exactly zero to that group's sums
+    in zonal_mean(), are left out. A group with no cell gives a row of NaN, filled or not."""
+    f = np.asarray(f)
+    if f.shape != (mesh.n,):
+        raise ValueError(f"zonal_means_of_groups takes one value per cell; got shape {f.shape}")
+    nb = int(round(HALF_TURN_DEG / band_deg))
+    nb += 1 - nb % 2
+    band_deg = HALF_TURN_DEG / nb
+    b = np.clip(((mesh.lat + QUARTER_TURN_DEG) / band_deg).astype(np.int64), 0, nb - 1)
+    key = np.asarray(group, dtype=np.int64) * nb + b
+    num = np.bincount(key, weights=mesh.area * f, minlength=groups * nb).reshape(groups, nb)
+    den = np.bincount(key, weights=mesh.area, minlength=groups * nb).reshape(groups, nb)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out = num / den
+    centres = -QUARTER_TURN_DEG + band_deg * (np.arange(nb) + 0.5)
+    if fill:
+        for k in range(groups):
+            have = ~np.isnan(out[k])
+            if have.any() and not have.all():
+                out[k] = np.interp(centres, centres[have], out[k][have])
     return centres, out
