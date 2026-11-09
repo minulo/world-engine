@@ -309,6 +309,27 @@ def test_a_days_answer_walks_back_into_the_climate_it_was_drawn_around(weather_w
     assert "no storm of the day comes within twice its radius" in explain(view, quiet, "storm_influence")["chain"][0]["text"]
 
 
+def test_a_field_of_a_day_is_explained_on_a_day_and_only_so(weather_world, capsys):
+    """`explain --day N` answers for a field of a day; the field asked without a day, a field that is not of a day asked
+    with one, and a day before the first are refused, in words that say what to ask instead."""
+    from worldengine import cli
+    with pytest.raises(KeyError) as err:
+        explain(weather_world, 5, "weather_temperature")
+    assert "is a field of a day, worked out on request: ask with a day" in str(err.value)
+    path = str(weather_world.path)
+    assert cli.main(["explain", path, "--cell", "5", "--field", "weather_precipitation", "--day", "200"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("Why is weather_precipitation like this on day 200 at ") and "\n1. On day 200, " in out
+    assert cli.main(["explain", path, "--lat", "50", "--lon", "10", "--field", "storm_influence", "--day", "40", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["day"] == 40
+    for args, words in ((["--cell", "5", "--field", "weather_wind"], "is a field of a day, worked out on request: ask with --day N"),
+                        (["--cell", "5", "--field", "surface_temperature", "--day", "3"], "is not a field of a day: ask for it without --day"),
+                        (["--cell", "5", "--field", "weather_wind", "--day", "-1"], "a day is a whole number from 0"),
+                        (["--cell", "99999", "--field", "weather_wind", "--day", "3"], "cell 99999 is outside 0 to 2561")):
+        assert cli.main(["explain", path, *args]) == 2, args
+        assert words in capsys.readouterr().err
+
+
 def test_a_world_stored_before_the_weather_had_patterns_borrows_those_of_this_engine(weather_world, tmp_path):
     """A world stored before the weather processes had sentence patterns is answered with the patterns of this copy of
     the engine, wherever every driver they name is one its processes record; the answer says so."""
