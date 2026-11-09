@@ -1,12 +1,17 @@
 # Finer detail over one region of a finished world (build step 11): the constants of src/worldengine/detail.py.
 # Lengths are given in coarse spacings, the mean distance between neighbouring cells of the world.
 extra_levels: 2                     # each coarse cell is split into about 4 ** 2 = 16 fine cells: 60 km to 15 km on the standard mesh
-smoothing_spacings: 0.6             # width of the weights that lay a smooth surface through the coarse values [INFERRED: wide enough
-                                    #  to join the cells without steps, narrow enough to keep a coarse cell's own value near its centre]
-mean_iterations: 8                  # passes that lift or lower the fine heights so that each coarse cell keeps its mean height
+mean_iterations: 12                 # passes that lift or lower the surface's values at the coarse centres so that each coarse cell
+                                    #  keeps its mean height, temperature and rain; what is left goes in as a bump inside each cell
+                                    #  [MEASURED: on section 21's region 12 passes leave 0.002 m of height, 8 left 0.19 m]
+relaxation: 1.4                     # each pass moves a centre's value by this many times its cell's gap [INFERRED: 2 / (0.44 + 1).
+                                    #  A cell's mean holds 0.61 to 0.66 of its own centre's value (MEASURED, preview mesh), so a
+                                    #  pattern that alternates between neighbours keeps about 0.44 of itself and a broad one all]
 roughness_share: 0.2                # the fine heights stray from the smooth surface by about this share of the spread of the coarse
                                     #  heights around [PROVISIONAL]
 wave_lengths_in_spacings: [1.0, 0.25]    # the roughness has waves from one coarse spacing down to one fine spacing
 waves: 64
 rain_per_windward_slope: 20.0       # rain grows by 20 % for each 1 % of slope that faces the wind, and falls as much on slopes
 rain_factor_limits: [0.3, 3.0]      #  that face away, within these limits [PROVISIONAL: a rule set here, not taken from a source]
+rain_floor_mm: 0.001                # rain is laid on the surface in logarithms, and no less than this a month is taken for it
+                                    #  there [INFERRED: far below the rain of any wet cell, above nothing so that it has a logarithm]
