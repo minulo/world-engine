@@ -20,7 +20,10 @@ that steps through dates (step 8), the climate rerun inside the history (step 9)
 a full circulation model (step 10) and finer detail over a region (step 11). What steps 4 to 11 measured,
 what they did not do and where the worlds are wrong is in docs/BUILD_NOTES.md, sections 13 to 21. Read
 section 13 first: the northern continents of the Earth twin are still far too cold in summer, and the
-standard build takes longer than its profile allows.
+standard build takes longer than its profile allows. A second version of the ocean, with an overturning driven by
+density and the salt that sets it, is built and tested but is not the default: on the Earth twin it moves the ocean's
+heat and the northern summer the right way, and wets the Sahara and dries the Amazon past what the Earth tests allow
+(docs/notes_pending/ocean-overturning.md).
 
 ## Run it on your computer
 
