@@ -141,6 +141,35 @@ def sparse_joined(cell, rows, cols, at, side, steps):
     return np.asarray(runs[at, side]).ravel() > 0
 
 
+def plain_returned_from_aloft(mesh, q, temperature, radius, solver):
+    """ocean.returned_from_aloft() as it stood before build-speed, with its loop in plain Python."""
+    i, j = mesh.edge_cells[:, 0], mesh.edge_cells[:, 1]
+    spreads = np.bincount(i, weights=q, minlength=mesh.n) - np.bincount(j, weights=q, minlength=mesh.n)
+    sinks, rises = np.maximum(spreads, 0.0), np.maximum(-spreads, 0.0)
+    if rises.sum() <= 0.0:
+        return np.zeros(mesh.n)
+    sources = rises - sinks
+    sources[0] = 0.0
+    chi = solver.solve(sources)
+    aloft_q = (mesh.edge_dual / mesh.edge_dist) * (chi[i] - chi[j])
+    upstream, downstream = np.where(aloft_q > 0, i, j), np.where(aloft_q > 0, j, i)
+    flow = np.abs(aloft_q)
+    temperature = np.asarray(temperature, dtype=np.float64)
+    incoming = [[] for _ in range(mesh.n)]
+    for e in range(flow.size):
+        incoming[downstream[e]].append(e)
+    aloft = temperature.copy()
+    for c in np.argsort(-chi, kind="stable"):
+        mass = rises[c]
+        heat = rises[c] * temperature[c]
+        for e in incoming[c]:
+            mass += flow[e]
+            heat += flow[e] * aloft[upstream[e]]
+        if mass > 0.0:
+            aloft[c] = heat / mass
+    return sinks * (aloft - temperature) / (mesh.area * radius * radius)
+
+
 @njit(cache=True)
 def plain_sweep(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_coef, w_sat, rain_scale, rain_steepness,
                 rain_humidity, lift_coef, source, extra, orders, cycles, newton_steps, newton_tolerance):
@@ -302,7 +331,9 @@ def test_the_heat_returned_from_aloft_is_the_same_with_the_paths_worked_out_once
     solver = oc.upper_branch_solver(m)
     paths = oc.aloft_paths(m, q, solver)
     for t in (rng.normal(15.0, 10.0, m.n), 30.0 * np.cos(np.deg2rad(m.lat)) - 10.0):
-        assert same(oc.returned_from_aloft(m, q, t, R, solver, paths), oc.returned_from_aloft(m, q, t, R, solver))
+        before = plain_returned_from_aloft(m, q, t, R, solver)
+        assert same(oc.returned_from_aloft(m, q, t, R, solver, paths), before)
+        assert same(oc.returned_from_aloft(m, q, t, R, solver), before)
     still = np.zeros(m.edge_cells.shape[0])
     assert oc.aloft_paths(m, still, solver) == () and same(oc.returned_from_aloft(m, still, t, R), np.zeros(m.n))
 
