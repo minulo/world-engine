@@ -7,9 +7,10 @@ of Barnes et al. 2021, used here for the sea itself.
 Every tie is broken by cell number, so the result never varies.
 
 The loops are compiled (numba, fastmath off) and do exactly what the plain Python of the first versions did, step
-for step: the same queues taken in the same order, the same sums in the same order (docs/notes_pending/build-speed.md:
-the same bits on the default world, the plain versions about 30 times slower). A queue is a heap ordered by
-(height, cell number); two entries that compare equal are the same entry, so no heap can take them in another order.
+for step: the same queues taken in the same order, the same sums in the same order (build-speed, in docs/BUILD_NOTES.md:
+the same bits on the default worlds; SeaLevel took 0.75 s a round on the standard mesh where it took 2.12). A queue is
+a heap ordered by (height, cell number); two entries that compare equal are the same entry, so no heap can take them
+in another order.
 """
 from __future__ import annotations
 

@@ -62,8 +62,10 @@ class WindEnergyBalance(Process):
         capacity = np.where(sea, c["sea_heat_capacity_j_m3_k"] * stirred, c["heat_capacity_land_j_m2_k"])
         waves = min(int(c["time_waves"]), months // 2)
         # The yearly mean (wave 0) does not depend on how slowly a cell warms, so its solver is kept for the whole climate
-        # run; the solvers of the waves are prepared again only when the stirred depth changes. Each is a function of
-        # its matrix alone, and its key holds everything the matrix is made of (docs/notes_pending/build-speed.md).
+        # run; the solvers of the waves are prepared again only when the stirred depth changes. A solver is a function of
+        # its matrix alone, and its key holds every part of the matrix that can change within a climate run (the memo is
+        # emptied at the start of each). The stirred depth crosses a step somewhere in every round until the last, so the
+        # waves' solvers are prepared again in nearly every round (build-speed, in docs/BUILD_NOTES.md).
         if ("laplacian", mesh.level) not in ctx.memo:
             ctx.memo[("laplacian", mesh.level)] = op.laplacian_matrix(mesh)
         lap = ctx.memo[("laplacian", mesh.level)]

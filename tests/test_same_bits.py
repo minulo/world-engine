@@ -1,4 +1,4 @@
-"""The faster forms of build-speed give the bits of the forms they replaced (docs/notes_pending/build-speed.md).
+"""The faster forms of build-speed give the bits of the forms they replaced (build-speed, in docs/BUILD_NOTES.md).
 
 Each test keeps the replaced form here, as it stood in the code before, and compares the answers byte for byte on
 inputs chosen to be hard for it: many ties, flat ground, groups with no cell, a cached solver handed a changed depth.

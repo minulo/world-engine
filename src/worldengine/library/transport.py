@@ -21,7 +21,7 @@ def prepare(nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_coef, w
             rain_humidity, source):
     """What sweep() and residual() take from coefficients that stay the same through a solve, worked out once for the
     solve and not again in every visit of a cell: the same products and sums, in the same order, so that the answer
-    is the same to the last bit (docs/notes_pending/build-speed.md).
+    is the same to the last bit (build-speed, in docs/BUILD_NOTES.md).
 
     Returns, for each cell: the source's share of the gain (area * source); the loss coefficient, the sum over the
     sides of out + mix_own; for each side, in + mix_other; the rain law's value in air that holds no water; the law's

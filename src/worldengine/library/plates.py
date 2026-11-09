@@ -223,7 +223,7 @@ def _joined_within(cell, rows, cols, at, side, steps):
     """For each pair (at[p], side[p]): whether the side can be reached from one of the sides of cell at[p] (the sides
     s with cell[s] == at[p]) in at most `steps` steps from a side to a side it is joined to (a pair (rows[e], cols[e])).
     A plain walk outward, one ring of sides at a time; the answer is a yes or no, the same whatever order the walk
-    takes (until build-speed it was worked out as a product of sparse matrices; docs/notes_pending/build-speed.md)."""
+    takes (until build-speed, in docs/BUILD_NOTES.md, it was worked out as products of sparse matrices)."""
     m = cell.size
     count = np.zeros(m + 1, dtype=np.int64)                  # the sides joined to each side
     for e in range(rows.size):
