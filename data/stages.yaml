@@ -1,4 +1,7 @@
 # The stages, the clock each runs on, and each clock's own settings (design, Layer 3).
+# A stage on the dated clock (clock: dated) is listed after the weather and gives step: day (the default), month or
+# year. None is listed here: such stages run into a run store beside a world, not in a build (Engine.run_dated, whose
+# description says how their steps interleave).
 stages:
   - name: setup
     clock: once

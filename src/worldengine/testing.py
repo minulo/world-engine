@@ -16,6 +16,7 @@ import numpy as np
 
 from .engine import Context, Engine, World, _resolve_files, _resolve_level
 from .fields import Registry
+from .library import days as dy
 from .mesh import get_mesh
 from .params import DEFAULT_DATA_DIR, Parameters, _load_yaml, freeze, validate
 from .process import declaration
@@ -149,8 +150,10 @@ class Harness(Engine):
             w.lagged_tables[name] = w.tables.pop(name)
             if now is not None:
                 w.tables[name] = now
-        step = self.params["stages"]["stages"]
-        length = next((s.get("round_length_my") for s in step if s["name"] == stage), None)
+        entry = next((s for s in self.params["stages"]["stages"] if s["name"] == stage), {})
+        length = entry.get("round_length_my")
+        if entry.get("clock") == "dated":                    # as the engine hands it: the days of the step numbered round_no
+            length = dy.days_in_step(round_no, self.planet, self.months, entry.get("step", "day"))
         with self._limit_threads():
             if start:
                 ctx = Context(self, slot, proc, decl, stage, 0, "start", length, False, False)

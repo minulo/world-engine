@@ -319,6 +319,43 @@ def test_the_server_serves_its_viewer_folder_and_nothing_beside_it(toy_served):
         assert status == 404 and b"not for the page" not in body, path
 
 
+def test_the_check_of_a_running_server_refuses_a_wrong_page_or_an_empty_world():
+    """server.check, which the launchers' --check runs, against a stand-in server. (tools/refusal_audit.py found its two
+    refusals reached only inside the launcher's own process, where it does not look.)"""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from worldengine import server
+    answers = {}
+
+    class StandIn(BaseHTTPRequestHandler):
+        def do_GET(self):
+            ctype, body = answers.get(self.path, ("text/plain", b"nothing"))
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    stand_in = ThreadingHTTPServer(("127.0.0.1", 0), StandIn)
+    threading.Thread(target=stand_in.serve_forever, daemon=True).start()
+    try:
+        with pytest.raises(RuntimeError, match="GET / gave 7 bytes of text/plain; expected text/html holding World viewer"):
+            server.check(stand_in, timeout_s=30)
+        answers.update({"/": ("text/html", b"World viewer"), "/viewer.js": ("text/javascript", b"WebGL2"),
+                        "/style.css": ("text/css", b""),
+                        "/api/world": ("application/json", json.dumps({"meta": {"cells": 0}, "fields": {}, "seed": 1}).encode())})
+        with pytest.raises(RuntimeError, match="GET /api/world gave a world of 0 cells and 0 fields"):
+            server.check(stand_in, timeout_s=30)
+        answers["/api/world"] = ("application/json", json.dumps({"meta": {"cells": 5}, "fields": {"a": {}}, "seed": 1}).encode())
+        assert server.check(stand_in, timeout_s=30)[-1] == "GET /api/world gave a world of 5 cells, 1 fields, seed 1"
+    finally:
+        stand_in.shutdown()
+        stand_in.server_close()
+
+
 def test_the_page_is_warned_when_the_engine_is_not_the_one_that_built_the_world(toy_store):
     """A stored world is answered by the code that runs now. If that is not the code that built it, an answer worked
     out now may differ from the build, and the page says so."""
