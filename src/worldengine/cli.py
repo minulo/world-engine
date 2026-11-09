@@ -89,11 +89,15 @@ def _serve(args) -> int:
                 srv.server_close()
             print(f"check passed: the viewer and the world were served at {url}")
             return 0
-        print(f"viewer at {url}  (stop with Ctrl+C)", flush=True)
-        if args.open:
-            open_browser(url)
-        before = _stop_on_sigterm()
+        before = None
         try:
+            # The handler is set before the address is printed: whoever starts the server and stops it on reading that
+            # line (a test, a service manager) must find it ready. Printed first, a signal could land in between and end
+            # the server with no "stopped" (seen on ubuntu-latest: exit -15 on SIGTERM, a traceback on SIGINT).
+            before = _stop_on_sigterm()
+            print(f"viewer at {url}  (stop with Ctrl+C)", flush=True)
+            if args.open:
+                open_browser(url)
             srv.serve_forever()                              # returns after POST /api/stop
             print("stopped (asked by the control panel)", flush=True)
         except KeyboardInterrupt:
