@@ -12,12 +12,14 @@ land and cold water [INFERRED].
 Weather keeps no state (design, Layer 3): the storms alive on a day are found by drawing again the births of the days
 of a look-back window, each keyed by its own date, and following each track forward day by day. No storm lives longer
 than the window, so any day comes out the same however it is reached.
+
 When a day is recomputed for a "why" answer, the process records what made each cell's influence: the part that
 mid-latitude storms give and the part that tropical cyclones give (with the cell each kind's strongest storm there was
 born in, where the storm maps decided its birth), what the cap on overlapping storms takes, and the row of the table of
-storms that gives the most. A storm is said to reach a cell within twice its radius, where its influence is e^-4 of its
-strength, about 2 % [a choice of wording for the answers, not a part of the model]; a cell no storm reaches is said to
-have none worth naming.
+storms that gives the most. The three parts add up to the influence. A storm is said to reach a cell within twice its
+radius, where its influence is e^-4 of its strength, about 2 % [a choice of wording for the answers, not a part of the
+model], and a cyclone that has lost all its strength reaches none; a cell no storm reaches is said to have none worth
+naming. The record changes nothing that the process writes.
 
 Ignores: storms acting on each other, and weather fronts.
 Wrong where: each path is a plausible sample, not a prediction; counts are those of the maps, which are not counts.
@@ -110,7 +112,8 @@ class StormTracks(Process):
                 more = reach > strongest_reach
                 strongest_reach = np.where(more, reach, strongest_reach)
                 strongest = np.where(more, k, strongest)
-                reached |= distance <= REACH_IN_RADII * size
+                if strength > 0.0:                                     # a cyclone that has lost all its strength reaches nothing
+                    reached |= distance <= REACH_IN_RADII * size
             lat = float(np.rad2deg(np.arcsin(np.clip(pos[2], -1, 1))))
             lon = float(np.rad2deg(np.arctan2(pos[1], pos[0])))
             rows.append((kind, born, lat, lon, strength))

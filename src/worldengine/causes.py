@@ -32,9 +32,9 @@ A pattern entry, under the slot and the field it writes:
               maps a column to the unit its number is printed in),
               aside (the driver is a number for the sentences to use by its name: it is no part of a sum, is not
               spoken by itself and is not followed),
-              follow_first (for form sum: the walk follows this driver first, whatever its size, where it is not
-              nothing. The day's own part of a day's weather is small beside the month's mean it is added to, and it is
-              the part that the question is about)
+              follow_first (for form sum: the sentence names this driver and the walk follows it first, whatever its
+              size, where it is not nothing. The day's own part of a day's weather is small beside the month's mean it
+              is added to, and it is the part that the question is about)
 
 The answers for a field of a day (the weather, worked out on request) are read from a view that holds that day
 (store.DayView, made by Engine.day_view): it gives the sentences the slot {day}, and the heading names the day.
@@ -248,7 +248,8 @@ def explain(view, cell: int, field: str) -> dict:
             largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
             for t in order:
                 p = dpat.get(t) or {}
-                if abs(dvals[t]) <= WORTH_SAYING * largest and not p.get("always") and t not in base:
+                if abs(dvals[t]) <= WORTH_SAYING * largest and not p.get("always") and t not in base and \
+                        not (p.get("follow_first") and dvals[t] != 0.0):
                     continue
                 said = said_by(t, p, p.get("says") or (t.replace("_", " ") + " {v}"))
                 if p.get("group"):                               # name each member of the sum that acts in this cell

@@ -16,8 +16,9 @@ chance of rain, so that the rain of passing storms is counted inside each month'
 
 When a day is recomputed for a "why" answer, the process records the terms of each field: the monthly means around the
 date, and the day's own part, with the remembered noise and the spread it was scaled by; for the rain, whether the day
-is wet, dry or in a month without rain, the chance of rain and its two sources, the draw of the date and the amount
-drawn. Temperature, pressure and wind are the sums of their terms.
+is wet, dry or in a month without rain, the chance of rain and its two sources (and which of them is the larger), the
+draw of the date and the amount drawn. Temperature, pressure and wind are the sums of their terms. The record changes
+nothing that the process writes.
 
 Ignores: the motion of the air itself.
 Wrong where: this is the weakest causal link in the chain: a believable sample around a physically derived climate, not
@@ -33,6 +34,7 @@ from ..library.units import M_PER_KM, TINY
 from ..process import Process
 
 DRY, WET, NO_RAIN = 0, 1, 2                      # the classes of the driver `day_kind`
+BY_WET_DAYS, BY_STORMS = 0, 1                    # the classes of the driver `likelier_by`: the larger source of the chance of rain
 
 
 class RemembersNoiseWeather(Process):
@@ -44,7 +46,8 @@ class RemembersNoiseWeather(Process):
     shared = ("weather_look_back_days",)
     model = "a weather generator in the line of Richardson 1981, with noise remembered over a window of days"
     drivers = {"weather_temperature": ("month_mean", "departure", "noise_sd", "spread_k"),
-               "weather_precipitation": ("day_kind", "month_rain_per_day", "chance", "wet_day_share", "storm_chance", "draw", "amount"),
+               "weather_precipitation": ("day_kind", "month_rain_per_day", "chance", "wet_day_share", "storm_chance", "likelier_by",
+                                         "draw", "amount"),
                "weather_pressure": ("month_mean", "from_warm_day", "from_storms"),
                "weather_wind": ("month_wind", "gust")}
     additive = ("weather_temperature", "weather_pressure", "weather_wind")
@@ -94,6 +97,7 @@ class RemembersNoiseWeather(Process):
             ctx.driver("weather_precipitation", "chance", chance)
             ctx.driver("weather_precipitation", "wet_day_share", share)
             ctx.driver("weather_precipitation", "storm_chance", by_storms)
+            ctx.driver("weather_precipitation", "likelier_by", np.where(by_storms > share, BY_STORMS, BY_WET_DAYS))
             ctx.driver("weather_precipitation", "draw", draw)
             ctx.driver("weather_precipitation", "amount", amounts)
             ctx.driver("weather_pressure", "month_mean", mean_p)

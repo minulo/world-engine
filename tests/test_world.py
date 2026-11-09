@@ -277,20 +277,26 @@ def test_mountains_sit_on_plate_edges_where_plates_close(plain):
 def test_drivers_add_up_to_the_stored_field(plain):
     """Where a process says that its drivers are the terms of a sum, they add up to the field. A driver that the
     sentence patterns mark as an aside is a number for a sentence to use by its name and no term of the sum (the
-    water that ground under a lake would shed if it were dry is one): it is left out here as the answers leave it out."""
+    water that ground under a lake would shed if it were dry is one): it is left out here as the answers leave it out.
+    The fields of a day are not stored: their drivers are recorded when a day is worked out for its "why" answers
+    (Engine.day_view), and are held here on day 200. Since the weather has cause records the sums hold three asides
+    where they held one: the remembered noise of a day's temperature and the spread it is scaled by are the other two."""
     e, w = plain
-    asides = 0
+    day = Engine(DATA, profile="preview").day_view(store.MemoryView(w, e), 200)
+    asides, sums_of_a_day = 0, 0
     for name, proc in e.procs.items():
         for field in proc.additive:
-            d = w.drivers[field]
+            of_a_day = e.registry.fields[field].shape == "day_cell"
+            d = {t: np.asarray(day.driver(field, t)) for t in proc.drivers[field]} if of_a_day else w.drivers[field]
             said = ((e.params["explanations"].get(name) or {}).get(field) or {}).get("drivers") or {}
             aside = {term for term, how in said.items() if (how or {}).get("aside")}
             asides += len(aside & set(d))
+            sums_of_a_day += of_a_day
             total = sum(v.astype(np.float64) for k, v in d.items() if v.dtype.kind == "f" and k not in aside)
-            value = w.fields[field].astype(np.float64)
+            value = (day.field(field) if of_a_day else w.fields[field]).astype(np.float64)
             scale = max(1.0, float(np.nanmax(np.abs(value))))
             assert np.allclose(total, value, atol=2e-5 * scale), f"{name}: the drivers of {field} do not add up"
-    assert asides == 1                                        # one aside among the sums today: runoff's shed_as_if_dry
+    assert asides == 3 and sums_of_a_day == 4                 # runoff's shed_as_if_dry; a day's noise_sd and spread_k
 
 
 def test_explain_returns_a_chain_that_ends_at_a_seed_or_a_parameter(plain):

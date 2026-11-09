@@ -540,21 +540,30 @@ WeatherStatistics:
       mixing_length_km: {unit: km}
   wet_day_fraction:
     says: "{value} of the days are wet here, on the month's mean, from {rain_per_day_mm} of rain or snow a day."
+    unit: percent_from_share
     follows: [precipitation]
     drivers:
       rain_per_day_mm: {unit: mm}
 
 # The weather of a day (build step 8). A day is worked out on request with its cause records (Engine.day_view); the
-# walk goes on from it into the climate it was drawn around. The day's own part of a sum is followed first, whatever its
-# size beside the month's mean (follow_first).
+# walk goes on from it into the climate it was drawn around, whose answers are those of the year. The day's own part of
+# a sum is named and followed first, whatever its size beside the month's mean (follow_first).
 SynopticStorms:
   storm_influence:
-    says: "On day {day} the storms of the day reach this cell with an influence of {value}:"
+    says: "On day {day}, the storms of the day reach this cell with an influence of {value}:"
     form: sum
     unit: ""
     drivers:
-      from_midlatitude_storms: {says: "mid-latitude storms give {v}, the strongest of them here born at {at}", at: midlatitude_born_at, follows: [storm_track_density]}
-      from_tropical_cyclones: {says: "tropical cyclones give {v}, the strongest of them here born at {at}", at: tropical_born_at, follows: [tc_genesis_potential]}
+      from_midlatitude_storms:
+        says: "mid-latitude storms give {v}, the strongest of them here born at {at}"
+        at: midlatitude_born_at
+        follows: [storm_track_density]
+        ends: &born "The storms' part ends at the seeded weather: the births of each day are drawn from the world seed and that day's date, likelier where and when the storm maps are high, and each storm is followed from its birth day by day. Why the maps are high where the strongest was born follows."
+      from_tropical_cyclones:
+        says: "tropical cyclones give {v}, the strongest of them here born at {at}"
+        at: tropical_born_at
+        follows: [tc_genesis_potential]
+        ends: *born
       above_the_cap: {says: "the cap on storms that overlap takes {v}"}
       midlatitude_born_at: {cell: true}
       tropical_born_at: {cell: true}
@@ -565,60 +574,69 @@ SynopticStorms:
       reached: {names: [no storm reaches, storms reach]}
     cases:
       - when: {reached: no storm reaches}
-        says: "On day {day} no storm of the day comes within twice its radius of this cell: together they give it an influence of only {value}. Few storms are born upwind of here in this season, or none passed today."
+        says: "On day {day}, no storm of the day comes within twice its radius of this cell: together the storms give it an influence of only {value}. Few storms are born upwind of here at this time of year, or none passed by today."
         quiet: true
         follows: [storm_track_density, tc_genesis_potential]
 
 DailyWeather:
   weather_temperature:
-    says: "On day {day} the temperature here is {value}:"
+    says: "On day {day}, the temperature here is {value}:"
     form: sum
     unit: C_from_K
     drivers:
-      month_mean: {unit: C_from_K, says: "the monthly means around this date give {v}", follows: [surface_temperature]}
+      month_mean: {unit: C_from_K, says: "the monthly means around this date give {v}", follows: [surface_temperature], always: true}
       departure:
         unit: K_difference
-        says: "the day's own departure changes it by {v}, which is {noise_sd} standard deviations of the remembered noise of this date times the spread of {spread_k} that a day here typically strays"
+        says: "the day's own departure changes it by {v}, the remembered noise of this date ({noise_sd} standard deviations) times the {spread_k} by which a day here typically strays at this time of year"
         follow_first: true
         follows: [daily_temperature_spread]
-        ends: "The day's own part ends at the seeded weather: the remembered noise of a date is a weighted sum of the smoothed noise of the days of the look-back window, each drawn from the world seed and its own date, so the day comes out the same however it is reached."
+        ends: &seeded "The day's own part ends at the seeded weather: the remembered noise of a date is a weighted sum of the smoothed noise of the days of the look-back window, each drawn from the world seed and its own date, so the day comes out the same however it is reached."
       noise_sd: {aside: true, unit: ""}
       spread_k: {aside: true, unit: K}
   weather_precipitation:
-    says: "On day {day} {value} of rain or snow falls here."
+    says: "On day {day}, {value} of rain or snow falls here."
+    unit: mm
     quiet: true
     follows: [precipitation]
     drivers:
       day_kind: {names: [a dry day, a wet day, a month without rain]}
-      month_rain_per_day: {unit: mm/day}
+      month_rain_per_day: {unit: mm}
       chance: {unit: percent_from_share}
       wet_day_share: {unit: percent_from_share}
       storm_chance: {unit: percent_from_share}
+      likelier_by: {names: [the month's wet days, the storms passing today]}
       draw: {unit: percent_from_share}
       amount: {unit: ""}
+    # the walk goes first to the larger of the two sources of the chance of rain
     cases:
+      - when: {day_kind: a wet day, likelier_by: the storms passing today}
+        says: &wet "On day {day}, {value} of rain or snow falls here. It is a wet day: the chance of rain today is {chance}, which joins the {wet_day_share} of the month's days that are wet to a chance of {storm_chance} that the storms passing today bring rain, and the remembered noise of this date drew {draw}, below it. A wet day brings the {month_rain_per_day} that the months around this date bring on the average day, divided by the chance of rain, times an amount drawn for the day, here {amount} (1 on the average of many days), so that the wet days keep the month's rain."
+        follows: [storm_influence, wet_day_fraction]
       - when: {day_kind: a wet day}
-        says: "On day {day} {value} of rain or snow falls here. It is a wet day: the chance of rain today is {chance}, from the {wet_day_share} of the month's days that are wet and a chance of {storm_chance} that the storms passing today bring rain, and the remembered noise of this date drew {draw}, below it. A wet day brings the month's {month_rain_per_day} divided by the chance of rain, times an amount drawn for the day, here {amount} (1 on the average of many days), so that the wet days keep the month's rain."
-        follows: [precipitation, wet_day_fraction, storm_influence]
+        says: *wet
+        follows: [wet_day_fraction, storm_influence]
+      - when: {day_kind: a dry day, likelier_by: the storms passing today}
+        says: &dry "On day {day}, no rain or snow falls here. It is a dry day: the chance of rain today is {chance}, which joins the {wet_day_share} of the month's days that are wet to a chance of {storm_chance} that the storms passing today bring rain, and the remembered noise of this date drew {draw}, not below it. The months around this date bring {month_rain_per_day} on the average day."
+        follows: [storm_influence, wet_day_fraction]
       - when: {day_kind: a dry day}
-        says: "On day {day} no rain or snow falls here. It is a dry day: the chance of rain today is {chance}, from the {wet_day_share} of the month's days that are wet and a chance of {storm_chance} that the storms passing today bring rain, and the remembered noise of this date drew {draw}, not below it. The month brings {month_rain_per_day} on average."
-        follows: [wet_day_fraction, storm_influence, precipitation]
+        says: *dry
+        follows: [wet_day_fraction, storm_influence]
       - when: {day_kind: a month without rain}
-        says: "On day {day} no rain or snow falls here: the months around this date bring none to this place."
+        says: "On day {day}, no rain or snow falls here: the months around this date bring none to this place."
         follows: [precipitation]
   weather_pressure:
-    says: "On day {day} the pressure at sea level here is {value}:"
+    says: "On day {day}, the pressure at sea level here is {value}:"
     form: sum
     drivers:
-      month_mean: {says: "the monthly means around this date give {v}", follows: [sea_level_pressure]}
-      from_warm_day: {says: "a day warmer or colder than usual changes it by {v}", follow_first: true, follows: [weather_temperature]}
-      from_storms: {says: "passing storms change it by {v}", follow_first: true, follows: [storm_influence]}
+      month_mean: {says: "the monthly means around this date give {v}", follows: [sea_level_pressure], always: true}
+      from_warm_day: {says: "the day's own warmth changes it by {v}, as a day warmer than usual has lower pressure", follow_first: true, follows: [weather_temperature]}
+      from_storms: {says: "the storms passing today change it by {v}", follow_first: true, follows: [storm_influence]}
   weather_wind:
-    says: "On day {day} the wind here blows at {value}:"
+    says: "On day {day}, the wind here blows at {value}:"
     form: sum
     drivers:
-      month_wind: {says: "the monthly means around this date give {v} of it", follows: [wind]}
+      month_wind: {says: "the monthly means around this date give {v} of it", follows: [wind], always: true}
       gust:
         says: "the day's own gust, drawn from the remembered noise of this date, gives {v}"
         follow_first: true
-        ends: "The day's own part ends at the seeded weather: the remembered noise of a date is a weighted sum of the smoothed noise of the days of the look-back window, each drawn from the world seed and its own date, so the day comes out the same however it is reached."
+        ends: *seeded

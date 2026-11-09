@@ -733,3 +733,41 @@ BarrelReader = _declared("BarrelReader", stage="climate", reads_lagged=("barrel"
 LaggedClimateReader = _declared("LaggedClimateReader", reads_lagged=("a",), writes=("herd",))
 BarrelHeat = _declared("BarrelHeat", adds_to={"toy_heat": "herd_breath"})
 ClimateReader = _declared("ClimateReader", reads=("a",), writes=("herd",))
+
+
+class PlantedClimate(Process):
+    """A climate set by hand, for the real weather processes to draw their days around (the "why" answers of a day):
+    warm in the tropics and cold toward the poles, with a summer in each hemisphere; sea west of 60° E and land east of
+    it; a storm track in the mid-latitudes and a cradle of tropical cyclones over the warm sea; rain everywhere but in
+    a desert from 15 to 30° N, where none falls in any month."""
+    stage = "climate"
+    reads = ("latitude", "longitude")
+    writes = ("ocean_mask", "surface_temperature", "precipitation", "wind", "steering_wind", "sea_level_pressure",
+              "daily_temperature_spread", "wet_day_fraction", "storm_track_density", "tc_genesis_potential",
+              "potential_intensity")
+    model = "a climate planted by hand"
+
+    def run(self, ctx):
+        lat = ctx.read("latitude").astype(np.float64)
+        lon = ctx.read("longitude").astype(np.float64)
+        m, n = ctx.months, ctx.mesh.n
+        season = np.cos(2.0 * np.pi * (np.arange(m)[:, None] - 6.0) / m) * np.sign(lat)[None, :]     # summer in July in the north
+        sea = lon < 60.0
+        t = 300.0 - 0.6 * np.abs(lat)[None, :] + 8.0 * season * np.abs(np.sin(np.deg2rad(lat)))[None, :]
+        desert = (lat > 15.0) & (lat < 30.0)
+        rain = np.broadcast_to(np.where(desert, 0.0, 40.0 + 60.0 * np.cos(np.deg2rad(lat)) ** 2), (m, n))
+        east, north = ctx.mesh.east, ctx.mesh.north
+        westerly = np.where(np.abs(lat) > 30.0, 1.0, -0.6)[:, None] * east
+        mid = np.exp(-((np.abs(lat) - 50.0) / 10.0) ** 2)
+        tropics = np.where(sea & (np.abs(lat) > 8.0) & (np.abs(lat) < 25.0), 1.0, 0.0)
+        ctx.write("ocean_mask", sea)
+        ctx.write("surface_temperature", t)
+        ctx.write("precipitation", rain)
+        ctx.write("wind", np.broadcast_to(6.0 * westerly + 0.5 * north, (m, n, 3)))
+        ctx.write("steering_wind", np.broadcast_to(12.0 * westerly, (m, n, 3)))
+        ctx.write("sea_level_pressure", np.broadcast_to(101325.0 - 800.0 * mid, (m, n)))
+        ctx.write("daily_temperature_spread", np.broadcast_to(1.0 + 4.0 * mid, (m, n)))
+        ctx.write("wet_day_fraction", np.broadcast_to(np.where(desert, 0.0, 0.2 + 0.4 * mid), (m, n)))
+        ctx.write("storm_track_density", np.broadcast_to(3.0 * mid, (m, n)))
+        ctx.write("tc_genesis_potential", 5.0 * tropics[None, :] * (1.0 + season) / 2.0)
+        ctx.write("potential_intensity", np.broadcast_to(np.where(sea, 70.0, 0.0), (m, n)))
