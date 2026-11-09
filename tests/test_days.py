@@ -12,12 +12,13 @@ recomputed on request").
 """
 import copy
 import json
+import re
 
 import numpy as np
 import pytest
 import yaml
 
-from conftest import DATA, TOY
+from conftest import DATA, TOY, tool
 from worldengine import store
 from worldengine.causes import as_text, explain
 from worldengine.engine import Engine, EngineError, engine_for_store
@@ -345,3 +346,56 @@ def test_a_world_stored_before_the_weather_had_patterns_borrows_those_of_this_en
             assert [step["text"] for step in a["chain"]] == [step["text"] for step in b["chain"]]
             assert any("stored before the weather had sentence patterns of its own" in n for n in a["notices"])
             assert not any("stored before the weather" in n for n in b["notices"])
+
+
+def test_the_scan_of_the_why_answers_holds_the_answers_of_a_day_against_its_numbers(weather_world, monkeypatch):
+    """tools/why_scan.py reads the answers of a day too. On every third cell of the weather world they pass; then one
+    answer after another is rewritten to say something its numbers contradict, and the scan must report each, and
+    nothing else."""
+    scan = tool("why_scan")
+    view = engine_for_store(weather_world).day_view(weather_world, 200)
+    assert not scan.scan(view, range(0, weather_world.meta["cells"], 3), scan.WEATHER_FIELDS)
+    rec = lambda field, term: np.asarray(view.driver(field, term))
+    kind, reached = rec("weather_precipitation", "day_kind"), rec("storm_influence", "reached") == 1
+    anywhere, taken = np.ones(kind.size, dtype=bool), []
+
+    def pick(mask):
+        cell = int(np.flatnonzero(mask & ~np.isin(np.arange(mask.size), taken))[0])
+        taken.append(cell)
+        return cell
+
+    def first(old, new):
+        def change(chain):
+            text = re.sub(old, new, chain[0]["text"], count=1)
+            assert text != chain[0]["text"], (old, chain[0]["text"])             # the words to change were there
+            return [dict(chain[0], text=text)] + chain[1:]
+        return change
+    planted = {
+        (pick(kind == 1), "weather_precipitation"): (first("It is a wet day", "It is a dry day"), "does not say 'It is a wet day'"),
+        (pick(kind == 0), "weather_precipitation"): (first(", not below it", ", below it"), "on the wrong side of the chance of rain"),
+        (pick(np.abs(rec("weather_temperature", "departure")) > 0.5), "weather_temperature"): (
+            first(r"; the day's own departure changes it by [^;]*?(?=\.$|; )", ""), "does not say \"the day's own departure\""),
+        (pick(np.abs(rec("weather_pressure", "from_storms")) > 100), "weather_pressure"): (
+            first(r"give (\d+) Pa", lambda m: f"give {int(m.group(1)) + 400} Pa"), "gives parts that add up to"),
+        (pick(reached & (rec("storm_influence", "strongest_storm") >= 0)), "storm_influence"): (
+            first(r"born on day (\d+)", lambda m: f"born on day {int(m.group(1)) - 1}"), "names a storm that is not the one of row"),
+        (pick(~reached), "storm_influence"): (first("no storm of the day comes within", "a storm of the day comes within"),
+                                              "does not say 'no storm of the day comes within twice its radius'"),
+        (pick(anywhere), "weather_wind"): (first("On day 200,", "On day 201,"), "does not name the day asked about"),
+    }
+    turned = (pick(anywhere), "weather_pressure")                                # an answer whose heading names another day
+    real = scan.explain
+
+    def doctored(v, cell, field):
+        answer = real(v, cell, field)
+        if (cell, field) in planted:
+            answer["chain"] = planted[(cell, field)][0]([dict(step) for step in answer["chain"]])
+        if (cell, field) == turned:
+            answer["day"] = 201
+        return answer
+    monkeypatch.setattr(scan, "explain", doctored)
+    found = scan.scan(view, sorted(taken), scan.WEATHER_FIELDS)
+    planted[turned] = (None, "the heading does not give the place of the cell")
+    for (cell, field), (_, words) in planted.items():
+        assert any(c == cell and fl == field and words in what for c, fl, what, _ in found), (cell, field, words, [x[:3] for x in found if x[0] == cell])
+    assert {(c, fl) for c, fl, _, _ in found} == set(planted)                 # and nothing is reported that was not planted

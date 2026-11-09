@@ -573,6 +573,23 @@ def test_no_why_answer_for_water_on_land_says_what_its_numbers_contradict(plain)
     assert not problems, problems[:5]
 
 
+def test_no_why_answer_for_the_weather_of_a_day_says_what_its_numbers_contradict(plain):
+    """The answers for the weather of a day, worked out on request with its cause records, held against the day's
+    numbers by tools/why_scan.py on every ninth cell of the default world, on a day of the northern winter and one of
+    the northern summer. The walk goes on into the climate's own answers: from the month's temperature into the year's,
+    from the day's spread into that of WeatherStatistics."""
+    e, w = plain
+    base, eng, scan = store.MemoryView(w, e), Engine(DATA, profile="preview"), tool("why_scan")
+    for day in (20, 200):
+        view = eng.day_view(base, day)
+        problems = scan.scan(view, range(0, w.n, 9), scan.WEATHER_FIELDS)
+        assert not problems, problems[:5]
+    land = int(np.flatnonzero(~w.fields["ocean_mask"] & (np.abs(w.mesh.lat - 50.0) < 5.0))[0])
+    text = as_text(explain(view, land, "weather_temperature"))
+    assert text.startswith("Why is weather_temperature like this on day 200 at ") and "the day's own departure" in text
+    assert "A day's temperature here typically strays" in text and "The temperature here averages" in text
+
+
 def test_the_scan_of_the_why_answers_reports_each_fault_it_was_built_to_find(plain, frozen, monkeypatch):
     """The claim that no answer contradicts its numbers rests on tools/why_scan.py. Here one answer after another is
     rewritten to say what an earlier version of the engine said wrongly, and the scan must report each: a scan that
