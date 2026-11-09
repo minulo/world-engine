@@ -186,6 +186,18 @@ def arc_distance_to_set(mesh: Mesh, members: np.ndarray):
     return 2.0 * np.arcsin(np.clip(0.5 * d, 0.0, 1.0)), idx[k]
 
 
+def arc_distance_across(mesh: Mesh, members: np.ndarray) -> np.ndarray:
+    """For every cell of the set, the great-circle angle to the nearest cell outside it; for every cell outside, the
+    angle to the nearest cell of the set. The set and the rest must both hold a cell. The same numbers as taking
+    arc_distance_to_set() of the set for the cells outside it and of the rest for the cells inside, with each search
+    made only for the cells whose answer is used (build-speed: half the searches)."""
+    inside, outside = np.flatnonzero(members), np.flatnonzero(~np.asarray(members, dtype=bool))
+    chord = np.empty(mesh.n)
+    chord[outside] = cKDTree(mesh.xyz[inside]).query(mesh.xyz[outside])[0]
+    chord[inside] = cKDTree(mesh.xyz[outside]).query(mesh.xyz[inside])[0]
+    return 2.0 * np.arcsin(np.clip(0.5 * chord, 0.0, 1.0))
+
+
 def zonal_mean(mesh: Mesh, f: np.ndarray, band_deg: float, mask: np.ndarray | None = None, fill: bool = False):
     """Area-weighted mean of a field in latitude bands. Returns the band centres (degrees) and the means; for a
     field with one slice per month, the means of every month.

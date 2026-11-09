@@ -263,6 +263,19 @@ def test_the_compiled_pour_and_barriers_give_the_bits_of_the_plain_python(level,
         assert same(reach, reach0) and same(at, at0)
 
 
+def test_the_distance_to_the_coast_searched_once_a_cell_is_that_of_both_full_searches():
+    """SeaLevel's distance to the coast took, for every cell, the distance to the nearest wet cell and to the nearest
+    dry cell, and kept one of them; now only the one kept is searched for."""
+    m = get_mesh(5)
+    rng = np.random.default_rng(19)
+    for share in (0.001, 0.3, 0.7, 0.999):
+        wet = rng.random(m.n) < share
+        wet[0], wet[1] = True, False
+        to_wet = op.arc_distance_to_set(m, wet)[0]
+        to_dry = op.arc_distance_to_set(m, ~wet)[0]
+        assert same(op.arc_distance_across(m, wet) * R, np.where(wet, to_dry, to_wet) * R)
+
+
 # ------------------------------------------------------------------------------------------ Tectonics
 def test_the_walk_along_joined_sides_answers_as_the_sparse_products_did():
     rng = np.random.default_rng(7)
