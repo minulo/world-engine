@@ -1,0 +1,37 @@
+# The fantasy layer "magic-warming": spent mana warms the world. It needs the layer magic, which the engine lays first.
+#
+# Off unless asked for: `python -m worldengine build --fantasy magic-warming`, or `scripts/run.sh --fantasy magic-warming`.
+# The layer magic by itself cannot change the climate: nothing in the climate reads its fields, and Mana runs once, after
+# the climate has settled. This layer adds the one process that reads the mana: the heat of the mana spent in the last
+# round is added to what the surface receives, so the climate and the mana settle together, and Mana takes part in the
+# climate's rounds (a build takes about a fifth longer).
+#
+# [INVENTED] marks a rule of the fantasy layer: made up, not a claim about any real world. Every constant below is one.
+about: "Spent mana warms the world: the mana that decays or is grounded each year delivers heat to the surface, so that magic changes the climate. Needs the layer magic. Invented: a rule of this layer is no claim about any real world."
+needs: [magic]
+adds:
+  models:
+    slots:
+      ManaWarmth:
+        implementation: worldengine.processes.mana_warmth:SpentManaWarmth
+        standing: Invented
+        model: "Invented: the mana spent in the last round (decayed, or grounded at sea) delivers heat to the surface in proportion, through the group surface_heat_flux, the same in every month."
+        ignores: "Everything real: the layer is invented. Within its own rules: the season of the mana's decay, and where the heat of mana grounded at sea goes below the surface."
+        wrong_where: "Everywhere, as a claim about any real world: it is not one."
+        writes: [spent_mana_heat]
+        constants:
+          heat_w_m2_per_thaum_km2_yr: 0.25       # the heat of a thaum spent, per km² and year [INVENTED; at this value the default
+                                                 #  world warms by about a degree: docs/BUILD_NOTES.md, section 31]
+  fields:
+    fields:
+      spent_mana_heat:
+        {family: "Magic (invented)", unit: "W/m²", shape: month_cell, kind: number, range: [0, 1.0e+4],
+         description: "Invented, the fantasy layer magic-warming: heat delivered to the surface by the mana spent here in the last round, a member of surface_heat_flux."}
+  explanations:
+    ManaWarmth:
+      spent_mana_heat:
+        says: "By the invented rules of the magic layer, spent mana delivers {value} of heat to the surface here: {spent} of mana was spent here in the round before, decayed or grounded, and each thaum spent gives the layer's heat."
+        says_zero: "By the invented rules of the magic layer, spent mana gives no heat here: no mana was spent here in the round before."
+        follows: [mana_spent]
+        drivers:
+          spent: {unit: "thaum/km²/yr"}

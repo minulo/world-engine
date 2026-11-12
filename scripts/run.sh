@@ -5,6 +5,7 @@
 #   scripts/run.sh --port 9000 --world worlds/other.zarr --profile preview --seed 7
 #   scripts/run.sh --no-browser            serve without opening a browser
 #   scripts/run.sh --fantasy magic         a world with the invented layer magic (mana), worlds/first-magic.zarr
+#   scripts/run.sh --fantasy magic-warming   ... in which spent mana also warms the world, worlds/first-magic-warming.zarr
 #   scripts/run.sh --check                 install, build, serve, fetch the page and /api/world, stop (for CI)
 #
 # Each step is skipped when it is done already: the environment .venv, the packages of requirements.lock (installed
@@ -13,7 +14,7 @@ set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 PROFILE=preview WORLD='' SEED='' FANTASY='' PORT=8765 HOST=127.0.0.1 PYTHON='' OPEN=--open CHECK=''
-usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
           echo "Options: --world PATH --profile NAME --seed N --fantasy LAYER --port N --host ADDRESS --python EXE --no-browser --check"; }
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -104,7 +105,7 @@ fi
 if [ -e "$WORLD" ]; then
     echo "The world $WORLD exists; it is served as it is."
 else
-    say "Building the $PROFILE world into $WORLD${FANTASY:+, with the invented layer $FANTASY}: one to two minutes for the preview, 40 to 80 for the standard one"
+    say "Building the $PROFILE world into $WORLD${FANTASY:+, with the invented layer $FANTASY}: one to two minutes for the preview, about 45 for the standard one"
     "$VPY" -m worldengine build --profile "$PROFILE" ${SEED:+--seed "$SEED"} ${FANTASY:+--fantasy "$FANTASY"} --out "$WORLD"
 fi
 

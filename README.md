@@ -168,12 +168,15 @@ as far as Linux can show (docs/BUILD_NOTES.md, sections 5.3 and 6); the workflow
 
 **Magic, an invented layer.** `--fantasy magic` (or `scripts/run.sh --fantasy magic`, `scripts\run.cmd -Fantasy magic`,
 or the control panel's box "Magic (invented physics)") lays the fantasy layer of `data/fantasy/magic.yaml` over the
-physics: mana, made by moving plates, volcanic fire, old ground, living land and storms, spread like heat along ley
-lines (plate boundaries and rivers), grounded by salt water, locked by ice and lost as it decays, with a "why" answer
-for every cell. Its rules are invented [INVENTED: a rule of the fantasy layer, made up, not a claim about any real
-world]; docs/BUILD_NOTES.md, section 30, sets them out. Without the switch nothing of it runs. With it, every other field of
-the default world stays the same bit for bit while its one feedback, "spent mana warms the world", keeps its default of
-zero [MEASURED, preview, seed 20261004].
+physics: mana, made by moving plates, volcanic fire, old ground, living land and storms, each with an aspect of its
+own; spread like heat, fastest along plate boundaries on land, and carried downstream by great rivers (the ley lines);
+grounded by salt water, locked by ice and lost as it decays; surging on the days when storms cross a fall of it (the
+viewer's day slider shows a day's surge). Every cell has a "why" answer. Its rules are invented [INVENTED: a rule of
+the fantasy layer, made up, not a claim about any real world]; docs/BUILD_NOTES.md, sections 30 and 31, set them out.
+Without the switch nothing of it runs. With it, every other field of the default world stays the same bit for bit, in
+the same number of climate rounds, and the build takes two seconds longer (84 s against 82 s) [MEASURED, preview, seed
+20261004]. `--fantasy magic-warming` lays a second layer over it in which spent mana warms the world: the default world
+is then 0.95 K warmer [MEASURED], and is another world.
 
 The archive that was handed over comes with `worlds/first.zarr`, the default world on the preview
 mesh, so `serve` works at once. A clone of the repository does not hold it (`worlds/` is not under

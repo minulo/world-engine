@@ -1,0 +1,27 @@
+world: 10242 cells, layers ['magic'], built in 76.6 s, climate rounds 41, fingerprint 6b120d1d536a6ec8
+mana: 1.785e+10 thaum free (1.020e+10 on land), 2.098e+10 frozen; 3.147e+09 thaum made a year; spent 0.973 of it, of which at sea 0.757; the rest life takes up
+  spent, decays: 0.328 of what is made
+  spent, grounded: 0.607 of what is made
+  spent, from_ice: 0.039 of what is made
+  made by plate_motion: 0.285
+  made by fire: 0.457
+  made by old_ground: 0.050
+  made by life: 0.120
+  made by storms: 0.088
+density, thaum/km²: land mean 72.3, sea mean 20.7, highest 289.9
+aura, share of the land (of the sea): dead_zone 0.091 (0.745); faint 0.212 (0.076); steady 0.527 (0.059); strong 0.133 (0.057); wellspring 0.010 (0.000); wild 0.027 (0.062)
+mana_aspect, share of the land (of the sea): none 0.000 (0.000); deep 0.022 (0.246); ember 0.200 (0.218); elder 0.107 (0.072); verdant 0.663 (0.018); tempest 0.008 (0.446)
+ley_line, share of the land (of the sea): none 0.848 (1.000); plate_line 0.060 (0.000); river_line 0.086 (0.000); nexus 0.005 (0.000)
+ley lines: 168 cells on plate lines, 240 on river lines, 15 at a nexus; flow on the lines: median 1138, highest 14729 thaum/km/yr; cells off the lines with a flow: 0
+  deep: 0.208 of the free mana, 0.111 of the land's
+  ember: 0.359 of the free mana, 0.235 of the land's
+  elder: 0.084 of the free mana, 0.128 of the land's
+  verdant: 0.265 of the free mana, 0.446 of the land's
+  tempest: 0.084 of the free mana, 0.081 of the land's
+wellsprings: 38; on land 36; by cause (plates, fire, old ground, life, storms) [4, 32, 0, 2, 0]
+  1. 18.1 N, 13.5 E: 289.9 thaum/km², ember (0.73)
+  2. 0.0 N, 63.0 E: 277.1 thaum/km², ember (0.61)
+  3. 4.0 N, 175.4 E: 273.6 thaum/km², deep (0.42)
+wild magic at least 0.5: 0.027 of the land, 0.062 of the sea
+against the plain world: 138 of 138 fields and columns bit for bit the same; climate rounds 41 there
+  temperature: planet +0.00 K against it (land +0.00, sea +0.00); mean 14.37 C

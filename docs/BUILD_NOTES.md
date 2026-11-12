@@ -3686,6 +3686,9 @@ pass, which keeps them, took 4.2 s], about 960 s of the build: the largest singl
 
 ## 30. Magic: an invented layer
 
+(Amended by section 31: Mana now stays out of the climate's rounds, the heat of spent mana is a layer of its own, rivers
+carry mana, and the numbers of 30.5 are those of the first version.)
+
 A new label for these notes: **[INVENTED]** a rule of the fantasy layer: made up, not a claim about any real world.
 Every constant and every rule below that belongs to the layer carries it. Nothing invented is offered as physics: each
 "why" answer about mana begins "By the invented rules of the magic layer", each of its fields says "Invented" in its
@@ -3909,3 +3912,107 @@ repository.
 7. **Grounded mana counts as spent**: with the feedback on it warms the sea it is grounded in, which is most of the heat.
 8. Not done: the standard mesh with the layer; `tools/refusal_audit.py` (a quarter of an hour), so whether the new
    refusals are each held by a test was checked by hand only (`tests/test_magic.py` raises each of them).
+
+## 31. Magic, continued: out of the climate's rounds, ley lines that are lines, aspects, a day's surge (2026-11-12)
+
+The owner asked to go on with the magic system. This section changes four things that section 30 left as limits and
+adds three parts. Every rule is invented [INVENTED], as before; every number is the default world on the preview mesh,
+seed 20261004, built alone on the build machine [MEASURED: `handoff/magic/magic_report.py` and its two logs beside it].
+
+### 31.1 What changed, and why
+
+1. **Magic alone no longer takes part in the climate's rounds.** In section 30 Mana delivered the heat of spent mana to
+   the group `surface_heat_flux`, at a constant that was 0: EnergyBalance read the group, so the engine kept Mana, and
+   the storm maps it reads, in every round, and a magic world took a fifth longer to build and went over its profile's
+   time. Mana now writes the spent mana as a plain field (`mana_spent`) and no heat. Nothing in the climate reads any
+   field of the layer, so by the engine's own rule (`Engine._tail`) Mana and Aura run once, after the climate has
+   settled, with the storm maps. Measured: the plain world builds in 82.3 s, the magic world in 84.1 and 83.1 s (107.6 s
+   before), in the same 41 climate rounds, and all 138 fields and columns of the plain world are the same bit for bit.
+2. **Spent mana warms the world in a layer of its own, `magic-warming`** (`data/fantasy/magic-warming.yaml`,
+   `processes/mana_warmth.py`). It adds one process, ManaWarmth, which reads the spent mana of the last round and
+   delivers its heat (0.25 W/m² for each thaum/km² spent a year) through `surface_heat_flux`. With it the engine's
+   rule puts Mana and the storm maps back into the rounds, since something now reads the mana from the round before;
+   Aura, which nothing reads, still runs once at the end. A fantasy layer may now name the layers it needs (`needs`,
+   new in `data/schemas/fantasy.yaml`): the engine lays them first, so `--fantasy magic-warming` alone is enough; a
+   layer that needs one that is not there, and two that need each other, are refused, each with a test.
+3. **Rivers carry mana.** Section 30 let a river add conductance along its reach, so mana spread a little faster both
+   ways along it, more than half of the land's cells counted as river ley lines, and the flow showed as blobs. Now a
+   great river (one that carries more than 3,000 m³/s) hands the mana of a strip 100 km wide along its reach to the
+   cell its water runs to, at up to 1 a year, the share rising with what it carries above that discharge. The mana
+   runs downstream with the water and reaches the sea, which grounds it. The matrix of the steady state gains this
+   carrying beside the spreading; its columns still add up to zero, so mana is moved and none is made (the test of the
+   budget holds, and a test plants a fire in the middle of a river: the mana runs down it, not up).
+4. **Plate lines are narrow, and the flow along the ley lines counts only what the lines carry.** A plate boundary on
+   land raises the ground's conductivity only as far as it at least doubles it (within 138 km of the boundary, with the
+   width now 60 km); beyond, the ground is plain. `ley_flow` is what the plate lines' own share of the conductance
+   spreads and what the rivers carry, counted in the cells of the lines: 0 elsewhere and under salt water (no cell off
+   the lines holds a flow).
+
+### 31.2 What was added
+
+- **Aspects.** The mana of each kind of source is now a field of its own: `mana_deep` (plates closing or parting),
+  `mana_ember` (volcanic fire), `mana_elder` (old continental ground), `mana_verdant` (living land), `mana_tempest`
+  (storms). They are the five solutions that the density already was the sum of. `mana_aspect` names the one that
+  holds the most of a place's mana, however little there is.
+- **The map of the ley lines.** `ley_line`: a plate line, a river line, a nexus where both meet, or none. Aura writes it
+  by the same rule and the same shared constants (`mana_ley`, `library/mana.py: ley_rule`) as Mana spreads and carries
+  by, and a test holds the two to each other. The classes are Aura's and not Mana's because nothing reads Aura: it
+  always runs once at the end, so a class that changes on a few cells from round to round cannot keep a climate with
+  the warming layer from settling.
+- **The surge of a day** (`processes/mana_surge_storms.py`, on the weather clock). Aura's wild magic is the year's:
+  the fall of the mana against the storminess of the climate. ManaSurge is the same rule for one day, with the storm
+  influence of that day in the place of the storminess: `mana_surge = 1 − exp(−(fall / 0.35) · (storm influence / 1))`.
+  It is worked out on request with the day's weather, shows under the viewer's day slider, and has its "why" answer
+  (`explain --day`). The same day gives the same surge however it is reached (tested).
+- **Answers and their scan.** Sentence patterns for every new field. `tools/why_scan.py` reads them: the aspect named
+  is the one the world holds most of and its share is the world's; the flow's answer and the map of the lines name the
+  same line; no line and no flow under salt water; a surge only where a storm of the day acts.
+- **The workflow** builds the magic world through the launcher on each system and checks that it is the first world
+  bit for bit with the layer's fields beside it (not yet run when this was written).
+
+### 31.3 Measured on the default world
+
+| | Magic | With magic-warming | Plain |
+|---|---|---|---|
+| Build | 84.1 and 83.1 s | 103.4 s | 82.3 s |
+| Climate rounds | 41 | 41, settled | 41 |
+| Fields and columns of the plain world the same bit for bit | 138 of 138 | 94 of 138 | |
+| Planet's mean temperature | 14.37 °C | 15.31 °C (+0.95 K; land +1.03, sea +0.91) | 14.37 °C |
+| Free mana | 1.785e10 thaum | 1.817e10 thaum | |
+| Mana made a year | 3.147e9 thaum | 3.181e9 thaum | |
+
+The magic world (fingerprint 6b120d1d536a6ec8, the same in two builds):
+
+- **Budget.** Of the mana made, 0.973 is spent (0.328 decays, 0.607 is grounded at sea, 0.039 decays in the ice) and
+  life takes up the rest. Fire makes 0.457 of it, plates 0.285, life 0.120, storms 0.088, old ground 0.050.
+- **Aura, share of the land:** dead zone 0.091, faint 0.212, steady 0.527, strong 0.133, wellspring 0.010, wild 0.027.
+- **Aspect, share of the land (of the sea):** verdant 0.663 (0.018), ember 0.200 (0.218), elder 0.107 (0.072), deep
+  0.022 (0.246), tempest 0.008 (0.446). The land's mana is mostly life's; the sea's is the storms' away from the
+  ridges, where it is thin.
+- **Ley lines:** 168 cells on plate lines, 240 on river lines, 15 at a nexus: 0.151 of the land. The flow along them is
+  1,138 thaum/km/yr at the median and 14,729 at the most.
+- **Wellsprings:** 38, of which 36 on land; 32 of fire, 4 of the plates, 2 of life. The strongest stands at 18.1° N,
+  13.5° E with 289.9 thaum/km², 0.73 of it ember.
+- **Answers:** `why_scan` read every cell's answer for every stored field of the layer (143,388 answers) and the surge
+  of day 200 on every cell (10,242): no problem. With every seventh cell, all fields and the weather of day 200:
+  61,488 answers, none that its numbers contradict.
+
+With the warming layer the planet warms by 0.95 K at a mean of 1.52 W/m² of spent mana's heat; the tenth of the cells
+with the most heat warms by 1.04 K and the half with the least by 0.88 K: the spreading of heat evens most of it out.
+
+### 31.4 Departures and limits
+
+1. The constants of the ley lines were set by eye on the preview mesh [INVENTED]: the least discharge of a river line
+   (3,000 m³/s) so that the river lines read as lines there. On a finer mesh the same rivers are narrower lines.
+2. A river line follows the mesh's flow paths, from cell to cell, and ends where the water does: in the sea, in a
+   lake without an outlet, or where the river falls below the least discharge.
+3. Tempest leads on 0.008 of the land. The storms' mana is the smallest part there; it shows over the sea.
+4. With the warming layer the small world of the tests (2,562 cells, 10 My of history) does not settle within the 60
+   rounds its profile allows: its yearly runoff still moves by 0.019 mm on the mean where 0.01 is asked. Its mana and
+   the heat of it have settled. The default world settles in 41 rounds. No other world was tried.
+5. Nothing was built on the standard mesh with either layer.
+6. The control panel's box lays the layer magic; the warming layer is asked for on the command line or through the
+   launcher (`--fantasy magic-warming`).
+7. A magic world built before this section is another world: its fields of the layer differ, and it holds
+   `spent_mana_heat` where this one holds `mana_spent`. It still opens; the viewer says the engine's code has changed.
+

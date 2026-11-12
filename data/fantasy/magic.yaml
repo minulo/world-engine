@@ -7,20 +7,36 @@
 #
 # [INVENTED] marks a rule of the fantasy layer: made up, not a claim about any real world. Every constant below is one.
 # The theory they make up, with its equations, is in docs/BUILD_NOTES.md, section 30 ("Thaumic theory").
-about: "Mana: made by moving plates, volcanic fire, old ground, living land and storms; spread like heat, fastest along ley lines (plate boundaries and rivers) and slowest across the sea; grounded by salt water, locked by ice, taken up by life, lost as it decays. Invented: a rule of this layer is no claim about any real world."
+about: "Mana: made by moving plates, volcanic fire, old ground, living land and storms, each with its own aspect; spread like heat, fastest along plate boundaries on land and slowest across the sea, and carried downstream by great rivers; grounded by salt water, locked by ice, taken up by life, lost as it decays; and surging on the days when storms cross a fall of it. Invented: a rule of this layer is no claim about any real world."
 adds:
   models:
     shared:
       mana_storm_track_reference: 1.0          # storminess counts the yearly storm-track density in units of this (e-foldings) [INVENTED]
       mana_cyclone_reference: 4.0              # ... and the yearly genesis potential of tropical cyclones in units of this [INVENTED]
+      mana_fall_reference_thaum_km2_per_km: 0.35   # the fall of the mana's density that counts as steep: wild magic (Aura) and the
+                                               #  surge of a day (ManaSurge) are 1 - exp(-(fall / this) * (storms / their reference)) [INVENTED]
+      mana_ley:                                # the ley lines. Mana spreads and runs along them and Aura names them, by the same
+                                               #  rule (library/mana.py, ley_rule) [INVENTED, all]
+        boundary_gain: 10.0                    # a plate line: a plate boundary on land adds this many times plain ground's
+                                               #  conductivity, at the boundary itself; under salt water there is no ley line
+        boundary_width_km: 60.0                # ... fading with the distance from the boundary over this length, as far as it is at
+                                               #  least 1 (a plate line: within 138 km of the boundary); beyond, the ground is plain
+        river_from_m3_s: 3000.0                # a river line: only a great river is one, a river that carries more than this [set so
+                                               #  that the river lines of the default world read as lines on the preview mesh: about a
+                                               #  twelfth of its land cells carry more, docs/BUILD_NOTES.md, section 31]
+        river_half_discharge_m3_s: 5000.0      # ... it carries mana at half its full rate where it carries this much more than that
+        river_carry_per_year: 1.0              # running water carries mana: at its full rate a river hands this share of the mana of
+                                               #  the strip it sweeps to the cell downstream, each year
+        river_strip_km: 100.0                  # ... the width of that strip along the river's reach
     slots:
       Mana:
         implementation: worldengine.processes.mana_thaumic_spreading:ThaumicSpreading
         standing: Invented
-        model: "Invented thaumic theory: mana is made where plates close or part, by volcanic fire, by old continental ground, by living land and by storms; it spreads like heat, along ley lines (plate boundaries on land, rivers) fastest and under salt water slowest; it decays into heat, salt water grounds it, ice locks it and life takes up a share. The yearly steady state, solved as one sparse linear system."
-        ignores: "Everything real: the layer is invented and claims nothing about any real world. Within its own rules: drift of mana with the wind, the seasons, any limit to how much mana a place can hold."
-        wrong_where: "Everywhere, as a claim about any real world: it is not one. Within its own rules the spreading is as coarse as the mesh: a ley line is one cell wide, and on the preview mesh the spreading length of plain land is under two cells [INFERRED: 395 km against cells about 220 km apart]."
-        writes: [mana_density, mana_source, frozen_mana, ley_flow, spent_mana_heat, "table:wellsprings"]
+        model: "Invented thaumic theory: mana is made where plates close or part, by volcanic fire, by old continental ground, by living land and by storms, each kind with an aspect of its own (deep, ember, elder, verdant, tempest); it spreads like heat, fastest along plate boundaries on land and slowest under salt water, and great rivers carry it downstream to the sea; it decays into heat, salt water grounds it, ice locks it and life takes up a share. The yearly steady state, solved as one sparse linear system."
+        ignores: "Everything real: the layer is invented and claims nothing about any real world. Within its own rules: drift of mana with the wind, the seasons, any limit to how much mana a place can hold, and any effect of the mana on the world (the layer magic-warming adds one)."
+        wrong_where: "Everywhere, as a claim about any real world: it is not one. Within its own rules the spreading is as coarse as the mesh: a ley line is one cell wide, a river line follows the mesh's flow paths from cell to cell, and on the preview mesh the spreading length of plain land is under two cells [INFERRED: 395 km against cells about 220 km apart]."
+        writes: [mana_density, mana_source, frozen_mana, ley_flow, mana_spent, mana_deep, mana_ember, mana_elder, mana_verdant,
+                 mana_tempest, "table:wellsprings"]
         constants:
           half_life_years: 12.0                  # free mana decays into heat with this half-life [INVENTED]; long against a year, so that
                                                  #  the yearly steady state stands for every month (docs/BUILD_NOTES.md, section 30)
@@ -28,13 +44,6 @@ adds:
           conductivity_land_km2_per_year: 9000.0 # how readily plain land spreads mana [INVENTED]; with the half-life above, a spreading
                                                  #  length of sqrt(9000 / (ln 2 / 12)) = 395 km
           sea_conductivity_share: 0.05           # salt water grounds mana: the sea spreads it at this share of land's rate [INVENTED]
-          ley:
-            boundary_gain: 10.0                  # a plate boundary on land multiplies the conductivity by 1 + this, at the boundary itself;
-                                                 #  under salt water there is no ley line [INVENTED]
-            boundary_width_km: 150.0             # ... fading with the distance from the boundary over this length [INVENTED]
-            river_gain: 20.0                     # running water carries mana: a river reach adds up to this many times plain land's
-                                                 #  conductivity to the edge it runs along [INVENTED]
-            river_half_discharge_m3_s: 2000.0    # ... half of that at this discharge, a share Q / (Q + this) [INVENTED]
           sources:                               # what each kind of source makes, thaum per km² per year [INVENTED, all]
             plate_motion_thaum_km2_yr: 15.0      # at a boundary closing or parting at the reference speed
             plate_motion_reference_m_per_year: 0.05
@@ -48,25 +57,33 @@ adds:
             ice_locking_per_year: 0.1            # ice covering the whole cell all year locks this share of the free mana each year [INVENTED]
             life_uptake_per_year: 0.02           # land wholly shaded by plants takes up this share each year [INVENTED]
             sea_grounding_per_year: 0.25         # salt water grounds mana: the sea takes this share of its mana each year, spent as heat [INVENTED]
-          spent_mana_heat_w_m2_per_thaum_km2_yr: 0.0   # spent mana warms the world: heat per thaum decayed [INVENTED]. 0: the layer
-                                                 #  cannot change the climate. Above 0 it warms where mana decays, through surface_heat_flux
           wellspring_lowest_thaum_km2: 150.0     # a cell that holds at least this and at least as much as each neighbour is a wellspring [INVENTED]
       Aura:
         implementation: worldengine.processes.aura_thresholds:ThresholdAura
         standing: Invented
-        model: "Invented aura rules: wild magic where a steep fall of mana meets storms; each place's aura by the first rule that holds: wild, a wellspring of Mana's table, then strong, steady, faint or a dead zone by the density."
+        model: "Invented aura rules: wild magic where a steep fall of mana meets storms; each place's aura by the first rule that holds: wild, a wellspring of Mana's table, then strong, steady, faint or a dead zone by the density; the aspect of its mana, the kind that holds the most of it; and the ley line it lies on, by what a plate boundary or a great river adds to the ground's conductivity."
         ignores: "Everything real: the layer is invented. Within its own rules: any effect of wild magic on the mana it comes from, and the seasons."
         wrong_where: "Everywhere, as a claim about any real world: it is not one. Within its own rules the fall of mana is taken across one cell, as coarse as the mesh."
-        writes: [wild_magic, aura]
+        writes: [wild_magic, aura, mana_aspect, ley_line]
         constants:
           wild:
-            fall_reference_thaum_km2_per_km: 0.35  # wild_magic = 1 - exp(-(fall / this) * (storminess / the next)) [INVENTED]
-            storminess_reference: 2.0            # the storminess (Mana's count of storm tracks and cyclone potential) that counts as stormy [INVENTED]
+            storminess_reference: 2.0            # wild_magic = 1 - exp(-(fall / the shared reference) * (storminess / this)): the storminess
+                                                 #  (Mana's count of storm tracks and cyclone potential) that counts as stormy [INVENTED]
             wild_from: 0.5                       # wild magic at least this makes the aura wild [INVENTED]
           classes:                               # the lowest density of each aura [INVENTED]; below the first, a dead zone
             faint_from_thaum_km2: 20.0
             steady_from_thaum_km2: 50.0
             strong_from_thaum_km2: 100.0
+      ManaSurge:
+        implementation: worldengine.processes.mana_surge_storms:StormSurge
+        standing: Invented
+        model: "Invented: the wild magic of one day. Where a storm of the day crosses a steep fall of mana, magic surges: Aura's rule for the year's wild magic, with the day's storm influence in the place of the climate's storminess. Worked out on request, like all weather."
+        ignores: "Everything real: the layer is invented. Within its own rules: any effect of a surge on the mana it comes from, and on the weather."
+        wrong_where: "Everywhere, as a claim about any real world: it is not one. Within its own rules the fall of mana is taken across one cell, as coarse as the mesh."
+        writes: [mana_surge]
+        constants:
+          storm_influence_reference: 1.0         # the storm influence of a day (SynopticStorms, 0 to about 2) that counts as a storm
+                                                 #  overhead [INVENTED]
 
   fields:
     fields:
@@ -85,10 +102,28 @@ adds:
       ley_flow:
         {family: "Magic (invented)", unit: "thaum/km/yr", shape: cell, kind: number, range: [0, 1.0e+12],
          display: {map: aether},
-         description: "Invented, the fantasy layer magic: how much mana flows through the cell each year, per kilometre of its width; the most along the ley lines, plate boundaries on land and rivers, which carry mana fastest."}
-      spent_mana_heat:
-        {family: "Magic (invented)", unit: "W/m²", shape: month_cell, kind: number, range: [0, 1.0e+4],
-         description: "Invented, the fantasy layer magic: heat delivered to the surface by mana as it decays or is grounded at sea, a member of surface_heat_flux. Zero unless the layer's feedback constant is set above zero."}
+         description: "Invented, the fantasy layer magic: how much mana the ley lines carry through the cell each year, per kilometre of its width: what a plate boundary on land adds to the spreading of plain ground, and what a great river carries downstream. None off the lines and under salt water."}
+      mana_spent:
+        # settle: only the layer magic-warming reads this from the previous round (its heat). A thaum per km² a year in a cell
+        # and a twentieth of one on the mean are far below what the heat of a thaum spent can show in the climate [INVENTED]
+        {family: "Magic (invented)", unit: "thaum/km²/yr", shape: cell, kind: number, default: 0.0, range: [0, 1.0e+9],
+         settle: {mean: 0.05, cell: 1.0}, display: {map: aether},
+         description: "Invented, the fantasy layer magic: the mana that ends here each year, as free mana decays, salt water grounds it and frozen mana decays in the ice. At the steady state all the mana made is spent or taken up by life."}
+      mana_deep:
+        {family: "Magic (invented)", unit: "thaum/km²", shape: cell, kind: number, range: [0, 1.0e+9], display: {map: aether},
+         description: "Invented, the fantasy layer magic: deep mana, the part of the mana here that plates closing or parting made."}
+      mana_ember:
+        {family: "Magic (invented)", unit: "thaum/km²", shape: cell, kind: number, range: [0, 1.0e+9], display: {map: aether},
+         description: "Invented, the fantasy layer magic: ember mana, the part of the mana here that volcanic fire made."}
+      mana_elder:
+        {family: "Magic (invented)", unit: "thaum/km²", shape: cell, kind: number, range: [0, 1.0e+9], display: {map: aether},
+         description: "Invented, the fantasy layer magic: elder mana, the part of the mana here that seeped from old continental ground."}
+      mana_verdant:
+        {family: "Magic (invented)", unit: "thaum/km²", shape: cell, kind: number, range: [0, 1.0e+9], display: {map: aether},
+         description: "Invented, the fantasy layer magic: verdant mana, the part of the mana here that living land breathed out."}
+      mana_tempest:
+        {family: "Magic (invented)", unit: "thaum/km²", shape: cell, kind: number, range: [0, 1.0e+9], display: {map: aether},
+         description: "Invented, the fantasy layer magic: tempest mana, the part of the mana here that storms sparked."}
       wild_magic:
         {family: "Magic (invented)", unit: "0 to 1", shape: cell, kind: number, range: [0, 1],
          display: {map: wild},
@@ -98,6 +133,21 @@ adds:
          categories: [dead_zone, faint, steady, strong, wellspring, wild],
          colors: ["#44444f", "#5b5f97", "#3f8fbf", "#9b5de5", "#ffd166", "#ef476f"],
          description: "Invented, the fantasy layer magic: the aura of a place: wild where wild magic runs high, a wellspring where mana peaks, else strong, steady, faint or a dead zone by the density of mana."}
+
+      mana_aspect:
+        {family: "Magic (invented)", unit: category, shape: cell, kind: category,
+         categories: [none, deep, ember, elder, verdant, tempest],
+         colors: ["#2f2f3a", "#5e60ce", "#f3722c", "#c9a227", "#43aa8b", "#4cc9f0"],
+         description: "Invented, the fantasy layer magic: the aspect of the mana here, the kind that holds the most of it: deep (plates), ember (volcanic fire), elder (old ground), verdant (living land) or tempest (storms), however little mana there is; none only where there is no mana."}
+      ley_line:
+        {family: "Magic (invented)", unit: category, shape: cell, kind: category,
+         categories: [none, plate_line, river_line, nexus],
+         colors: ["#1b1b24", "#f72585", "#4cc9f0", "#ffd166"],
+         description: "Invented, the fantasy layer magic: the ley line a place lies on: a plate line near a plate boundary on land, a river line along a great river, a nexus where both meet; none elsewhere and under salt water."}
+      mana_surge:
+        {family: "Magic (invented)", unit: "0 to 1", shape: day_cell, kind: number, default: 0.0, range: [0, 1],
+         display: {map: wild},
+         description: "Invented, the fantasy layer magic: the surge of wild magic on one day, from 0 to 1: high where a storm of the day crosses a steep fall of mana. Worked out on request, like the weather."}
 
   tables:
     tables:
@@ -143,33 +193,63 @@ adds:
             says: "By the invented rules of the magic layer, no mana is frozen here: no snow or ice lies here in any month."
             follows: [snow_ice_cover]
       ley_flow:
-        says: "By the invented rules of the magic layer, {value} of mana flows through here, and the ground here conducts it {conducts} as well as plain land:"
+        says: "By the invented rules of the magic layer, the ley lines carry {value} of mana through here:"
         follows: [mana_density]
         drivers:
           ley:
             names: [plain_land, plate_boundary, river, plate_boundary_and_river, sea]
             says_by:
-              plain_land: "it is plain ground"
-              plate_boundary: "a plate boundary runs here, and plate boundaries are ley lines"
-              river: "a river runs here, and running water carries mana"
-              plate_boundary_and_river: "a plate boundary and a river meet here, and both carry mana"
-              sea: "it is sea, and salt water grounds mana"
+              plain_land: "it is plain ground, on no ley line, and what plain ground spreads is not counted"
+              plate_boundary: "a plate boundary runs here, a plate line: the ground conducts mana {conducts} as well as plain land"
+              river: "a great river runs here, a river line: running water carries mana, and the river hands {carried_off} of the mana here to {runs_to} each year"
+              plate_boundary_and_river: "a plate boundary and a great river meet here, a nexus: the ground conducts mana {conducts} as well as plain land, and the river hands {carried_off} of the mana here to {runs_to} each year"
+              sea: "it is sea, and salt water grounds mana: no ley line runs under it"
             follows_by:
               plate_boundary: [mana_density, convergence_rate]
               river: [mana_density, river_discharge]
               plate_boundary_and_river: [mana_density, convergence_rate, river_discharge]
               sea: [mana_density, ocean_mask]
           conducts: {unit: times}
-      spent_mana_heat:
-        says: "By the invented rules of the magic layer, spent mana delivers {value} of heat to the surface here: {spent} of mana decays or is grounded here each year, and the heat of each thaum spent is a constant of the layer."
-        follows: [mana_density]
+          carried_off: {unit: percent_from_share}
+          runs_to: {cell: true}
+      mana_spent:
+        says: "By the invented rules of the magic layer, {value} of mana is spent here, the sum of:"
+        says_zero: "By the invented rules of the magic layer, no mana is spent here: none stands here."
+        form: sum
         drivers:
-          spent: {unit: "thaum/km²/yr"}
-          feedback: {names: [set_to_zero, above_zero]}
-        cases:
-          - when: {feedback: set_to_zero}
-            says: "By the invented rules of the magic layer, spent mana gives no heat here: {spent} of mana decays or is grounded here each year, but the layer's heat per thaum spent is zero, so spent mana warms nothing."
-            ends: "The chain ends here, at a constant of the magic layer: the heat of a thaum spent, set to zero."
+          decays: {says: "free mana decaying gives {v}", follows: [mana_density]}
+          grounded: {says: "salt water grounding it gives {v}", follows: [mana_density, ocean_mask]}
+          from_ice: {says: "frozen mana decaying in the ice gives {v}", follows: [frozen_mana]}
+      mana_deep:
+        says: "By the invented rules of the magic layer, {value} of the mana here is deep mana, the mana that plates closing or parting make:"
+        says_zero: "By the invented rules of the magic layer, no deep mana reaches this cell: no plate boundary within reach makes any."
+        drivers:
+          peak: {says: "it stands highest, up its slope from here, at {at}, where it reaches {v}", unit: "thaum/km²", at: made_at, follows: [mana_source]}
+          made_at: {cell: true}
+      mana_ember:
+        says: "By the invented rules of the magic layer, {value} of the mana here is ember mana, the mana that volcanic fire makes:"
+        says_zero: "By the invented rules of the magic layer, no ember mana reaches this cell: no volcanic fire within reach makes any."
+        drivers:
+          peak: {says: "it stands highest, up its slope from here, at {at}, where it reaches {v}", unit: "thaum/km²", at: made_at, follows: [mana_source]}
+          made_at: {cell: true}
+      mana_elder:
+        says: "By the invented rules of the magic layer, {value} of the mana here is elder mana, the mana that seeps from old continental ground:"
+        says_zero: "By the invented rules of the magic layer, no elder mana reaches this cell: no old continental ground within reach makes any."
+        drivers:
+          peak: {says: "it stands highest, up its slope from here, at {at}, where it reaches {v}", unit: "thaum/km²", at: made_at, follows: [mana_source]}
+          made_at: {cell: true}
+      mana_verdant:
+        says: "By the invented rules of the magic layer, {value} of the mana here is verdant mana, the mana that living land breathes out:"
+        says_zero: "By the invented rules of the magic layer, no verdant mana reaches this cell: no living land within reach makes any."
+        drivers:
+          peak: {says: "it stands highest, up its slope from here, at {at}, where it reaches {v}", unit: "thaum/km²", at: made_at, follows: [mana_source]}
+          made_at: {cell: true}
+      mana_tempest:
+        says: "By the invented rules of the magic layer, {value} of the mana here is tempest mana, the mana that storms spark:"
+        says_zero: "By the invented rules of the magic layer, no tempest mana reaches this cell: no storm within reach makes any."
+        drivers:
+          peak: {says: "it stands highest, up its slope from here, at {at}, where it reaches {v}", unit: "thaum/km²", at: made_at, follows: [mana_source]}
+          made_at: {cell: true}
     Aura:
       wild_magic:
         says: "By the invented rules of the magic layer, wild magic here is {value} on a scale from 0 to 1: magic runs wild where mana falls steeply and storms pass, and here mana falls by {fall} while the storminess is {storminess}."
@@ -195,3 +275,48 @@ adds:
               wild: [wild_magic]
           density: {unit: "thaum/km²"}
           wildness: {unit: ""}
+      mana_aspect:
+        says: "By the invented rules of the magic layer, the aspect of the mana here is {value}:"
+        follows: [mana_density]
+        drivers:
+          rule:
+            names: [none, deep, ember, elder, verdant, tempest]
+            says_by:
+              none: "no mana stands here, so it has no aspect"
+              deep: "{share} of the mana here is deep mana, which plates closing or parting make, more than any other kind"
+              ember: "{share} of the mana here is ember mana, which volcanic fire makes, more than any other kind"
+              elder: "{share} of the mana here is elder mana, which seeps from old continental ground, more than any other kind"
+              verdant: "{share} of the mana here is verdant mana, which living land breathes out, more than any other kind"
+              tempest: "{share} of the mana here is tempest mana, which storms spark, more than any other kind"
+            follows_by:
+              deep: [mana_deep]
+              ember: [mana_ember]
+              elder: [mana_elder]
+              verdant: [mana_verdant]
+              tempest: [mana_tempest]
+          share: {unit: percent_from_share}
+          density: {unit: "thaum/km²"}
+      ley_line:
+        says: "By the invented rules of the magic layer, the ley line here is of the class {value}:"
+        drivers:
+          rule:
+            names: [none, plate_line, river_line, nexus]
+            says_by:
+              none: "no ley line runs here: no plate boundary on land lies near enough to at least double what plain ground conducts, and what runs off here, {discharge}, is less than a great river carries; under salt water there is no ley line"
+              plate_line: "a plate boundary runs near, and adds {boundary_gain} times plain ground's conductivity"
+              river_line: "a great river runs here, carrying {discharge}, and running water carries mana downstream"
+              nexus: "a plate boundary and a great river meet here: the boundary adds {boundary_gain} times plain ground's conductivity, and the river carries {discharge}"
+            follows_by:
+              plate_line: [convergence_rate]
+              river_line: [river_discharge]
+              nexus: [convergence_rate, river_discharge]
+          boundary_gain: {unit: ""}
+          discharge: {unit: "m³/s"}
+    ManaSurge:
+      mana_surge:
+        says: "By the invented rules of the magic layer: On day {day}, the surge of wild magic here is {value} on a scale from 0 to 1. Magic surges where a storm of the day crosses a fall of mana, and here mana falls by {fall} while the storms of the day act with a strength of {storms}."
+        unit: ""
+        follows: [storm_influence, mana_density]
+        drivers:
+          fall: {unit: "thaum/km² per km"}
+          storms: {unit: ""}

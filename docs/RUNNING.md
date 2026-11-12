@@ -240,6 +240,7 @@ scripts/run.sh --port 9000                  # another port, if 8765 is taken
 scripts/run.sh --seed 7                     # another planet: built once into worlds/preview-seed7.zarr
 scripts/run.sh --profile standard           # the large world: 7.2 GB of memory, 45 minutes or more to build
 scripts/run.sh --fantasy magic              # the invented layer magic (mana), built once into worlds/first-magic.zarr
+scripts/run.sh --fantasy magic-warming      # ... in which spent mana also warms the world: worlds/first-magic-warming.zarr
 scripts/run.sh --no-browser                 # serve without opening a browser
 scripts/run.sh --check                      # install, build, check that it serves, and stop
 ```

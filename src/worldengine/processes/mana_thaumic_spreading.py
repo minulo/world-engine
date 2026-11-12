@@ -5,7 +5,8 @@ claim about any real world. It is written with the engine's own machinery so tha
 per cell, a steady state of sources, spreading and losses, solved as one sparse linear system as EnergyBalance solves
 for heat. With M the mana density (thaum/km²), per cell
 
-    (lambda + k_ice * ice + k_life * plants + k_sea * sea) M - div(K grad M) = s_motion + s_fire + s_old + s_life + s_storm
+    (lambda + k_ice * ice + k_life * plants + k_sea * sea) M - div(K grad M) + carried off by its river - carried in by
+        the rivers that run to it = s_motion + s_fire + s_old + s_life + s_storm
 
   lambda = ln 2 / half-life       mana decays into heat ("spent mana")
   k_ice * ice                     ice locks mana into frozen mana F, which decays with a longer half-life:
@@ -13,8 +14,11 @@ for heat. With M the mana density (thaum/km²), per cell
   k_life * plants                 living things take up a share of the mana around them
   k_sea * sea                     salt water grounds mana: the sea takes a share of its mana each year, spent as heat
   K                               the conductivity: plain land; a small share of it under salt water; raised near plate
-                                  boundaries on land (ley lines; under salt water there are none); and running water adds
-                                  a conductance along each river reach ("running water carries mana")
+                                  boundaries on land (the plate lines; under salt water there are none)
+  carried                         running water carries mana: a great river sweeps a strip along its reach and hands
+                                  the mana to the cell its water runs to, at a rate that rises with what it carries above
+                                  the layer's least discharge for a ley line (the river lines). The mana runs downstream
+                                  with the water and gathers toward the mouth, where the sea grounds it
   s_motion                        plates closing or parting, near their boundary, in proportion to the speed
   s_fire                          volcanism
   s_old                           a slow seep from old continental ground, growing with the age of the surface
@@ -29,10 +33,16 @@ Spreading neither makes nor destroys mana, so at the steady state the mana made 
 sea, locked by ice (which then decays as frozen mana) and taken up by life. Because the equation is linear, the density
 is the sum of the densities each kind of source makes alone: those are its drivers.
 
-Spent mana warms the world: what decays or is grounded ((lambda + k_sea * sea) M + lambda_frozen F) delivers heat to the
-surface through the group surface_heat_flux, at a constant of the layer that is 0 unless changed. With the constant at
-0 the member is exactly zero, nothing in the climate reads the layer's fields, and the layer writes no class that the
-climate's settle test watches, so the climate is the same, bit for bit, as without the layer (tests/test_magic.py).
+The mana of each kind of source is a field of its own, its aspect [INVENTED: deep for the plates' mana, ember for
+fire's, elder for old ground's, verdant for life's, tempest for the storms']; Aura names the aspect that leads in each
+place. The flow along the ley lines is what the plate lines' own share of the conductance spreads and what the rivers
+carry: what plain ground would spread anyway is left out, so that the lines show as lines.
+
+Spent mana (mana_spent) is what decays or is grounded each year, (lambda + k_sea * sea) M + lambda_frozen F. Nothing in
+the climate reads any field of this process, so it runs once, after the climate has settled, and the climate is the
+same, bit for bit, as without the layer (tests/test_magic.py). The layer magic-warming (data/fantasy/) adds a process
+that reads the spent mana of the last round and delivers its heat to the surface; with it, this process takes part in
+the climate's rounds.
 
 Ignores: everything: the layer is invented, and claims nothing about real rock, life, water or weather. Within its own
 rules it ignores any wind-borne drift of mana (mana belongs to the ground and the water on it), the seasons, and any
@@ -45,10 +55,10 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 from ..library import mana as mn
+from ..library.mana import ASPECTS, KINDS      # the kinds of source, in the order of the table's codes, and their aspects
 from ..library.units import M2_PER_KM2, M_PER_KM
 from ..process import Process
 
-KINDS = ("plate_motion", "fire", "old_ground", "life", "storms")         # the kinds of source, in the order of the table's codes
 PLAIN, BOUNDARY, RIVER, BOTH, SEA = 0, 1, 2, 3, 4                       # the classes of the driver ley_flow.ley
 
 
@@ -57,16 +67,17 @@ class ThaumicSpreading(Process):
     reads = ("cell_area", "ocean_mask", "crust_type", "surface_age", "volcanism", "convergence_rate", "boundary_distance",
              "flow_receiver", "river_discharge", "vegetation_cover", "snow_ice_cover", "storm_track_density",
              "tc_genesis_potential")
-    writes = ("mana_density", "mana_source", "frozen_mana", "ley_flow", "table:wellsprings")
-    adds_to = {"surface_heat_flux": "spent_mana_heat"}
-    shared = ("mana_storm_track_reference", "mana_cyclone_reference")
+    writes = ("mana_density", "mana_source", "frozen_mana", "ley_flow", "mana_spent") + tuple(f"mana_{a}" for a in ASPECTS) \
+        + ("table:wellsprings",)
+    shared = ("mana_storm_track_reference", "mana_cyclone_reference", "mana_ley")
     model = "invented thaumic theory: mana from plates, fire, old ground, life and storms, spread like heat along ley lines, lost as it decays"
     drivers = {"mana_density": tuple(f"from_{k}" for k in KINDS) + tuple(f"{k}_at" for k in KINDS),
                "mana_source": KINDS,
                "frozen_mana": ("ice", "state"),
-               "ley_flow": ("ley", "conducts"),
-               "spent_mana_heat": ("spent", "feedback")}
-    additive = ("mana_density", "mana_source")
+               "ley_flow": ("ley", "conducts", "carried_off", "runs_to"),
+               "mana_spent": ("decays", "grounded", "from_ice"),
+               **{f"mana_{a}": ("peak", "made_at") for a in ASPECTS}}
+    additive = ("mana_density", "mana_source", "mana_spent")
 
     def run(self, ctx):
         c, mesh = ctx.const, ctx.mesh
@@ -99,31 +110,40 @@ class ThaumicSpreading(Process):
         locking = c["losses"]["ice_locking_per_year"] * ice
         uptake = np.where(sea, 0.0, c["losses"]["life_uptake_per_year"] * plants)
         grounding = np.where(sea, c["losses"]["sea_grounding_per_year"], 0.0)       # salt water grounds mana
-        # conductivity: the surface, the ley lines of plate boundaries, and the river reaches
-        ley = c["ley"]
+        # spreading: the surface, and what the plate lines add to it; carrying: the reaches of great rivers
+        ley = ctx.shared["mana_ley"]
         plain = c["conductivity_land_km2_per_year"]
-        boundary_factor = 1 + ley["boundary_gain"] * near(ley["boundary_width_km"])
-        conductivity = np.where(sea, plain * c["sea_conductivity_share"], plain * boundary_factor)    # no ley line under salt water
-        carried = np.where(sea, 0.0, plain * ley["river_gain"] * discharge / (discharge + ley["river_half_discharge_m3_s"]))
+        ground = np.where(sea, plain * c["sea_conductivity_share"], plain)
+        boundary_gain, river_share = mn.ley_rule(sea, boundary_km, discharge, ley)
         receiver = np.asarray(ctx.read("flow_receiver"), dtype=np.int64)
-        conductance = mn.edge_conductance(mesh, conductivity) + mn.reach_conductance(mesh, receiver, carried)
+        plain_conductance = mn.edge_conductance(mesh, ground)
+        ley_conductance = mn.edge_conductance(mesh, ground * (1 + boundary_gain)) - plain_conductance
+        conductance = plain_conductance + ley_conductance
+        carry_rate = ley["river_carry_per_year"] * river_share                              # per year, of the strip's mana
+        carried = mn.river_carrying(mesh, receiver, carry_rate, ley["river_strip_km"], area, ctx.planet["radius_m"] / M_PER_KM)
         loss = decay + locking + uptake + grounding
-        key = ("mana", mesh.level, loss.tobytes(), area.tobytes(), conductance.tobytes())
+        key = ("mana", mesh.level, loss.tobytes(), area.tobytes(), conductance.tobytes(), carried.tobytes(), receiver.tobytes())
         if key not in ctx.memo:                                  # prepared again only when an input of the matrix changes
             ctx.memo.clear()
-            ctx.memo[key] = spla.splu((sp.diags(area * loss) + mn.spreading_matrix(mesh, conductance)).tocsc())
+            ctx.memo[key] = spla.splu((sp.diags(area * loss) + mn.spreading_matrix(mesh, conductance)
+                                       + mn.carrying_matrix(mesh, receiver, carried)).tocsc())
         solver = ctx.memo[key]
         parts = solver.solve(np.ascontiguousarray(np.stack([area * made[k] for k in KINDS], axis=1)))
         density = parts.sum(axis=1)                              # the density is the sum of what each kind makes
         frozen = locking * density / frozen_decay
-        spent = (decay + grounding) * density + frozen_decay * frozen     # thaum/km²/yr spent as heat: decayed, or grounded at sea
-        flow = mn.through_cell(mesh, mn.edge_flows(mesh, density, conductance)) / np.sqrt(area)   # thaum/km/yr
-        heat = c["spent_mana_heat_w_m2_per_thaum_km2_yr"] * spent
+        spent_parts = {"decays": decay * density, "grounded": grounding * density, "from_ice": frozen_decay * frozen}
+        spent = spent_parts["decays"] + spent_parts["grounded"] + spent_parts["from_ice"]   # thaum/km²/yr: decayed, or grounded at sea
+        by_river = carried * density                             # thaum/yr that the cell's river hands downstream
+        on_plate_line = boundary_gain > 0                        # counted in the cells of the line, not in those beside it
+        along_plate_line = np.where(on_plate_line, mn.through_cell(mesh, mn.edge_flows(mesh, density, ley_conductance)), 0.0)
+        flow = (along_plate_line + by_river) / np.sqrt(area)     # thaum/km/yr
         ctx.write("mana_density", density)
         ctx.write("mana_source", source)
         ctx.write("frozen_mana", frozen)
         ctx.write("ley_flow", flow)
-        ctx.add_to_group("surface_heat_flux", np.broadcast_to(heat, (ctx.months, n)))
+        ctx.write("mana_spent", spent)
+        for a, part in zip(ASPECTS, parts.T):
+            ctx.write(f"mana_{a}", part)
         # the wellsprings: every cell that holds at least as much as each neighbour and at least the layer's lowest
         # density for a wellspring, strongest first; the cause is the kind of source that made the most of its mana
         well = np.flatnonzero(mn.local_peaks(mesh, density) & (density >= c["wellspring_lowest_thaum_km2"]))
@@ -134,15 +154,20 @@ class ThaumicSpreading(Process):
             "mana_density": density[well], "cause": cause.astype(np.int16),
             "cause_share": parts[well, cause] / density[well] if well.size else np.zeros(0)})
         if ctx.recording:
-            for k, part in zip(KINDS, parts.T):
+            for k, a, part in zip(KINDS, ASPECTS, parts.T):
+                peak = mn.uphill_peak(mesh, part).astype(np.int32)
                 ctx.driver("mana_density", f"from_{k}", part)
-                ctx.driver("mana_density", f"{k}_at", mn.uphill_peak(mesh, part).astype(np.int32))
+                ctx.driver("mana_density", f"{k}_at", peak)
+                ctx.driver(f"mana_{a}", "peak", part[peak])
+                ctx.driver(f"mana_{a}", "made_at", peak)
                 ctx.driver("mana_source", k, made[k])
             ctx.driver("frozen_mana", "ice", ice)
             ctx.driver("frozen_mana", "state", (ice > 0).astype(np.int32))           # no_ice, ice: whether ice lies in any month
-            boundary, river = boundary_factor >= 2, carried >= conductivity              # a ley line at least doubles the ground's
+            boundary, river = boundary_gain >= 1, river_share > 0     # a plate line at least doubles the ground's; a great river
             ley_class = np.where(sea, SEA, np.where(boundary & river, BOTH, np.where(river, RIVER, np.where(boundary, BOUNDARY, PLAIN))))
             ctx.driver("ley_flow", "ley", ley_class.astype(np.int32))
-            ctx.driver("ley_flow", "conducts", (conductivity + carried) / plain)   # against plain land
-            ctx.driver("spent_mana_heat", "spent", spent)
-            ctx.driver("spent_mana_heat", "feedback", np.full(n, int(c["spent_mana_heat_w_m2_per_thaum_km2_yr"] > 0), dtype=np.int32))
+            ctx.driver("ley_flow", "conducts", ground * (1 + boundary_gain) / plain)          # against plain land
+            ctx.driver("ley_flow", "carried_off", carried / area)                            # the share of its mana a year
+            ctx.driver("ley_flow", "runs_to", np.where(carried > 0, receiver, -1).astype(np.int32))
+            for name, part in spent_parts.items():
+                ctx.driver("mana_spent", name, part)
