@@ -25,6 +25,7 @@ on:
       - "tools/compare_worlds.py"
       - "tests/test_panel.py"
       - "tests/test_local_run.py"
+      - "tests/test_viewer_draw.py"
       - ".github/workflows/local-run.yml"
   workflow_dispatch:
     inputs:

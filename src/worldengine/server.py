@@ -186,6 +186,14 @@ class WorldService:
                 self._idmaps[width] = idx.astype("<u4").tobytes()
             return self._idmaps[width]
 
+    def mesh(self, part: str) -> bytes:
+        """The mesh, for a drawing that needs more than the nearest cell: "xyz", the centres of the cells as unit
+        vectors (three 32-bit floats a cell), or "nbr", the neighbours of each cell (six 32-bit integers a cell,
+        counter-clockwise, -1 where a cell has only five)."""
+        if part not in MESH_PARTS:
+            raise _BadRequest(f"the mesh has no part {part!r}: ask for {' or '.join(MESH_PARTS)}")
+        return np.ascontiguousarray(self.view.mesh_array(part), dtype=MESH_PARTS[part]).tobytes()
+
     def _plane(self, name, month, part):
         """One value per cell for display: a month of a monthly field, the speed or one part of a direction."""
         a = self._field(name)                                # says so if the world has no such field
@@ -269,6 +277,9 @@ class WorldService:
         return explain(self.day_view(day)[0], cell, field)
 
 
+MESH_PARTS = {"xyz": "<f4", "nbr": "<i4"}       # what GET /api/mesh gives, and how each is written
+
+
 class _BadRequest(Exception):
     """The request itself is wrong: a part is missing, or is not the kind of value it must be."""
 
@@ -312,6 +323,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(s.world())
             if url.path == "/api/idmap":
                 return self._send(200, s.idmap(_asked(q, "width", int) if "width" in q else 2048), "application/octet-stream")
+            if url.path == "/api/mesh":
+                return self._send(200, s.mesh(_asked(q, "part")), "application/octet-stream")
             if url.path == "/api/field":
                 month = _asked(q, "month", int) - 1 if "month" in q else None
                 return self._send(200, s.field(_asked(q, "name"), month, q.get("part")), "application/octet-stream")
@@ -429,13 +442,13 @@ def local_url(server) -> str:
 
 
 def check(server, timeout_s=600) -> list:
-    """Ask a running server for what the browser asks for first: the page, its script and style sheet with the types
-    a browser accepts, and /api/world. Returns one line for each; raises RuntimeError if an answer is wrong. For the
+    """Ask a running server for what the browser asks for first: the page, its two scripts and its style sheet with
+    the types a browser accepts, and /api/world. Returns one line for each; raises RuntimeError if an answer is wrong. For the
     launchers' and the workflow's check that a world serves; no proxy is used, whatever the environment sets."""
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     base, said = local_url(server), []
     for name, want, holds in (("", "text/html", b"World viewer"), ("viewer.js", "text/javascript", b"WebGL2"),
-                              ("style.css", "text/css", b"")):
+                              ("draw.js", "text/javascript", b"#version 300 es"), ("style.css", "text/css", b"")):
         with opener.open(base + name, timeout=timeout_s) as r:
             body, ctype = r.read(), r.headers.get_content_type()
         if ctype != want or holds not in body:
