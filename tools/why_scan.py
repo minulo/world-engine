@@ -60,7 +60,11 @@ FIELDS = ("river_discharge", "runoff", "runoff_annual", "lake_fraction", "lake_l
           "ocean_mask", "subsidence", "biome", "surface_temperature", "precipitation")
 # the fields of the invented layer magic (data/fantasy/magic.yaml), read where a world has them: each of their answers must
 # say that its rule is invented, and give the numbers and classes the world holds
-MAGIC_FIELDS = ("mana_density", "mana_source", "frozen_mana", "ley_flow", "wild_magic", "aura", "spent_mana_heat")
+MAGIC_ASPECTS = {"deep": "plates closing or parting", "ember": "volcanic fire", "elder": "old continental ground",
+                 "verdant": "living land", "tempest": "storms"}                  # each aspect of mana, and what makes it
+MAGIC_FIELDS = ("mana_density", "mana_source", "frozen_mana", "ley_flow", "mana_spent", "wild_magic", "aura", "mana_aspect",
+                "ley_line", "spent_mana_heat") + tuple(f"mana_{a}" for a in MAGIC_ASPECTS)
+MAGIC_DAY_FIELDS = ("mana_surge",)                       # ... and its field of a day, read with the weather of that day
 INVENTED = "By the invented rules of the magic layer"
 FIELDS = FIELDS + MAGIC_FIELDS
 NUMBER = r"-?\d[\d,]*(?:\.\d+)?(?:e[+-]?\d+)?"         # a number as a sentence prints it: 1,234 or 0.05 or 1.2e-05
@@ -71,7 +75,8 @@ BROKEN = [(re.compile(pattern), what) for pattern, what in (
     (r"\d{9,}", "a number of nine digits or more"), (r":\s*$", "ends on a colon"), (r"; [A-Z]", "a capital after a semicolon"))]
 
 
-WEATHER_FIELDS = ("weather_temperature", "weather_precipitation", "weather_pressure", "weather_wind", "storm_influence")
+WEATHER_FIELDS = ("weather_temperature", "weather_precipitation", "weather_pressure", "weather_wind", "storm_influence") \
+    + MAGIC_DAY_FIELDS
 IN_A_LAKE, CLOSED_LAKE, AT_THE_BRIM, UNDER_A_CLOSED_LAKE = 1, 2, 4, 5       # the classes of the driver river_discharge.place
 DRY_DAY, WET_DAY, NO_RAIN = 0, 1, 2                                         # ... of weather_precipitation.day_kind
 STORM_KINDS = {1: "a mid-latitude storm", 2: "a tropical cyclone"}          # the codes of the table of storms
@@ -237,11 +242,11 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                 parts = [number(x) for x in re.findall(rf"({NUMBER}) mm/month", re.sub(r"\([^)]*\)", "", first.split(":", 1)[1]))]
                 if not parts or abs(sum(parts) - value) > 0.012 * sum(abs(x) for x in parts) + 0.02:
                     wrong(f"gives parts that add up to {sum(parts):.4g} mm/month, where the field holds {value:.4g}")
-            if field in MAGIC_FIELDS:                         # an invented rule is never told as if it were physics
+            if field in MAGIC_FIELDS + MAGIC_DAY_FIELDS:      # an invented rule is never told as if it were physics
                 for step in chain:
-                    if step["field"] in MAGIC_FIELDS and "writer" in step and INVENTED not in step["text"]:
+                    if step["field"] in MAGIC_FIELDS + MAGIC_DAY_FIELDS and "writer" in step and INVENTED not in step["text"]:
                         wrong("tells a rule of the magic layer without saying that it is invented", step["text"])
-            if field in ("mana_density", "mana_source") and ":" in first and value > 0:
+            if field in ("mana_density", "mana_source", "mana_spent") and ":" in first and value > 0:
                 unit = "thaum/km²" if field == "mana_density" else "thaum/km²/yr"
                 parts = [number(x) for x in re.findall(rf"({NUMBER}) {unit}(?!/)", re.sub(r"\([^)]*\)", "", first.split(":", 1)[1]))]
                 if not parts or abs(sum(parts) - value) > 0.012 * sum(abs(x) for x in parts) + 0.02:
@@ -256,6 +261,39 @@ def scan(view, cells=None, fields=FIELDS) -> list:
             elif field == "ley_flow":
                 must("it is sea, and salt water grounds mana", wet)
                 must_not("it is sea", not wet)
+                line = view.specs["ley_line"]["categories"][int(f["ley_line"][cell])] if "ley_line" in f else None
+                must("a river line", line == "river_line")       # the flow's answer and the map of the lines name one line
+                must("a plate line", line == "plate_line")
+                must("a nexus", line == "nexus")
+                must("on no ley line", line == "none" and not wet)
+                if line in ("none", None) and value != 0:
+                    wrong(f"holds a flow of {value:.4g} along a ley line where no ley line runs")
+            elif field == "ley_line":
+                name = view.specs["ley_line"]["categories"][int(f["ley_line"][cell])]
+                must(f"the ley line here is of the class {name.replace('_', ' ')}:")
+                if wet and name != "none":
+                    wrong("puts a ley line under salt water")
+            elif field == "mana_aspect":
+                name = view.specs["mana_aspect"]["categories"][int(f["mana_aspect"][cell])]
+                must(f"the aspect of the mana here is {name}:")
+                must("too thin to carry an aspect", name == "none")
+                if name != "none":
+                    parts = {a: float(f[f"mana_{a}"][cell]) for a in MAGIC_ASPECTS}
+                    if parts[name] < max(parts.values()):
+                        wrong(f"names the aspect {name}, where the world holds more {max(parts, key=parts.get)} mana")
+                    must(f"which {MAGIC_ASPECTS[name].split()[0]}")       # the sentence says what makes that aspect
+                    said = re.search(rf"(under 1|over 99|{NUMBER}) % of the mana here is {name} mana", first)
+                    whole = float(f["mana_density"][cell])
+                    if not said or abs(percent(said.group(1) + " %") - parts[name] / whole) > 0.006:
+                        wrong(f"gives no share of {name} mana, or one that is not the world's {parts[name] / whole:.3f}")
+            elif field.startswith("mana_") and field[5:] in MAGIC_ASPECTS:
+                aspect = field[5:]
+                must(f"no {aspect} mana reaches this cell", value == 0)
+                if value > 0:
+                    said = read(rf"({NUMBER}) thaum/km² of the mana here is {aspect} mana", f"{aspect} mana in thaum/km²")
+                    if said and not close(said[0], value):
+                        wrong(f"gives {said[0]:g} thaum/km² of {aspect} mana, where the field holds {value:.4g}")
+                    must(MAGIC_ASPECTS[aspect].split()[0])
             elif field == "wild_magic":
                 said = read(rf"wild magic here is ({NUMBER}) on a scale from 0 to 1", "wild magic from 0 to 1")
                 if said and not close(said[0], value):
@@ -445,6 +483,12 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                 adds_up([number(x) for x in re.findall(rf"({NUMBER}) m/s", rest)], "m/s", value)
                 gust, wind = record(field, "gust")[cell].astype(np.float64), f[field][cell].astype(np.float64)
                 must("the day's own gust", float(gust @ wind) != 0.0)
+            elif field == "mana_surge":
+                said = read(rf"On day {day}, the surge of wild magic here is ({NUMBER}) on a scale from 0 to 1", "surge from 0 to 1")
+                if said and not close(said[0], value):
+                    wrong(f"gives {said[0]:g} for the surge, where the day holds {value:.4g}")
+                if "storm_influence" in f and float(f["storm_influence"][cell]) == 0.0 and value != 0:
+                    wrong("holds a surge where no storm of the day acts")
             elif field == "storm_influence":
                 reached = int(record(field, "reached")[cell]) == 1
                 must("no storm of the day comes within twice its radius", not reached)

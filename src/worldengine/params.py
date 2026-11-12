@@ -237,8 +237,13 @@ class Parameters:
             self.text[stem] = yaml.safe_dump(value, sort_keys=False)
         if isinstance(fantasy, str):
             fantasy = (fantasy,)
+        fantasy = list(fantasy)
         for name in fantasy:
-            self._lay_over(name, schema_dir)
+            if fantasy.count(name) > 1:
+                raise ParameterError(f"the fantasy layer {name} is named twice; a layer is laid over the files once")
+        for name in fantasy:
+            if name not in self.fantasy:                     # (a layer named earlier may have needed it, and laid it)
+                self._lay_over(name, schema_dir)
         # category lists and rule tables named by fields.yaml or models.yaml (biomes.yaml, soils.yaml, rocks.yaml)
         self.extra_files = {}
         for extra in sorted(p.stem for p in self.data_dir.glob("*.yaml") if p.stem not in FILES):
@@ -252,13 +257,15 @@ class Parameters:
             elif stem in FILES:
                 raise ParameterError(f"{stem}.yaml has no schema in {schema_dir}")
 
-    def _lay_over(self, name, schema_dir):
-        """Add the entries of the fantasy layer `name` to the parameter files."""
+    def _lay_over(self, name, schema_dir, needed_by=()):
+        """Add the entries of the fantasy layer `name` to the parameter files, after the layers it needs: a layer that
+        builds on another names it under `needs`, and that one is laid first if it is not laid yet."""
         offered = fantasy_layers(self.data_dir)
         if not isinstance(name, str) or name not in offered:
-            raise ParameterError(f"there is no fantasy layer named {name!r} (there are: {', '.join(offered) or 'none'})")
-        if name in self.fantasy:
-            raise ParameterError(f"the fantasy layer {name} is named twice; a layer is laid over the files once")
+            asked = f", which the layer {needed_by[-1]} needs" if needed_by else ""
+            raise ParameterError(f"there is no fantasy layer named {name!r}{asked} (there are: {', '.join(offered) or 'none'})")
+        if name in needed_by:
+            raise ParameterError(f"the fantasy layers {' and '.join(needed_by)} need each other; one of them must come first")
         path = self.data_dir / FANTASY_DIR / f"{name}.yaml"
         if not path.exists():
             path = DEFAULT_DATA_DIR / FANTASY_DIR / f"{name}.yaml"
@@ -266,6 +273,9 @@ class Parameters:
         _, layer = _load_yaml(path)
         schema = schema_dir / "fantasy.yaml"
         validate(layer, _load_yaml(schema if schema.exists() else DEFAULT_DATA_DIR / "schemas" / "fantasy.yaml")[1], where)
+        for other in layer.get("needs") or []:
+            if other not in self.fantasy:
+                self._lay_over(other, schema_dir, tuple(needed_by) + (name,))
         for stem, adds in layer["adds"].items():
             if stem not in FILES:
                 raise ParameterError(f"{where}: adds to {stem}, which is not one of the parameter files ({', '.join(FILES)})")

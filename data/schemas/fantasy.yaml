@@ -4,6 +4,7 @@ type: map
 required: [about, adds]
 keys:
   about: {type: string}
+  needs: {type: list, items: {type: string}}     # other layers that this one builds on: the engine lays them first
   adds:
     type: map
     values: {type: map, values: {type: any}}
