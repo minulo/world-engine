@@ -276,12 +276,12 @@ def scan(view, cells=None, fields=FIELDS) -> list:
             elif field == "mana_aspect":
                 name = view.specs["mana_aspect"]["categories"][int(f["mana_aspect"][cell])]
                 must(f"the aspect of the mana here is {name}:")
-                must("too thin to carry an aspect", name == "none")
+                must("no mana stands here", name == "none")
                 if name != "none":
                     parts = {a: float(f[f"mana_{a}"][cell]) for a in MAGIC_ASPECTS}
                     if parts[name] < max(parts.values()):
                         wrong(f"names the aspect {name}, where the world holds more {max(parts, key=parts.get)} mana")
-                    must(f"which {MAGIC_ASPECTS[name].split()[0]}")       # the sentence says what makes that aspect
+                    must(MAGIC_ASPECTS[name])                             # the sentence says what makes that aspect
                     said = re.search(rf"(under 1|over 99|{NUMBER}) % of the mana here is {name} mana", first)
                     whole = float(f["mana_density"][cell])
                     if not said or abs(percent(said.group(1) + " %") - parts[name] / whole) > 0.006:
@@ -293,7 +293,7 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                     said = read(rf"({NUMBER}) thaum/km² of the mana here is {aspect} mana", f"{aspect} mana in thaum/km²")
                     if said and not close(said[0], value):
                         wrong(f"gives {said[0]:g} thaum/km² of {aspect} mana, where the field holds {value:.4g}")
-                    must(MAGIC_ASPECTS[aspect].split()[0])
+                    must(MAGIC_ASPECTS[aspect])
             elif field == "wild_magic":
                 said = read(rf"wild magic here is ({NUMBER}) on a scale from 0 to 1", "wild magic from 0 to 1")
                 if said and not close(said[0], value):

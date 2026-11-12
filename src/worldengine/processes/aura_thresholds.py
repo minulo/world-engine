@@ -17,8 +17,8 @@ where the table of wellsprings (Mana) lists the cell; then strong, steady, faint
 against the layer's thresholds.
 
 The aspect of a place's mana: the aspect (deep, ember, elder, verdant, tempest: the mana of the plates, of fire, of old
-ground, of life and of storms, each a field of Mana) that holds the most of it; none in a dead zone, where the mana is
-too thin to carry one.
+ground, of life and of storms, each a field of Mana) that holds the most of it, however little there is; none only
+where no mana stands at all.
 
 The ley line of a place: a plate line where the plate boundary's gain to the ground's conductivity is at least 1, a
 river line where a great river runs (one that carries more than the layer's least discharge for a ley line), a nexus
@@ -74,12 +74,12 @@ class ThresholdAura(Process):
             aura[density >= lowest] = names.index(name)
         aura[np.asarray(ctx.read("table:wellsprings")["cell"], dtype=np.int64)] = names.index(WELLSPRING)
         aura[wild >= w["wild_from"]] = names.index(WILD)
-        # the aspect: the kind of mana that the place holds the most of; none where the mana is too thin for any aura
+        # the aspect: the kind of mana that the place holds the most of; none only where no mana stands
         parts = np.stack([ctx.read(f"mana_{a}").astype(np.float64) for a in ASPECTS], axis=1)
         leading = np.argmax(parts, axis=1)                    # of two equal parts the first in the layer's order
         aspects = list(ctx.categories("mana_aspect"))
-        thin = density < k["faint_from_thaum_km2"]
-        aspect = np.where(thin, aspects.index(NO_ASPECT), np.array([aspects.index(a) for a in ASPECTS])[leading]).astype(np.int16)
+        empty = density <= 0
+        aspect = np.where(empty, aspects.index(NO_ASPECT), np.array([aspects.index(a) for a in ASPECTS])[leading]).astype(np.int16)
         share = np.where(density > 0, parts[np.arange(mesh.n), leading] / np.where(density > 0, density, 1), 0.0)
         # the ley line: the rule of Mana's conductance, read as a class
         sea = np.asarray(ctx.read("ocean_mask"), dtype=bool)

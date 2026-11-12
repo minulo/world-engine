@@ -1,0 +1,29 @@
+world: 10242 cells, layers ['magic', 'magic-warming'], built in 98.2 s, climate rounds 41, fingerprint 01f3b8425e4ac5ed
+mana: 1.817e+10 thaum free (1.045e+10 on land), 1.959e+10 frozen; 3.181e+09 thaum made a year; spent 0.972 of it, of which at sea 0.755; the rest life takes up
+  spent, decays: 0.330 of what is made
+  spent, grounded: 0.607 of what is made
+  spent, from_ice: 0.036 of what is made
+  made by plate_motion: 0.282
+  made by fire: 0.452
+  made by old_ground: 0.050
+  made by life: 0.125
+  made by storms: 0.091
+density, thaum/km²: land mean 74.0, sea mean 20.9, highest 290.0
+aura, share of the land (of the sea): dead_zone 0.077 (0.735); faint 0.203 (0.073); steady 0.545 (0.054); strong 0.137 (0.052); wellspring 0.010 (0.000); wild 0.028 (0.084)
+mana_aspect, share of the land (of the sea): none 0.000 (0.000); deep 0.022 (0.242); ember 0.189 (0.218); elder 0.091 (0.072); verdant 0.690 (0.018); tempest 0.008 (0.450)
+ley_line, share of the land (of the sea): none 0.842 (1.000); plate_line 0.060 (0.000); river_line 0.093 (0.000); nexus 0.006 (0.000)
+ley lines: 167 cells on plate lines, 258 on river lines, 16 at a nexus; flow on the lines: median 1140, highest 14744 thaum/km/yr; cells off the lines with a flow: 0
+  deep: 0.205 of the free mana, 0.108 of the land's
+  ember: 0.354 of the free mana, 0.230 of the land's
+  elder: 0.083 of the free mana, 0.126 of the land's
+  verdant: 0.273 of the free mana, 0.457 of the land's
+  tempest: 0.086 of the free mana, 0.079 of the land's
+wellsprings: 39; on land 37; by cause (plates, fire, old ground, life, storms) [4, 33, 0, 2, 0]
+  1. 18.1 N, 13.5 E: 290.0 thaum/km², ember (0.73)
+  2. 4.0 N, 175.4 E: 282.4 thaum/km², deep (0.41)
+  3. 0.0 N, 63.0 E: 277.2 thaum/km², ember (0.61)
+wild magic at least 0.5: 0.028 of the land, 0.084 of the sea
+spent mana's heat: mean 1.52 W/m², highest 21.7
+against the plain world: 94 of 138 fields and columns bit for bit the same; climate rounds 41 there
+  temperature: planet +0.95 K against it (land +1.03, sea +0.91); mean 15.31 C
+  the tenth of cells with the most heat warms +1.04 K, the half with the least +0.88 K

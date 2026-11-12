@@ -423,23 +423,26 @@ def test_the_aura_follows_the_density_the_wellsprings_and_wild_magic(h):
 
 
 def test_the_aspect_of_a_place_is_the_kind_of_mana_it_holds_most_of(h):
-    """Each fifth of the planet's longitudes holds most of one aspect; south of 60 S the mana is too thin for an aura, and
-    so for an aspect. The share recorded is the leading aspect's share of the density."""
+    """Each fifth of the planet's longitudes holds most of one aspect, in a dead zone south of 60 S as in the strong mana
+    north of it; only where no mana stands at all (south of 80 S) is there no aspect. The share recorded is the leading
+    aspect's share of the density."""
     m = h.mesh
     c = constants(h, "Aura")["classes"]
     sector = np.clip(((m.lon + 180.0) // 72.0).astype(int), 0, 4)
-    thin = m.lat < -60
-    parts = {a: np.where(thin, 0.1, np.where(sector == k, 40.0, 5.0)) for k, a in enumerate(ASPECTS)}
+    thin, empty = m.lat < -60, m.lat < -80
+    parts = {a: np.where(empty, 0.0, np.where(sector == k, 40.0, 5.0) * np.where(thin, 0.01, 1.0)) for k, a in enumerate(ASPECTS)}
     density = sum(parts.values())
     assert density[~thin].min() >= c["faint_from_thaum_km2"] > density[thin].max()
-    empty = {"cell": [], "latitude": [], "longitude": [], "mana_density": [], "cause": [], "cause_share": []}
-    out = h.run("Aura", reads=aura_reads(h, density, **{f"mana_{a}": v for a, v in parts.items()}), tables={"wellsprings": empty})
+    none = {"cell": [], "latitude": [], "longitude": [], "mana_density": [], "cause": [], "cause_share": []}
+    out = h.run("Aura", reads=aura_reads(h, density, **{f"mana_{a}": v for a, v in parts.items()}), tables={"wellsprings": none})
     aspect = np.array(h.registry.fields["mana_aspect"].categories)[out.fields["mana_aspect"]]
-    assert set(aspect[thin]) == {"none"}
+    aura = np.array(h.registry.fields["aura"].categories)[out.fields["aura"]]
+    assert set(aspect[empty]) == {"none"} and set(aura[thin]) == {"dead_zone"}
     for k, a in enumerate(ASPECTS):
-        assert set(aspect[~thin & (sector == k)]) == {a}
+        assert set(aspect[~empty & (sector == k)]) == {a}           # in the dead zone too: however little mana there is
     share = out.drivers["mana_aspect"]["share"].astype(np.float64)
-    assert np.allclose(share[~thin], 40.0 / 60.0, atol=1e-6) and np.array_equal(out.drivers["mana_aspect"]["rule"], out.fields["mana_aspect"])
+    assert np.allclose(share[~empty], 40.0 / 60.0, atol=1e-6) and np.all(share[empty] == 0)
+    assert np.array_equal(out.drivers["mana_aspect"]["rule"], out.fields["mana_aspect"])
 
 
 def test_the_ley_lines_on_the_map_are_the_lines_mana_runs_along(h):

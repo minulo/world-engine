@@ -70,8 +70,8 @@ adds:
             storminess_reference: 2.0            # wild_magic = 1 - exp(-(fall / the shared reference) * (storminess / this)): the storminess
                                                  #  (Mana's count of storm tracks and cyclone potential) that counts as stormy [INVENTED]
             wild_from: 0.5                       # wild magic at least this makes the aura wild [INVENTED]
-          classes:                               # the lowest density of each aura [INVENTED]; below the first, a dead zone,
-            faint_from_thaum_km2: 20.0           #  whose mana is too thin to carry an aspect
+          classes:                               # the lowest density of each aura [INVENTED]; below the first, a dead zone
+            faint_from_thaum_km2: 20.0
             steady_from_thaum_km2: 50.0
             strong_from_thaum_km2: 100.0
       ManaSurge:
@@ -138,7 +138,7 @@ adds:
         {family: "Magic (invented)", unit: category, shape: cell, kind: category,
          categories: [none, deep, ember, elder, verdant, tempest],
          colors: ["#2f2f3a", "#5e60ce", "#f3722c", "#c9a227", "#43aa8b", "#4cc9f0"],
-         description: "Invented, the fantasy layer magic: the aspect of the mana here, the kind that holds the most of it: deep (plates), ember (volcanic fire), elder (old ground), verdant (living land) or tempest (storms); none in a dead zone."}
+         description: "Invented, the fantasy layer magic: the aspect of the mana here, the kind that holds the most of it: deep (plates), ember (volcanic fire), elder (old ground), verdant (living land) or tempest (storms), however little mana there is; none only where there is no mana."}
       ley_line:
         {family: "Magic (invented)", unit: category, shape: cell, kind: category,
          categories: [none, plate_line, river_line, nexus],
@@ -282,7 +282,7 @@ adds:
           rule:
             names: [none, deep, ember, elder, verdant, tempest]
             says_by:
-              none: "mana stands at {density}, too thin to carry an aspect"
+              none: "no mana stands here, so it has no aspect"
               deep: "{share} of the mana here is deep mana, which plates closing or parting make, more than any other kind"
               ember: "{share} of the mana here is ember mana, which volcanic fire makes, more than any other kind"
               elder: "{share} of the mana here is elder mana, which seeps from old continental ground, more than any other kind"

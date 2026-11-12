@@ -21,6 +21,7 @@ on:
       - "src/worldengine/server.py"
       - "viewer/**"
       - "panel/**"
+      - "data/fantasy/**"
       - "tools/compare_worlds.py"
       - "tests/test_panel.py"
       - "tests/test_local_run.py"
@@ -221,6 +222,29 @@ jobs:
           grep -q "self-test passed" "$out"
 
       # 5. What this system built, for the comparison of the systems (the last job).
+      # The launcher with the invented layer magic: a second world beside the first, the same world under the mana.
+      - name: Launcher with the invented layer (scripts/run.sh --fantasy magic --check)
+        if: ${{ !cancelled() && runner.os != 'Windows' }}
+        run: scripts/run.sh --fantasy magic --port 8769 --check
+      - name: Launcher with the invented layer (scripts\run.cmd -Fantasy magic -Check)
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: cmd
+        run: scripts\run.cmd -Fantasy magic -Port 8769 -Check
+      - name: The magic world is the first world, bit for bit, with the layer's fields beside it
+        if: ${{ !cancelled() }}
+        run: |
+          $VPY - <<'EOF'
+          from worldengine.store import StoreView
+          plain, magic = StoreView("worlds/first.zarr"), StoreView("worlds/first-magic.zarr")
+          assert magic.meta["fantasy"] == ["magic"] and "fantasy" not in plain.meta, magic.meta.get("fantasy")
+          ours, theirs = magic.attrs["fingerprints"], plain.attrs["fingerprints"]
+          differ = sorted(k for k in theirs if ours.get(k) != theirs[k])
+          assert not differ, f"the layer magic changed {len(differ)} fields of the world: {differ[:8]}"
+          added = sorted(set(ours) - set(theirs))
+          assert "mana_density" in added and "ley_line" in added and "mana_aspect" in added, added
+          print(f"{len(theirs)} fields and columns the same; the layer adds {len(added)}")
+          EOF
+
       - name: The world's fingerprints on this system
         if: ${{ !cancelled() }}
         run: |

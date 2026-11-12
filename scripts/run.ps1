@@ -19,6 +19,9 @@ Serve without opening a browser.
 scripts\run.cmd -Fantasy magic
 A world with the invented layer magic (mana), worlds\first-magic.zarr.
 .EXAMPLE
+scripts\run.cmd -Fantasy magic-warming
+The same, and spent mana also warms the world: worlds\first-magic-warming.zarr.
+.EXAMPLE
 scripts\run.cmd -Check
 Install, build, serve, fetch the page and /api/world, stop (for CI).
 #>
@@ -124,7 +127,7 @@ if (Test-Path $World) {
     Write-Host "The world $World exists; it is served as it is."
 } else {
     $with = $(if ($Fantasy) { ", with the invented layer $Fantasy" } else { "" })
-    Say "Building the $BuildProfile world into ${World}${with}: one to two minutes for the preview, 40 to 80 for the standard one"
+    Say "Building the $BuildProfile world into ${World}${with}: one to two minutes for the preview, about 45 for the standard one"
     $buildArgs = @(); if ($Seed) { $buildArgs = @("--seed", $Seed) }
     if ($Fantasy) { $buildArgs += @("--fantasy", $Fantasy) }
     & $VPy -m worldengine build --profile $BuildProfile @buildArgs --out $World
