@@ -2,6 +2,7 @@ type: map
 required: [slots]
 keys:
   shared: {type: map, values: {type: any}}
+  fantasy: {type: list, items: {type: string}}     # the fantasy layers laid over these files (data/fantasy/); the engine writes it
   slots:
     type: map
     values:
@@ -11,7 +12,7 @@ keys:
         implementation: {type: string}
         writes: {type: list, items: {type: string}}
         model: {type: string}
-        standing: {type: string, choices: [Established, Adapted, Assembled, Rule, Test]}
+        standing: {type: string, choices: [Established, Adapted, Assembled, Rule, Test, Invented]}
         ignores: {type: string}
         wrong_where: {type: string}
         constants: {type: map, values: {type: any}, nullable: true}

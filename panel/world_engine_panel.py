@@ -79,8 +79,8 @@ class Panel:
         self._closing = False
 
         root.title(control.APP_NAME)
-        root.geometry("620x500")
-        root.minsize(520, 440)
+        root.geometry("620x530")
+        root.minsize(520, 470)
         self._set_theme()
         self._load_images()
         self._build()
@@ -194,23 +194,26 @@ class Panel:
         self.world_var = tk.StringVar(value=self.c.world)
         self.world_box = ttk.Combobox(settings, textvariable=self.world_var, values=self._worlds())
         self.world_box.grid(row=0, column=3, columnspan=2, sticky="ew", padx=(6, 0))
-        ttk.Label(settings, text="Version").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(settings, text="Version").grid(row=2, column=0, sticky="w", pady=(6, 0))     # row 1: the Magic box
         self.version_var = tk.StringVar()
         self.version_box = ttk.Combobox(settings, textvariable=self.version_var, state="readonly")
-        self.version_box.grid(row=1, column=1, columnspan=3, sticky="ew", padx=(6, 6), pady=(6, 0))
+        self.version_box.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(6, 6), pady=(6, 0))
         self.version_box.bind("<<ComboboxSelected>>", lambda e: self._say_version())
         self.check_button = ttk.Button(settings, text="Check for new", command=self.on_check)
-        self.check_button.grid(row=1, column=4, sticky="e", pady=(6, 0))
+        self.check_button.grid(row=2, column=4, sticky="e", pady=(6, 0))
         self.check_button.bind("<Enter>", lambda e: self.hint.configure(text=HINTS["check"]))
         self.check_button.bind("<Leave>", lambda e: self.hint.configure(text=""))
         self.version_note = ttk.Label(settings, style="Small.TLabel", wraplength=480, justify="left")
-        self.version_note.grid(row=2, column=0, columnspan=5, sticky="w", pady=(4, 0))
+        self.version_note.grid(row=3, column=0, columnspan=5, sticky="w", pady=(4, 0))
         settings.bind("<Configure>", lambda e: self.version_note.configure(wraplength=max(200, e.width - 30)))
         for w in (self.port_entry, self.world_box):
             w.bind("<FocusOut>", lambda e: self.apply_settings(quiet=True))
             w.bind("<Return>", lambda e: self.apply_settings())
         self.world_box.bind("<<ComboboxSelected>>", lambda e: self.apply_settings())
         self.world_box.bind("<Button-1>", lambda e: self.world_box.configure(values=self._worlds()), add="+")
+        self.magic_var = tk.BooleanVar(value=self.c.magic)        # the invented layer magic, for a world that is built
+        self.magic_box = ttk.Checkbutton(settings, text="Magic (invented physics)", variable=self.magic_var, command=self.on_magic)
+        self.magic_box.grid(row=1, column=2, columnspan=2, sticky="w", pady=(4, 0))
 
         bar = ttk.Frame(outer)
         bar.grid(row=4, column=0, sticky="ew", pady=(6, 0))
@@ -235,7 +238,8 @@ class Panel:
 
     def _worlds(self):
         found = control.worlds(self.c.repo)
-        return found if control.DEFAULT_WORLD in found else [control.DEFAULT_WORLD] + found
+        default = control.MAGIC_WORLD if self.c.magic else control.DEFAULT_WORLD
+        return found if default in found else [default] + found
 
     # ------------------------------------------------------------------ showing the state
     def render(self, st: Status):
@@ -267,7 +271,7 @@ class Panel:
         for name, b in self.buttons.items():
             on = allowed.get(name, True) and not (name == "install" and not (control.ON_WINDOWS or control.ON_MAC))
             b.state(["!disabled"] if on else ["disabled"])
-        for w in (self.port_entry, self.world_box):
+        for w in (self.port_entry, self.world_box, self.magic_box):
             w.state(["!disabled"] if allowed["settings"] else ["disabled"])
         for w in (self.version_box, self.check_button):       # a version is chosen for Upgrade, so with Upgrade
             w.state(["!disabled"] if allowed["upgrade"] and self.here is not None else ["disabled"])
@@ -376,6 +380,16 @@ class Panel:
             return False
         self._wake.set()
         return True
+
+    def on_magic(self):
+        """The box "Magic (invented physics)": a world built from now on gets the invented layer magic, and the default
+        world gives way to worlds/first-magic.zarr (and back)."""
+        if not button_states(self.status, self.action)["settings"]:
+            self.magic_var.set(self.c.magic)
+            return
+        self.c.set_settings(world=self.world_var.get(), magic=self.magic_var.get())
+        self.world_var.set(self.c.world)
+        self._wake.set()
 
     # ------------------------------------------------------------------ versions
     def _read_versions(self):

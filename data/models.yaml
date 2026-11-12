@@ -57,7 +57,7 @@ slots:
                                                #  other numbers: a mean of 36 km for continents whose mean height is about 120 m (Cogley
                                                #  1984, abstract), a mean of 41.1 km (Christensen and Mooney 1995, at second hand in Yanagi
                                                #  2011), 30 km at sea level for South America (Chapin 1996, abstract). A proposal, not applied:
-                                               #  docs/notes_pending/literature.md
+                                               #  docs/BUILD_NOTES.md, section 27
         continental_excess_m: 1500.0           # mean thickness above normal, so that most continental crust stands above the sea [PROVISIONAL]
         variation_m: 2500.0                    # spread of the seeded thickness [PROVISIONAL]
         variation_waves: 32
@@ -300,7 +300,7 @@ slots:
       # daily spread [INFERRED]. The TTOP model (Smith and Riseborough 2002; Obu et al. 2019) needs the ground's thermal
       # conductivity ratio and n-factors [DOCUMENTED: the abstracts of Smith and Riseborough 2002 and Garibaldi et al.
       # 2026], which the engine has not; for sea ice, Semtner 1976 needs a lid of ice in EnergyBalance [INFERRED]. The
-      # thresholds stay until a frost number replaces them: docs/notes_pending/literature.md
+      # thresholds stay until a frost number replaces them: docs/BUILD_NOTES.md, section 27
 
   EnergyBalance:
     implementation: worldengine.processes.energy_balance_wind:WindEnergyBalance
@@ -404,7 +404,7 @@ slots:
     # `overturning` below: worldengine.processes.ocean_wind_and_density:WindAndDensityOcean, which writes two fields more
     # (sea_surface_salinity, overturning_sinking). It is not the default: on the preview Earth twin it turns the ocean's
     # heat across the equator from 0.52 PW southward to 0.13 and warms the northern summer by 1.1 K, and it wets the
-    # Sahara's summer and dries the Amazon past what the Earth tests allow (docs/notes_pending/ocean-overturning.md).
+    # Sahara's summer and dries the Amazon past what the Earth tests allow (docs/BUILD_NOTES.md, section 28).
     implementation: worldengine.processes.ocean_wind_driven:WindDrivenOcean
     standing: Established
     model: "The wind-driven loops of one uniform layer over a flat floor: Sverdrup balance in mid-ocean, closed by a western boundary current through friction (Stommel 1948). Upwelling from the divergence of the wind-driven surface transport (Ekman), with friction near the equator. Heat carried by the loops and the drift, and taken by upwelled water."
@@ -672,7 +672,7 @@ slots:
         decline_depth_m: 0.5                   # h0, the depth over which production falls by e [UNVERIFIED: recalled from the same.
                                                #  The tenfold fall over 1 m in the abstract above gives h0 = 1 m / ln 10 = 0.43 m; with
                                                #  0.5 m, 1 m of soil keeps 0.135 of P0, not 0.1. The Australian site's 53 and 7 m/My give
-                                               #  0.49 m. A proposal, not applied: docs/notes_pending/literature.md]
+                                               #  0.49 m. A proposal, not applied: docs/BUILD_NOTES.md, section 27]
         production_from_c: -5.0                # production grows with warmth from here ... [PROVISIONAL]
         production_full_at_c: 25.0             # ... to here, and with rain over demand up to 1 [PROVISIONAL]
         usual_warmth_and_water: 0.25           # warmth times water (each 0 to 1) at which production is P0 [PROVISIONAL: with 0.5 and a
@@ -700,7 +700,7 @@ slots:
       # is Gray et al. 2011: the dominant groups of the World Reference Base for 70 combinations of climate, parent rock and
       # relief, with the right group among its top three for 58 % of its test samples. The table below stays a rule table; a
       # replacement could follow Gray et al. 2011, and SoilGrids is the map to test the twin against:
-      # docs/notes_pending/literature.md
+      # docs/BUILD_NOTES.md, section 27
       orders:                                  # in order; the first that matches wins [PROVISIONAL: thresholds mine, after the orders' definitions]
         - {order: ice, where: {lasting_ice: [0.99, null]}}
         - {order: bare_rock, where: {depth_m: [null, 0.1]}}
@@ -811,7 +811,7 @@ slots:
       intensity_cap_m_s: 90.0                  # [PROVISIONAL: about the strongest winds measured in cyclones. Searched: the record is 95 m/s,
                                                #  Hurricane Patricia in 2015, tying Typhoon Nancy of 1961 (Rogers et al. 2017, the text
                                                #  Consensus gives; Foltz et al. 2016, abstract). A proposal, not applied:
-                                               #  docs/notes_pending/literature.md]
+                                               #  docs/BUILD_NOTES.md, section 27]
       gpi:                                     # |1e5 eta|^1.5 (H/50)^3 (V/70)^3 (1 + 0.1 S)^-2, Emanuel and Nolan 2004 [DOCUMENTED at second
                                                #  hand: the eight numbers as the xtci package carries them (wy2136/xtci, xtci/ERA5.py, "GPI
                                                #  (Emanuel and Nolan 2004): |10**5\eta|**(3/2) * (H/50)**3 * (Vpot/70)**3 *

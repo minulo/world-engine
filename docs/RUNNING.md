@@ -63,7 +63,7 @@ what it does at the foot of the window.
 | **Start** | Runs the launcher of section 2 without a browser (`scripts/run.sh --no-browser` on macOS, `scripts\run.ps1 -NoBrowser` on Windows), with the port and the world of the settings. Its output appears under **Details** and in `.worldengine/launcher.log`. |
 | **Stop** | Stops the engine: it asks the server to stop, and if the server does not, it ends the process. This works for a server started from a terminal too. In the middle of a build it warns first: the world being built is thrown away, because a world is written to disk only at the very end. At most a folder `<world>.partial` is left, which the next build removes. |
 | **Open in browser** | Opens the viewer. |
-| **Upgrade…** | Asks first. It stops the engine if it runs and fetches the newest code of the version chosen under **Version**: of the version this copy is on already with `git pull --ff-only`, of another one by switching to it (`git fetch`, then `git checkout`). If the code changed, it deletes the default world `worlds/first.zarr`, so that the next start builds it with the new engine (section 4 says why). Other worlds are kept. If Git is missing, the repository cannot be reached, or your copy has changes or commits of its own that stand in the way, it says so and changes nothing. Afterwards it offers to start; if the panel's own code changed, it offers to open the panel again instead, so that the new panel is the one you use. |
+| **Upgrade…** | Asks first. It stops the engine if it runs and fetches the newest code of the version chosen under **Version**: of the version this copy is on already with `git pull --ff-only`, of another one by switching to it (`git fetch`, then `git checkout`). If the code changed, it deletes the default world `worlds/first.zarr`, and `worlds/first-magic.zarr`, the default world with magic, so that the next start builds it with the new engine (section 4 says why). Other worlds are kept. If Git is missing, the repository cannot be reached, or your copy has changes or commits of its own that stand in the way, it says so and changes nothing. Afterwards it offers to start; if the panel's own code changed, it offers to open the panel again instead, so that the new panel is the one you use. |
 | **Rebuild world…** | Asks first. It deletes the selected world and starts, which builds the world again. |
 | **Reset environment…** | Asks first. It deletes `.venv` (about 450 MB); the next start makes it again and downloads the packages. Use it when the packages are broken. |
 | **Open folder** | Shows the `world-engine` folder in Explorer or the Finder. |
@@ -71,6 +71,7 @@ what it does at the foot of the window.
 | **Delete…** | Asks first, with the list of what it removes: `.venv`, `worlds/`, `.worldengine/` (the panel's settings and logs) and the shortcuts or the app it installed. It does not remove the `world-engine` folder itself, Python or Git. After the panel has closed, delete the folder as section 5 says. |
 | **Details**, **Copy log**, **Open log** | Show the launcher's output, copy it (to send to someone who helps), or open its file. |
 | Settings: **Port**, **World** | The port (8765 unless you change it) and the world to serve: one of the worlds in `worlds/`, or a new name, which Start builds. The panel keeps them in `.worldengine/panel.json`. They can be changed while the engine is stopped. |
+| Settings: **Magic (invented physics)** | A world that Start builds gets the invented fantasy layer magic (mana: made-up rules, not claims about any real world). Ticking it moves the default world to `worlds/first-magic.zarr`, clearing it moves it back; a world that exists is served as it is. |
 | Settings: **Version**, **Check for new** | The version of the engine to run: one of the branches of the repository this copy was cloned from, the newest first, each with the date of its newest commit. The line below says which version this copy is on, at which commit, and whether a newer commit is there. Choosing one changes nothing by itself: **Upgrade…** then switches to it. The panel asks the repository for its versions once when it opens (`git fetch`, which changes no file of the engine); **Check for new** asks again. Without a network the list is the one the copy had. |
 
 ### Choosing a version
@@ -232,12 +233,13 @@ builds `worlds/first.zarr` before it serves; later it opens at once.
 In the viewer: choose a field, drag to turn the globe, scroll to zoom, click a cell for its values and its "why"
 answer. The day slider under "Storms and weather" steps through the days.
 
-Options (on Windows the same with one dash and a capital: `-Port`, `-Seed`, `-World`, `-Profile`, `-NoBrowser`):
+Options (on Windows the same with one dash and a capital: `-Port`, `-Seed`, `-World`, `-Profile`, `-Fantasy`, `-NoBrowser`):
 
 ```
 scripts/run.sh --port 9000                  # another port, if 8765 is taken
 scripts/run.sh --seed 7                     # another planet: built once into worlds/preview-seed7.zarr
 scripts/run.sh --profile standard           # the large world: 7.2 GB of memory, 45 minutes or more to build
+scripts/run.sh --fantasy magic              # the invented layer magic (mana), built once into worlds/first-magic.zarr
 scripts/run.sh --no-browser                 # serve without opening a browser
 scripts/run.sh --check                      # install, build, check that it serves, and stop
 ```

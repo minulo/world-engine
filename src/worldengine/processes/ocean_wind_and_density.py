@@ -54,7 +54,7 @@ salt); each climate run starts from a sea with no overturning, so a planet whose
 the one reached from there. On Earth's relief (the preview twin) the deep water forms at about 40 to 50 degrees north
 in both northern oceans and in the subtropical North Pacific, where Earth's forms in the North Atlantic beyond 55
 degrees: the twin's subtropical North Pacific holds 37.8 psu (Earth's about 35, UNVERIFIED: recalled), and its
-northern seas are colder and more often frozen than Earth's [MEASURED: docs/notes_pending/ocean-overturning.md]. Every water mass that sinks fills the same deep sea. The upper water's path
+northern seas are colder and more often frozen than Earth's [MEASURED: docs/BUILD_NOTES.md, section 28]. Every water mass that sinks fills the same deep sea. The upper water's path
 is a potential flow, not the western boundary currents that carry it on Earth. The Southern Ocean's terms rest on the
 wind of Circulation, which is weak over the twin's Southern Ocean, and they apply at the edge of any sea that goes
 round, a polar sea among them. A latitude that goes round is found on the mesh's cells in bands of a set width: a gap

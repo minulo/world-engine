@@ -1,5 +1,5 @@
 """The preview Earth twin with the first and the second OceanCurrents, side by side: the numbers of
-docs/notes_pending/ocean-overturning.md. A measurement, not a setting of the engine: the second version is put in the
+docs/BUILD_NOTES.md, section 28. A measurement, not a setting of the engine: the second version is put in the
 slot by an override, whatever data/models.yaml names as the default.
 
     WORLDENGINE_REFERENCE_DATA=... PYTHONPATH=src python handoff/overturning/overturning_twin.py

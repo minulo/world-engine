@@ -349,6 +349,15 @@ def test_upgrade_pulls_and_deletes_the_default_world(clone):
     assert "first.zarr was deleted" in result.message and any("git pull --ff-only" in s for s in said)
 
 
+def test_upgrade_deletes_the_default_world_with_magic_too(clone):
+    mine, theirs = clone
+    (mine / "worlds" / "first-magic.zarr").mkdir()
+    publish(theirs, "2\n")
+    result = controller(mine).upgrade()
+    assert not (mine / "worlds" / "first-magic.zarr").exists() and not (mine / "worlds" / "first.zarr").exists()
+    assert (mine / "worlds" / "other.zarr").exists() and "first-magic.zarr was deleted" in result.message
+
+
 def test_upgrade_refuses_what_is_not_a_fast_forward_and_changes_nothing(clone):
     mine, theirs = clone
     (mine / "mine.txt").write_text("my own\n")
@@ -598,8 +607,42 @@ def test_the_settings_are_kept_and_checked(tmp_path, run_dir):
             again.set_settings(port=bad)
     (run_dir / "panel.json").write_text("{not json")
     assert control.load_settings(tmp_path)["port"] == 8765
-    (run_dir / "panel.json").write_text(json.dumps({"port": "8765; rm", "world": 3, "shortcuts": "x"}))
-    assert control.load_settings(tmp_path) == {"port": 8765, "world": "worlds/first.zarr", "shortcuts": []}
+    (run_dir / "panel.json").write_text(json.dumps({"port": "8765; rm", "world": 3, "shortcuts": "x", "magic": "yes"}))
+    assert control.load_settings(tmp_path) == {"port": 8765, "world": "worlds/first.zarr", "magic": False, "shortcuts": []}
+
+
+def test_the_magic_box_names_its_own_world_and_passes_the_layer_to_the_launcher(tmp_path, run_dir, monkeypatch):
+    """The box "Magic (invented physics)": the default world gives way to worlds/first-magic.zarr and back, a world of
+    one's own choosing stays, the choice is kept, and the launcher builds with --fantasy magic (-Fantasy magic)."""
+    c = control.Controller(tmp_path)
+    assert not c.magic and c.world == control.DEFAULT_WORLD
+    c.set_settings(magic=True)
+    assert c.magic and c.world == control.MAGIC_WORLD == "worlds/first-magic.zarr"
+    again = control.Controller(tmp_path)
+    assert again.magic and again.world == control.MAGIC_WORLD
+    again.set_settings(magic=False)
+    assert not again.magic and again.world == control.DEFAULT_WORLD
+    again.set_settings(world="worlds/mine.zarr", magic=True)
+    assert again.magic and again.world == "worlds/mine.zarr"
+    posix = control.launcher_command(8765, tmp_path / "w.zarr", tmp_path, windows=False, fantasy="magic")
+    win = control.launcher_command(8765, tmp_path / "w.zarr", tmp_path, windows=True, fantasy="magic")
+    assert posix[-2:] == ["--fantasy", "magic"] and win[-2:] == ["-Fantasy", "magic"]
+    assert not any("antasy" in a for a in control.launcher_command(8765, tmp_path / "w.zarr", tmp_path, windows=False) +
+                   control.launcher_command(8765, tmp_path / "w.zarr", tmp_path, windows=True))
+    run_sh, run_ps1 = ((ROOT / "scripts" / name).read_text(encoding="utf-8") for name in ("run.sh", "run.ps1"))
+    assert "--fantasy) FANTASY=$2" in run_sh and '${FANTASY:+--fantasy "$FANTASY"}' in run_sh and "first${FANTASY:+-$FANTASY}.zarr" in run_sh
+    assert "[string]$Fantasy" in run_ps1 and '@("--fantasy", $Fantasy)' in run_ps1 and '("first" + $layer + ".zarr")' in run_ps1
+    asked = []
+
+    def launcher(port, world, repo, fantasy=None):
+        asked.append((world, fantasy))
+        return [sys.executable, "-c", "pass"]
+    monkeypatch.setattr(control, "launcher_command", launcher)
+    c = control.Controller(tmp_path)
+    c.set_settings(port=free_port())
+    c.start()
+    c.wait_running(30)
+    assert asked == [(tmp_path / "worlds" / "mine.zarr", "magic")]
 
 
 def test_the_worlds_of_the_dropdown(tmp_path):

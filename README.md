@@ -23,7 +23,7 @@ section 13 first: the northern continents of the Earth twin are still far too co
 standard build takes longer than its profile allows. A second version of the ocean, with an overturning driven by
 density and the salt that sets it, is built and tested but is not the default: on the Earth twin it moves the ocean's
 heat and the northern summer the right way, and wets the Sahara and dries the Amazon past what the Earth tests allow
-(docs/notes_pending/ocean-overturning.md).
+(docs/BUILD_NOTES.md, section 28).
 
 ## Run it on your computer
 
@@ -164,6 +164,16 @@ as far as Linux can show (docs/BUILD_NOTES.md, sections 5.3 and 6); the workflow
     python -m worldengine build --profile preview --seed 7 --out worlds/other.zarr
     python -m worldengine build --profile preview --interventions data/examples/frozen_region.yaml --out worlds/frozen.zarr
     python -m worldengine build --profile preview --interventions data/examples/place_label.yaml --out worlds/forest.zarr
+    python -m worldengine build --profile preview --fantasy magic --out worlds/first-magic.zarr   # the invented layer magic
+
+**Magic, an invented layer.** `--fantasy magic` (or `scripts/run.sh --fantasy magic`, `scripts\run.cmd -Fantasy magic`,
+or the control panel's box "Magic (invented physics)") lays the fantasy layer of `data/fantasy/magic.yaml` over the
+physics: mana, made by moving plates, volcanic fire, old ground, living land and storms, spread like heat along ley
+lines (plate boundaries and rivers), grounded by salt water, locked by ice and lost as it decays, with a "why" answer
+for every cell. Its rules are invented [INVENTED: a rule of the fantasy layer, made up, not a claim about any real
+world]; docs/BUILD_NOTES.md, section 30, sets them out. Without the switch nothing of it runs. With it, every other field of
+the default world stays the same bit for bit while its one feedback, "spent mana warms the world", keeps its default of
+zero [MEASURED, preview, seed 20261004].
 
 The archive that was handed over comes with `worlds/first.zarr`, the default world on the preview
 mesh, so `serve` works at once. A clone of the repository does not hold it (`worlds/` is not under
@@ -252,18 +262,19 @@ in anything published from it (`tools/reference_data.yaml`).
 
 ## Tests
 
-    python -m pytest                    # 997 tests; with the Earth data, under an hour where it was built
+    python -m pytest                    # 1,131 tests; with the Earth data, under an hour where it was built
     python -m pytest --ignore=tests/test_world.py     # all but the whole-world tests, as the workflow runs them
 
 Without the Earth data, the second command ran in 3 min 11 s on the 4-core machine of "Run it on your computer"
 (838 passed, 119 skipped), and `tests/test_world.py`, which builds whole worlds, in 13 min 49 s on its own
 [MEASURED].
 
-Of the 997 tests, 37 are expected failures, all in `tests/test_earth.py`: patterns of Earth, and one condition of
+Of the 1,131 tests, 37 are expected failures, all in `tests/test_earth.py`: patterns of Earth, and one condition of
 the design (the closed Caspian), that the engine is known to miss, each with the number measured.
 `python -m pytest -rx` prints them. They are not the whole list of known errors: the notes' sections
-4.4, 4.6, 8 and 13 to 22 name misses that no test states. Without the Earth data the 119 tests that
-need it are skipped.
+4.4, 4.6, 8 and 13 to 30 name misses that no test states. Without the Earth data the 119 tests that
+need it are skipped, and without tkinter the 2 tests of the control panel's window. With both, on the build
+machine on 2026-11-09: 1,092 passed, 37 expected failures, none failed [MEASURED].
 
 Extra checks that are not part of the test run:
 
