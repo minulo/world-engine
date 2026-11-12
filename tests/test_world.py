@@ -985,3 +985,41 @@ def test_two_regions_that_overlap_agree_on_the_cells_they_share_and_one_region_t
         assert a.fields[name][..., ia].tobytes() == b.fields[name][..., ib].tobytes(), name
     again = dt.refine(view, region(0, 0, 800))
     assert all(again.fields[n].tobytes() == d.fields[n].tobytes() for n in d.fields)
+
+
+def test_a_refined_region_steps_across_the_edges_of_the_world_s_cells_as_it_steps_inside_them(detail):
+    """Found, then kept (docs/BUILD_NOTES.md, section 25): the median step between fine neighbours whose world cells
+    differ, over the median step between fine neighbours of one world cell, on the region at the highest ground. Since the
+    surface is planar between the world's cell centres and what its passes leave goes in as a bump inside each cell, with
+    no offset per cell, it is 1.117
+    for the heights (510 m against 457 m), 0.946 for the year's mean temperature and 0.996 for the logarithm of the year's
+    rain [MEASURED]. With the Gaussian surface and the last correction cell by cell it was 1.428 (583 m against 408 m),
+    2.51 and 1.95. On this region even a surface with no edges scores above 1, because the pairs that cross an edge lie
+    nearer the steep middle of the region than the pairs inside its rim cells do: the world's heights laid planar,
+    without passes or roughness, score 1.367. Edge by edge, the steps across one edge over the steps inside its two cells,
+    the median over the region's 106 edges is 1.004 for the heights (1.300 before) [MEASURED]."""
+    view, dt, region, d = detail
+    fine = dt.get_mesh(d.level)
+    at = np.full(fine.n, -1)
+    at[d.cells] = np.arange(d.cells.size)
+    nb = fine.nbr[d.cells]
+    a, j = np.nonzero((nb > d.cells[:, None]) & (at[np.maximum(nb, 0)] >= 0))      # each pair of fine neighbours once
+    b = at[nb[a, j]]
+    across = d.owner[a] != d.owner[b]
+    lo, hi = np.minimum(d.owner[a], d.owner[b]), np.maximum(d.owner[a], d.owner[b])
+
+    def ratio(values):
+        step = np.abs(values[a] - values[b])
+        return np.median(step[across]) / np.median(step[~across])
+
+    def edge_by_edge(values):
+        step = np.abs(values[a] - values[b])
+        edges = sorted(set(zip(lo[across].tolist(), hi[across].tolist())))
+        return len(edges), np.median([np.median(step[across & (lo == k) & (hi == m)])
+                                      / np.median(step[~across & ((d.owner[a] == k) | (d.owner[a] == m))]) for k, m in edges])
+
+    assert abs(ratio(d.fields["elevation"]) - 1.117) < 0.03
+    assert abs(ratio(d.fields["surface_temperature"].mean(axis=0)) - 0.946) < 0.05
+    assert abs(ratio(np.log(d.fields["precipitation"].sum(axis=0))) - 0.996) < 0.05
+    count, middle = edge_by_edge(d.fields["elevation"])
+    assert count == 106 and abs(middle - 1.004) < 0.03
