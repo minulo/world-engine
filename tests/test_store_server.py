@@ -187,6 +187,23 @@ def test_server_gives_the_mesh_for_a_drawing(served, geometry_store):
         assert err.value.code == 400 and why in json.loads(err.value.read())["error"]
 
 
+def test_server_refuses_detail_it_cannot_work_out(served):
+    """The finer cells of a region are worked out from the world's heights, sea, climate and rivers: a world of
+    geometry alone has none of them, and a request that is not a place and a distance is no request."""
+    for q, why in (("/api/detail?lat=0&lon=0&radius_km=500", "this world holds no elevation, flow_receiver, height_above_sea"),
+                   ("/api/detail?lat=95&lon=0&radius_km=500", "the detail needs lat from -90 to 90"),
+                   ("/api/detail?lat=0&lon=0&radius_km=-3", "radius_km above 0"),
+                   ("/api/detail?lat=0&lon=0&radius_km=nan", "radius_km above 0"),
+                   ("/api/detail?lat=north&lon=0&radius_km=500", "lat must be a number, got 'north'"),
+                   ("/api/detail?lat=0&radius_km=500", "the request needs lon")):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get(served + q)
+        assert err.value.code == 400 and why in json.loads(err.value.read())["error"], q
+    with pytest.raises(urllib.error.HTTPError) as err:                # a whole number is still asked for as one
+        get(served + "/api/cell?id=1.5")
+    assert "id must be a whole number" in json.loads(err.value.read())["error"]
+
+
 def test_same_request_in_two_server_sessions_gives_the_same_bytes(served, geometry_store):
     _, _, path = geometry_store
     other = make_server(path, port=0)

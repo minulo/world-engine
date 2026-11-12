@@ -5,6 +5,10 @@
 
 const $ = (id) => document.getElementById(id);
 const ZOOM_MIN = 0.5, ZOOM_MAX = 60;
+// The detail: finer cells that the engine works out for the region in view, on request, once a cell of the world is
+// `from` points wide on the screen (and lets go of below `drop`). The region asked for reaches from `least` to `most`
+// spacings of the world's cells; over the last `band` of them the finer drawing gives way to the world's own.
+const DETAIL = { from: 110, drop: 85, least: 5, most: 10, band: 1.6 };
 const NO_CLASS = [217, 26, 191];           // the colour of a class code that the field's list does not hold
 const NO_VALUE = [115, 115, 115];          // a cell without a value
 const NOTHING_ON_LAND = [176, 166, 148];   // on a log scale, a cell that holds exactly zero: no colour of the scale is its own,
@@ -19,6 +23,7 @@ const state = {
   mesh: null,                              // where the cells are and which lie next to which (for exact borders and for drawing)
   map: null,                               // what the illustrated look is drawn from, once it has been asked for
   season: false, smooth: false,            // the illustrated look follows the month; the data look blends between cells
+  finer: true, detail: null,               // the illustrated look asks for finer cells close in; and those it holds now
 };
 
 // ---------------------------------------------------------------- colour
@@ -82,10 +87,11 @@ function palette(n, given) {
 // ---------------------------------------------------------------- WebGL
 const canvas = $("gl");
 const gl = canvas.getContext("webgl2", { antialias: false });
-let prog, uni = {}, tex = {}, looks = {}, quad, riverVAO, riverBuf;
+let prog, uni = {}, tex = {}, looks = {}, quad, rivers, fineRivers;
 // each texture keeps a unit of its own, so that no drawing has to bind one again
-const UNITS = { ids: 0, data: 1, lut: 2, pal: 3, sea: 4, pos: 5, nbr: 6, a: 7, b: 8, biome: 9 };
-const SAMPLERS = { uIds: 0, uData: 1, uLut: 2, uPal: 3, uSea: 4, uPos: 5, uNbr: 6, uA: 7, uB: 8, uBiome: 9 };
+const UNITS = { ids: 0, data: 1, lut: 2, pal: 3, sea: 4, pos: 5, nbr: 6, a: 7, b: 8, biome: 9, fids: 10, fpos: 11, fnbr: 12, fa: 13, fb: 14 };
+const SAMPLERS = { uIds: 0, uData: 1, uLut: 2, uPal: 3, uSea: 4, uPos: 5, uNbr: 6, uA: 7, uB: 8, uBiome: 9,
+                   uFIds: 10, uFPos: 11, uFNbr: 12, uFA: 13, uFB: 14 };
 function program(vs, fs, attributes) {
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
@@ -109,13 +115,17 @@ function initGL() {
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  riverVAO = gl.createVertexArray(); gl.bindVertexArray(riverVAO);       // one strip of four corners, drawn once for each part of a river
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  riverBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, riverBuf);
-  [[1, 3, 0], [2, 3, 12], [3, 2, 24]].forEach(([loc, size, at]) => { gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, at); gl.vertexAttribDivisor(loc, 1); });
+  const strips = () => {                   // one strip of four corners, drawn once for each part of a river
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    const parts = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, parts);
+    [[1, 3, 0], [2, 3, 12], [3, 2, 24]].forEach(([loc, size, at]) => { gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, at); gl.vertexAttribDivisor(loc, 1); });
+    return { vao, parts, count: 0 };
+  };
+  rivers = strips(); fineRivers = strips();                // the rivers of the world's cells, and of the detail's
   gl.bindVertexArray(quad);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   for (const [n, unit] of Object.entries(UNITS)) { tex[n] = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit);
@@ -124,7 +134,7 @@ function initGL() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, n === "lut" ? gl.LINEAR : gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     // one empty point each, of the kind the shaders read, until the world's own arrive
-    if (n === "ids") gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, 1, 1, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, new Uint32Array(1));
+    if (n === "ids" || n === "fids") gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, 1, 1, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, new Uint32Array(1));
     else if (n === "data" || n === "sea") gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 1, 1, 0, gl.RED, gl.FLOAT, new Float32Array(1));
     else if (n === "lut" || n === "pal" || n === "biome") gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array(4)); }
@@ -152,6 +162,10 @@ function shared(u, w, h, ready) {         // what every program is told before i
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   gl.uniform3f(u.uSpace, dark ? 0.02 : 0.043, dark ? 0.027 : 0.059, dark ? 0.043 : 0.09);
   gl.uniform1i(u.uDark, dark ? 1 : 0);
+  const d = state.look === "map" ? state.detail : null;
+  gl.uniform1i(u.uFine, d ? 1 : 0);
+  if (d) { gl.uniform1i(u.uFSize, d.size); gl.uniform3fv(u.uFCentre, d.centre); gl.uniform3fv(u.uFEast, d.east); gl.uniform3fv(u.uFNorth, d.north);
+    gl.uniform1f(u.uFHalf, d.half); gl.uniform1f(u.uFCell, d.cell); gl.uniform1f(u.uFIn, d.inner); gl.uniform1f(u.uFOut, d.outer); }
 }
 function draw() {
   if (!prog) return;
@@ -164,27 +178,33 @@ function draw() {
     gl.uniform1i(uni.uSmooth, state.smooth ? 1 : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   } else {
-    const m = state.map, ready = !!(m && state.idmap), pxCell = (state.mesh ? state.mesh.cell : 0.03) * pxPerRad(h, w / h);
-    // as many sizes of bend as the screen can show: the smallest a few pixels long
-    const oct = Math.max(2, Math.min(9, Math.floor(Math.log2(Math.max(1, pxCell * DRAWING.warpStep / 3))) + 1));
+    const m = state.map, ready = !!(m && state.idmap), ppr = pxPerRad(h, w / h), d = state.detail;
+    // as many sizes of bend as the screen can show, the smallest a few pixels long; and as many sizes of ridge
+    const bends = (cell) => Math.max(2, Math.min(9, Math.floor(Math.log2(Math.max(1, cell * ppr * DRAWING.warpStep / 3))) + 1));
+    const ridges = (cell) => Math.max(1, Math.min(4, Math.floor(Math.log2(Math.max(1, cell * ppr * 0.9 / (12 * dpr)))) + 1));
+    const cell = state.mesh ? state.mesh.cell : 0.03, fine = d ? d.cell : cell;
     const M = looks.map; gl.useProgram(M.prog); shared(M.uni, w, h, ready);
-    gl.uniform1i(M.uni.uOct, oct); gl.uniform1f(M.uni.uDpr, dpr);
-    gl.uniform1i(M.uni.uRidge, Math.max(1, Math.min(4, Math.floor(Math.log2(Math.max(1, pxCell * 0.9 / (12 * dpr)))) + 1)));
+    gl.uniform1i(M.uni.uOct, bends(cell)); gl.uniform1i(M.uni.uFOct, bends(fine)); gl.uniform1f(M.uni.uDpr, dpr);
+    gl.uniform1i(M.uni.uRidge, ridges(cell)); gl.uniform1i(M.uni.uFRidge, ridges(fine));
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    if (ready && m.riverCount) {
+    if (ready && (rivers.count || (d && fineRivers.count))) {
       const R = looks.river; gl.useProgram(R.prog); shared(R.uni, w, h, ready);
-      gl.uniform1i(R.uni.uOct, oct); gl.uniform1f(R.uni.uDpr, dpr); gl.uniform2f(R.uni.uView, w, h);
+      gl.uniform1i(R.uni.uOct, bends(cell)); gl.uniform1i(R.uni.uFOct, bends(fine)); gl.uniform1f(R.uni.uDpr, dpr); gl.uniform2f(R.uni.uView, w, h);
       const turns = state.zoom / (state.flat ? 1 : 0.92);   // how far in the view is, 1 for the whole world
       gl.uniform1f(R.uni.uWide, Math.max(0.6, Math.min(2.4, 0.72 * Math.pow(turns, 0.4))));
-      gl.uniform1f(R.uni.uQMin, Math.max(DRAWING.riverFloor, 0.11 / Math.pow(turns, 1.2)));   // closer in, smaller rivers are drawn too
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      gl.bindVertexArray(riverVAO);
-      for (const shift of state.flat ? [-2, 0, 2] : [0]) { gl.uniform1f(R.uni.uShift, shift); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, m.riverCount); }
+      for (const [level, strip, least] of [[0, rivers, Math.max(DRAWING.riverFloor, 0.11 / Math.pow(turns, 1.2))],   // closer in, smaller rivers are drawn too
+                                           [1, fineRivers, DRAWING.riverFloor]]) {
+        if (!strip.count || (level === 1 && !d)) continue;
+        gl.uniform1i(R.uni.uLevel, level); gl.uniform1f(R.uni.uQMin, least); gl.bindVertexArray(strip.vao);
+        for (const shift of state.flat ? [-2, 0, 2] : [0]) { gl.uniform1f(R.uni.uShift, shift); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, strip.count); }
+      }
       gl.disable(gl.BLEND); gl.bindVertexArray(quad);
     }
     gl.useProgram(prog);
   }
   showScale();
+  clearTimeout(draw.then); draw.then = setTimeout(considerDetail, 220);     // once the view rests: does it want finer cells?
 }
 function screenToLatLon(cx, cy) {
   const rect = canvas.getBoundingClientRect(), x = ((cx - rect.left) / rect.width * 2 - 1) * (rect.width / rect.height), y = 1 - (cy - rect.top) / rect.height * 2;
@@ -304,9 +324,80 @@ function redrawMap() {                     // the parts of the drawing that foll
   cellTexture("a", DATA_W, rows, A); cellTexture("b", DATA_W, rows, B);
   if (m.recv && m.flow && m.top > 0) {
     const parts = riverParts(state.mesh.xyz, m.recv, mo >= 0 && m.flow.length > 1 ? m.flow[mo] : m.flowYear, m.sea, m.top);
-    gl.bindBuffer(gl.ARRAY_BUFFER, riverBuf); gl.bufferData(gl.ARRAY_BUFFER, parts, gl.DYNAMIC_DRAW);
-    m.riverCount = parts.length / 8;
+    gl.bindBuffer(gl.ARRAY_BUFFER, rivers.parts); gl.bufferData(gl.ARRAY_BUFFER, parts, gl.DYNAMIC_DRAW);
+    m.riverCount = rivers.count = parts.length / 8;
   }
+}
+// ---------------------------------------------------------------- the detail: finer cells for the region in view
+function unitAt(lat, lon) { const la = lat * Math.PI / 180, lo = lon * Math.PI / 180; return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)]; }
+function angle(a, b) { return Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))); }
+function viewOnSphere() {                 // the middle of the view, how far it reaches (radians), and how wide a cell of the world is on the screen
+  const rect = canvas.getBoundingClientRect(), ll = screenToLatLon(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  if (!ll || !rect.height) return null;
+  const ppr = pxPerRad(rect.height, rect.width / rect.height);
+  return { lat: ll[0], lon: ll[1], at: unitAt(ll[0], ll[1]), reach: Math.hypot(rect.width, rect.height) / 2 / ppr, cellPx: state.mesh.cell * ppr };
+}
+function dropDetail() { if (state.detail) { state.detail = null; fineRivers.count = 0; detailNote(); draw(); } else detailNote(); }
+function considerDetail() {
+  if (state.look !== "map" || !state.map || !state.mesh || !state.finer) return dropDetail();
+  const v = viewOnSphere(); if (!v) return;
+  if (v.cellPx < DETAIL.drop || (v.cellPx < DETAIL.from && !state.detail)) return dropDetail();
+  const d = state.detail, cell = state.mesh.cell;
+  // the detail held is enough while the view lies inside its full part (or, for a view wider than any detail, near its middle)
+  if (d && angle(v.at, d.centre) + Math.min(v.reach, 0.7 * d.inner) <= d.inner) return;
+  if (considerDetail.asking) return;
+  const want = Math.max(DETAIL.least * cell, Math.min(DETAIL.most * cell, v.reach * 1.15 + (DETAIL.band + 1.6) * cell));
+  const asked = new URLSearchParams({ lat: v.lat.toFixed(2), lon: v.lon.toFixed(2), radius_km: (want * state.world.planet.radius_m / 1000).toFixed(0) }).toString();
+  if (asked === considerDetail.last) return;                // what this would ask for is what it holds, or what was refused
+  considerDetail.asking = true; considerDetail.last = asked;
+  $("status").textContent = "working out finer cells for this region…";
+  getJSON("/api/detail?" + asked).then((j) => { $("status").textContent = ""; useDetail(j); })
+    .catch((e) => { $("status").textContent = ""; state.finer = false; $("finer").checked = false; state.detail = null; detailNote(`No finer cells: ${e.message}.`); draw(); })
+    .finally(() => { considerDetail.asking = false; });
+}
+function useDetail(j) {                    // the finer cells as the shaders read them: places, neighbours, the grid of nearest cells, values, rivers
+  const M = state.map, mesh = state.mesh, m = j.cells, rows = Math.ceil(m / DATA_W);
+  const xyz = Float32Array.from(j.xyz), nbr = Int32Array.from(j.nbr), h = cellSpacing(xyz, nbr), ground = Float32Array.from(j.height, (v) => Math.max(0, v));
+  const pos = new Float32Array(DATA_W * rows * 4), around = new Float32Array(DATA_W * rows * 8).fill(-1);
+  const A = new Float32Array(DATA_W * rows * 4), B = new Float32Array(DATA_W * rows * 4), slope = cellGradients(xyz, nbr, ground);
+  const landBiome = (o) => {                // the biome of the world's cell a fine cell lies in; for a fine cell of land in a cell of sea, of land next to it
+    if (!M.biome) return -1;
+    if (!M.sea[o]) return M.biome[o];
+    const next = (c) => Array.from(mesh.nbr.slice(c * 6, c * 6 + 6)).filter((q) => q >= 0);
+    for (const ring of [next(o), next(o).flatMap(next)]) { const q = ring.find((c) => !M.sea[c]); if (q !== undefined) return M.biome[q]; }
+    return -1;
+  };
+  let sum = 0;
+  for (let i = 0; i < m; i++) { pos.set([xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2], h[i]], i * 4); sum += h[i];
+    for (let k = 0; k < 6; k++) around[i * 8 + k] = nbr[i * 6 + k];
+    A.set([j.sea[i] ? 0 : 1, j.height[i], landBiome(j.owner[i]), 0], i * 4);
+    B.set([slope[i * 3], slope[i * 3 + 1], slope[i * 3 + 2], j.lake[i] ? 1 : 0], i * 4); }
+  cellTexture("fpos", DATA_W, rows, pos); cellTexture("fnbr", DATA_W * 2, rows, around); cellTexture("fa", DATA_W, rows, A); cellTexture("fb", DATA_W, rows, B);
+  const ids = Uint32Array.from(j.grid.ids);
+  gl.activeTexture(gl.TEXTURE0 + UNITS.fids); gl.bindTexture(gl.TEXTURE_2D, tex.fids);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, j.grid.size, j.grid.size, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, ids);
+  const parts = M.top > 0 ? riverParts(xyz, Int32Array.from(j.recv), Float32Array.from(j.flow), j.sea, M.top) : new Float32Array(0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, fineRivers.parts); gl.bufferData(gl.ARRAY_BUFFER, parts, gl.DYNAMIC_DRAW); fineRivers.count = parts.length / 8;
+  const outer = Math.max(0.5 * j.reach, j.reach - 0.6 * mesh.cell), inner = Math.max(0.3 * j.reach, j.reach - DETAIL.band * mesh.cell);
+  state.detail = { centre: j.centre, east: j.east, north: j.north, half: j.grid.half, size: j.grid.size, ids, cell: sum / m, reach: j.reach, inner, outer,
+                   cells: m, level: j.level, worldCells: j.of_world_cells, xyz, nbr, sea: j.sea, lake: j.lake, height: j.height, flow: j.flow, riverCount: fineRivers.count };
+  detailNote(); draw();
+}
+function fineAt(ll) {                      // the detail's cell at a place, where the finer drawing is whole; else -1
+  const d = state.detail; if (!d || state.look !== "map") return -1;
+  const w = unitAt(ll[0], ll[1]); if (angle(w, d.centre) > d.inner) return -1;
+  const q = [d.east, d.north].map((e) => (w[0] * e[0] + w[1] * e[1] + w[2] * e[2]) / d.half * 0.5 + 0.5);
+  const at = q.map((v) => Math.max(0, Math.min(d.size - 1, Math.floor(v * d.size)))), c = d.ids[at[1] * d.size + at[0]];
+  const near = (k) => w[0] * d.xyz[k * 3] + w[1] * d.xyz[k * 3 + 1] + w[2] * d.xyz[k * 3 + 2];
+  let best = near(c), bc = c;
+  for (let k = 0; k < 6; k++) { const n = d.nbr[c * 6 + k]; if (n >= 0 && near(n) > best) { best = near(n); bc = n; } }
+  return bc;
+}
+function detailNote(said) {
+  const d = state.detail, km = (x) => fmt(x * state.world.planet.radius_m / 1000, "km");
+  $("detailnote").textContent = said || (d ? `Finer cells are shown here: ${d.cells.toLocaleString()} cells about ${km(d.cell)} apart, which the engine worked out for this ` +
+    `region just now from ${d.worldCells} cells of the world (heights, coast, lakes and rivers; nothing of it is stored). The biomes and the ice are still the world's own cells'.`
+    : state.finer ? `Close in (a cell of the world ${DETAIL.from} points wide), the engine works out finer cells for the region in view.` : "");
 }
 function mapLegend() {                     // what the colours and lines of the drawing stand for
   const m = state.map, legend = $("legend"); legend.textContent = "";
@@ -568,6 +659,7 @@ function wire() {
   $("lookmap").addEventListener("click", () => setLook("map")); $("lookdata").addEventListener("click", () => setLook("data"));
   $("smooth").addEventListener("change", (e) => { state.smooth = e.target.checked; draw(); });
   $("season").addEventListener("change", (e) => { state.season = e.target.checked; monthRow(); if (state.map) { redrawMap(); draw(); } });
+  $("finer").addEventListener("change", (e) => { state.finer = e.target.checked; considerDetail.last = null; considerDetail(); });
   $("zoomin").addEventListener("click", () => zoomTo(state.zoom * 1.6)); $("zoomout").addEventListener("click", () => zoomTo(state.zoom / 1.6));
   $("zoomreset").addEventListener("click", () => setView(state.flat));
   const touching = new Map(); let drag = null, pinch = null;          // one finger or the mouse drags; two fingers pinch
@@ -581,7 +673,10 @@ function wire() {
     if (touching.has(e.pointerId)) touching.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && touching.size === 2) { const now = spread(); zoomTo(pinch.zoom * now.d / pinch.d, now.x, now.y); return; }
     const ll = screenToLatLon(e.clientX, e.clientY);
-    if (ll && state.look === "map" && state.map) $("status").textContent = `${place(ll)} · ${drawnAt(cellAt(ll[0], ll[1]))}`;
+    if (ll && state.look === "map" && state.map) { const f = fineAt(ll), d = state.detail;
+      $("status").textContent = `${place(ll)} · ` + (f < 0 ? drawnAt(cellAt(ll[0], ll[1])) :
+        `finer cell: ${d.sea[f] ? `sea, ${fmt(-d.height[f], "m")} deep` : `${d.lake[f] ? "lake" : "land"}, ${fmt(d.height[f], "m")} above the sea`}` +
+        (d.flow[f] > 0 ? `, a river of ${fmt(d.flow[f], "m³/s")}` : "")); }
     else if (ll && state.data) { const id = cellAt(ll[0], ll[1]), v = state.data[id], s = spec();
       const shown = s.kind === "category" ? (s.categories[v] || `no class (code ${v})`).replace(/_/g, " ") : s.kind === "boolean" ? (v ? "true" : "false")
         : s.kind === "index" ? named(state.field, v) : fmt(v, s.unit);
@@ -659,6 +754,7 @@ async function start() {
   if (asked.has("zoom")) state.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, +asked.get("zoom") || state.zoom));
   if (asked.has("smooth")) { state.smooth = true; $("smooth").checked = true; }
   if (asked.has("season")) { state.season = true; $("season").checked = true; }
+  if (asked.get("finer") === "0") { state.finer = false; $("finer").checked = false; }
   const hist = w.history || { rounds: [], times_my: [], fields: [] };
   w.history = hist;
   $("frame").max = hist.rounds.length; $("frame").value = hist.rounds.length;

@@ -45,7 +45,9 @@ body[data-look=map] #scale { color: #2b2333; text-shadow: 0 0 3px #f3ecdc, 0 0 3
 label.check { font-weight: 400; display: flex; gap: 6px; align-items: baseline; margin: 8px 0 0; font-size: 14px; }
 body[data-look=map] #smoothrow, body[data-look=map] #fielddesc, body[data-look=map] #partrow, body[data-look=map] #historyrow,
 body[data-look=map] #dayrow, body[data-look=map] #modelbox { display: none; }
-body:not([data-look=map]) #mapnote, body:not([data-look=map]) #seasonrow { display: none; }
+body:not([data-look=map]) #mapnote, body:not([data-look=map]) #seasonrow, body:not([data-look=map]) #finerrow,
+body:not([data-look=map]) #detailnote { display: none; }
+#detailnote { margin: 4px 0 0; }
 #gl:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #legend canvas { width: 100%; height: 14px; border: 1px solid var(--line); border-radius: 3px; display: block; }
 #legend .ends { display: flex; justify-content: space-between; font-size: 13px; font-variant-numeric: tabular-nums; }

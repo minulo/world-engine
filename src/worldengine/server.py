@@ -52,6 +52,7 @@ class WorldService:
         self._idmaps: dict[int, bytes] = {}
         self._stats: dict[str, dict] = {}
         self._fields: dict[str, np.ndarray] = {}
+        self._detail_lock, self._details = threading.Lock(), OrderedDict()
         self._weather_lock = threading.Lock()
         self._engine, self._engine_error, self._days = None, None, OrderedDict()
         self._set_threads()
@@ -194,6 +195,90 @@ class WorldService:
             raise _BadRequest(f"the mesh has no part {part!r}: ask for {' or '.join(MESH_PARTS)}")
         return np.ascontiguousarray(self.view.mesh_array(part), dtype=MESH_PARTS[part]).tobytes()
 
+    def detail(self, lat: float, lon: float, radius_km: float) -> dict:
+        """Finer cells over the cells of the world within radius_km of a place, worked out on request (detail.refine:
+        heights, sea, lakes and rivers on the cells of a finer level of the same mesh) and laid out for a drawing.
+        Nothing is stored; the same cells of the world give the same answer, whatever place and radius chose them.
+        The fine cells are numbered 0 to cells - 1 here, in the order of their numbers in the fine mesh:
+          xyz (three a cell), nbr (six a cell: its neighbours among these cells, -1 for none or for one outside),
+          owner (the cell of the world it lies in), sea and lake (1 or 0), height (m above the sea; below it as less
+          than nothing), recv (the fine cell its water runs to, -1 for none; where a river leaves a cell of the
+          world, the fine cell of the next cell of the world where the detail lets it in) and flow (m3/s over the year);
+          centre, east, north: the middle of the region and two directions along the ground there; reach: how far the
+          fine cells lie from the middle at most (radians); spacing: of the fine cells (radians);
+          grid: size * size points on the flat sheet that touches the sphere at the middle, row by row from the south,
+          each point (i, j) at ((i + 0.5) / size * 2 - 1) * half along east and the same of j along north, holding the
+          fine cell nearest to the place on the sphere straight under it."""
+        from . import detail as dt
+        from .mesh import get_mesh
+        if not (-90.0 <= lat <= 90.0 and -360.0 <= lon <= 360.0 and 0.0 < radius_km < float("inf")):
+            raise _BadRequest("the detail needs lat from -90 to 90, lon from -360 to 360 and radius_km above 0")
+        missing = sorted(set(DETAIL_NEEDS) - set(self.view.field_names()))
+        if missing:
+            raise _BadRequest(f"this world holds no {', '.join(missing)}, which the detail is worked out from")
+        coarse = get_mesh(int(self.view.meta["mesh_level"]))
+        region = dt.region_cells(coarse, lat, lon, radius_km, float(self.view.attrs["planet"]["radius_m"]))
+        if region.size == 0:
+            raise _BadRequest("no cell of the world lies within that distance of that place")
+        if region.size > DETAIL_MOST_CELLS:
+            raise _BadRequest(f"that region holds {region.size} cells of the world; the detail is worked out for at most "
+                              f"{DETAIL_MOST_CELLS}: ask for a smaller radius")
+        key = region.tobytes()
+        with self._detail_lock:                              # one at a time: the detail keeps what it has read of the meshes
+            if key in self._details:
+                self._details.move_to_end(key)
+                return self._details[key]
+            d = dt.refine(self.view, region)
+            fine, cells = get_mesh(d.level), d.cells
+            xyz, m = fine.xyz[cells], cells.size
+
+            def here(numbers):                               # numbers of the fine mesh as numbers among these cells; -1 outside
+                at = np.minimum(np.searchsorted(cells, numbers), m - 1)
+                return np.where((numbers >= 0) & (cells[at] == numbers), at, -1)
+            centre = coarse.xyz[region].mean(axis=0)
+            centre /= np.linalg.norm(centre)
+            east = np.cross([0.0, 0.0, 1.0], centre) if abs(centre[2]) < 0.999 else np.array([0.0, 1.0, 0.0])
+            east /= np.linalg.norm(east)
+            north = np.cross(centre, east)
+            reach = float(np.arccos(np.clip(xyz @ centre, -1.0, 1.0)).max())
+            spacing = float(np.sqrt(2.0 / np.sqrt(3.0) * 4.0 * np.pi / fine.n))      # of six-sided cells of the mean area
+            fewest, most, to_a_cell = DETAIL_GRID
+            size = int(np.clip(np.ceil(2.0 * reach / spacing * to_a_cell), fewest, most))
+            half = float(np.sin(min(reach + spacing, 1.5)))
+            along = ((np.arange(size) + 0.5) / size * 2.0 - 1.0) * half
+            gx, gy = np.meshgrid(along, along)               # rows: north, from the south; columns: east
+            up = np.sqrt(np.maximum(0.0, 1.0 - gx * gx - gy * gy))
+            points = gx[..., None] * east + gy[..., None] * north + up[..., None] * centre
+            ids = cKDTree(xyz).query(points.reshape(-1, 3))[1]
+            sea = d.fields["ocean_mask"].astype(bool)
+            above = d.fields["height_above_sea"]
+            # The detail routes the water inside each cell of the world, to the fine cell nearest the middle of the
+            # border to the cell that receives it, and lets it into that cell at the fine cell nearest the same place
+            # from the other side (detail.refine). For a drawing the two are joined, so that a river is one line.
+            recv = d.fields["flow_receiver"].astype(np.int64).copy()
+            recv_world = np.asarray(self.view.field("flow_receiver"), dtype=np.int64)
+            inside = set(int(k) for k in region)
+            for k, outlet in d.outlets.items():
+                r = int(recv_world[k])
+                if r in inside:
+                    theirs = cells[d.owner == r]
+                    border = coarse.xyz[r] + coarse.xyz[k]
+                    recv[np.searchsorted(cells, outlet)] = theirs[int(np.argmin(((fine.xyz[theirs] - border) ** 2).sum(axis=1)))]
+            out = {"level": int(d.level), "cells": int(m), "of_world_cells": int(region.size),
+                   "centre": centre.round(9).tolist(), "east": east.round(9).tolist(), "north": north.round(9).tolist(),
+                   "reach": reach, "spacing": spacing,
+                   "grid": {"size": size, "half": half, "ids": ids.astype(int).tolist()},
+                   "xyz": xyz.round(8).ravel().tolist(), "nbr": here(fine.nbr[cells].astype(np.int64)).ravel().tolist(),
+                   "owner": d.owner.astype(int).tolist(), "sea": sea.astype(int).tolist(),
+                   "lake": d.fields["lake"].astype(int).tolist(),
+                   "height": np.where(sea, np.minimum(above, 0.0), np.maximum(above, 0.0)).round(2).tolist(),
+                   "recv": here(recv).tolist(),
+                   "flow": np.asarray(d.fields["river_discharge"], dtype=np.float64).round(4).tolist()}
+            self._details[key] = out
+            while len(self._details) > DETAIL_KEPT:
+                self._details.popitem(last=False)
+            return out
+
     def _plane(self, name, month, part):
         """One value per cell for display: a month of a monthly field, the speed or one part of a direction."""
         a = self._field(name)                                # says so if the world has no such field
@@ -278,6 +363,11 @@ class WorldService:
 
 
 MESH_PARTS = {"xyz": "<f4", "nbr": "<i4"}       # what GET /api/mesh gives, and how each is written
+DETAIL_NEEDS = ("elevation", "ocean_mask", "lake_level", "height_above_sea", "surface_temperature", "wind", "precipitation",
+                "flow_receiver", "runoff_annual", "river_discharge")      # the fields detail.refine reads
+DETAIL_MOST_CELLS = 400                         # the most cells of the world one request for detail may cover
+DETAIL_KEPT = 6                                 # so many regions' detail are kept, the latest asked for
+DETAIL_GRID = (64, 512, 4.0)                    # the grid of nearest fine cells: fewest and most points a side, points to a fine cell
 
 
 class _BadRequest(Exception):
@@ -285,13 +375,13 @@ class _BadRequest(Exception):
 
 
 def _asked(q, name, kind=str):
-    """One part of a request, as text or as a whole number."""
+    """One part of a request, as text, as a whole number (int) or as a number (float)."""
     if name not in q:
         raise _BadRequest(f"the request needs {name}")
     try:
         return kind(q[name])
     except ValueError:
-        raise _BadRequest(f"{name} must be a whole number, got {q[name]!r}") from None
+        raise _BadRequest(f"{name} must be a {'whole ' if kind is int else ''}number, got {q[name]!r}") from None
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -325,6 +415,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._send(200, s.idmap(_asked(q, "width", int) if "width" in q else 2048), "application/octet-stream")
             if url.path == "/api/mesh":
                 return self._send(200, s.mesh(_asked(q, "part")), "application/octet-stream")
+            if url.path == "/api/detail":
+                return self._json(s.detail(_asked(q, "lat", float), _asked(q, "lon", float), _asked(q, "radius_km", float)))
             if url.path == "/api/field":
                 month = _asked(q, "month", int) - 1 if "month" in q else None
                 return self._send(200, s.field(_asked(q, "name"), month, q.get("part")), "application/octet-stream")

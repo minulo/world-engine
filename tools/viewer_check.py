@@ -10,7 +10,10 @@ Where the world can be drawn (it has a sea), the viewer opens in the illustrated
 tool first checks that look and the zoom: that the drawing shows sea where the cells are sea and
 land where they are land, that it has rivers, that every way of zooming works and keeps the place
 under the pointer under it, that the seasons change the drawing, and that choosing a field shows
-the data again. It saves drawing_globe.png, drawing_flat.png and drawing_close.png.
+the data again. It saves drawing_globe.png, drawing_flat.png and drawing_close.png. It then goes
+close to a coast and checks the finer cells that the engine works out for the region in view:
+that they come, that a fine cell of sea is drawn as sea and one of land as land, that the pointer
+is told of the fine cell under it, and that they are let go of further out (drawing_finer.png).
 Where the world holds them, it checks two more things on every run: a field of numbers that
 name things (a receiver cell, a plate) is shown in whole numbers, with "none" for the number
 that means none; and on a scale of ratios a cell that holds exactly zero is drawn in the plain
@@ -180,6 +183,79 @@ def drawing(page, out, problems):
         problems.append(f"the looks do not change as they should: {data!r}, {back!r}")
 
 
+def finer(page, out, problems):
+    """The finer cells that the engine works out for the region in view, close in."""
+    went = page.evaluate("""() => {
+        const m = state.map, mesh = state.mesh, n = m.sea.length;
+        const next = (i) => Array.from(mesh.nbr.slice(i * 6, i * 6 + 6)).filter((j) => j >= 0);
+        const lat = (i) => Math.asin(mesh.xyz[i * 3 + 2]) * 180 / Math.PI;
+        let id = -1;                                           // a cell of land with sea beside it, away from the ice
+        for (let i = 0; i < n && id < 0; i++) if (!m.sea[i] && Math.abs(lat(i)) < 50 && next(i).some((j) => m.sea[j]) && next(i).filter((j) => !m.sea[j]).length >= 3) id = i;
+        if (id < 0) return null;
+        state.flat = false; state.lat0 = lat(id); state.lon0 = Math.atan2(mesh.xyz[id * 3 + 1], mesh.xyz[id * 3]) * 180 / Math.PI;
+        state.zoom = 1.25 * DETAIL.from / (mesh.cell * canvas.clientHeight / 2); draw();
+        return { id, zoom: state.zoom };
+    }""")
+    if not went:
+        print("finer cells: the world has no coast away from the ice to go close to")
+        return
+    try:
+        page.wait_for_function("state.detail !== null", timeout=120000)
+    except Exception:
+        problems.append(f"no finer cells came close in: {page.inner_text('#detailnote')!r}, {page.inner_text('#status')!r}")
+        return
+    settled(page)
+    page.screenshot(path=str(out / "drawing_finer.png"), timeout=120000)
+    seen = page.evaluate("""() => {
+        const d = state.detail, out = { cells: d.cells, rivers: d.riverCount, of: d.worldCells, km: d.cell * state.world.planet.radius_m / 1000 };
+        const next = (i) => [i, ...Array.from(d.nbr.slice(i * 6, i * 6 + 6))];
+        const wide = (i) => [...new Set(next(i).flatMap((j) => j < 0 ? [-1] : next(j)))];
+        const off = (i) => Math.acos(Math.min(1, d.xyz[i * 3] * d.centre[0] + d.xyz[i * 3 + 1] * d.centre[1] + d.xyz[i * 3 + 2] * d.centre[2]));
+        for (const [name, sea] of [["sea", 1], ["land", 0]]) {
+            let id = -1;                                       // a fine cell with its like all around, well inside the region
+            for (let i = 0; i < d.cells && id < 0; i++) if (off(i) < 0.5 * d.inner && wide(i).every((j) => j >= 0 && !!d.sea[j] === !!sea && !d.lake[j])) id = i;
+            if (id < 0) continue;
+            const lat0 = state.lat0, lon0 = state.lon0, zoom = state.zoom;
+            state.lat0 = Math.asin(d.xyz[id * 3 + 2]) * 180 / Math.PI; state.lon0 = Math.atan2(d.xyz[id * 3 + 1], d.xyz[id * 3]) * 180 / Math.PI; state.zoom = 40; draw();
+            const px = new Uint8Array(4), near = [];
+            for (const [dx, dy] of [[0, 0], [9, 0], [-9, 0], [0, 9], [0, -9]]) {
+                gl.readPixels(Math.floor(canvas.width / 2) + dx, Math.floor(canvas.height / 2) + dy, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+                near.push(Array.from(px).slice(0, 3));
+            }
+            const world = state.map.sea[cellAt(state.lat0, state.lon0)] ? "sea" : "land";
+            out[name] = { id, near, world, told: fineAt([state.lat0, state.lon0]) };
+            state.lat0 = lat0; state.lon0 = lon0; state.zoom = zoom; draw();
+        }
+        return out;
+    }""")
+    print(f"finer cells: {seen['cells']} cells about {seen['km']:.0f} km apart from {seen['of']} cells of the world, {seen['rivers']} parts of rivers; "
+          f"note {page.inner_text('#detailnote')[:70]!r}")
+    blue = lambda c: c[2] > c[0] + 20                                                             # noqa: E731
+    for name in ("sea", "land"):
+        got = seen.get(name)
+        if not got:
+            print(f"finer cells: no fine cell of {name} with {name} all around, well inside the region")
+            continue
+        as_sea = sum(1 for c in got["near"] if blue(c))
+        print(f"finer cells: around the middle of the fine cell {got['id']} ({name}; the world's cell there is {got['world']}): {got['near']}")
+        if (name == "sea" and as_sea < 4) or (name == "land" and as_sea > 1) or got["told"] != got["id"]:
+            problems.append(f"the drawing shows the fine {name} cell {got['id']} as {got['near']}, or the pointer is told of the cell {got['told']}")
+    box = page.locator("#gl").bounding_box()
+    page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
+    page.wait_for_timeout(150)
+    status = page.inner_text("#status")
+    page.evaluate("() => { state.zoom = 0.9 * DETAIL.drop / (state.mesh.cell * canvas.clientHeight / 2); draw(); }")
+    try:
+        page.wait_for_function("state.detail === null", timeout=30000)
+        gone = True
+    except Exception:
+        gone = False
+    print(f"finer cells: the pointer is told {status!r}; further out they are let go of: {gone}")
+    if "finer cell" not in status or not gone:
+        problems.append(f"the finer cells: status {status!r}, let go of further out {gone}")
+    page.click("#zoomreset")
+
+
 def check(store, out_dir, fields, query="", no_class=None):
     from playwright.sync_api import sync_playwright          # needed for this one step only: --help works without it
     out = Path(out_dir)
@@ -198,6 +274,7 @@ def check(store, out_dir, fields, query="", no_class=None):
         print("world:", page.inner_text("#worldinfo"))
         if "field=" not in query and "look=" not in query and page.evaluate("canDraw()"):
             drawing(page, out, problems)
+            finer(page, out, problems)
         names = fields or [page.eval_on_selector("#field", "e => e.value")]
         for name in names:
             page.select_option("#field", name)
