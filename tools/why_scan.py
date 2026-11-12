@@ -1,9 +1,10 @@
 """Read the "why" answers of a world and report every one that says something the stored numbers contradict.
 
-    python tools/why_scan.py worlds/first.zarr [--every 1]
+    python tools/why_scan.py worlds/first.zarr [--every 1] [--day N]
 
 For every cell (or every n-th with --every n) and every field of FIELDS, the answer is asked for and held against the
-fields of the same cell. The rules are of three kinds.
+fields of the same cell. With --day N the answers for the weather of that day (WEATHER_FIELDS) are read as well, from
+the day worked out with its cause records, and held against the day's fields and records. The rules are of three kinds.
 
   * What a sentence says of the place: a sea cell must be called sea, ground under a lake must not be said to shed
     runoff, a river's "largest source upstream" must be another cell, a cell under "the sinking branch of the
@@ -14,6 +15,13 @@ fields of the same cell. The rules are of three kinds.
     the water that "leaves as ice" must be the stored ones in that order, a lake's inflow must be a volume and the
     stored one, and the place given for a cell must be where the mesh has that cell, north or south, east or west.
   * The marks of a sentence that fell apart: a slot left unfilled, stray punctuation, a number of nine digits.
+
+For the weather of a day: every entry about a field of the day names that day; a day with rain is called wet and one
+without dry, or in a month without rain, as its cause record says; the amount, the temperature, the pressure and the
+wind given are the day's; the parts of a sum add up to the value given, and the day's own part is named wherever it is
+not nothing; the chance of rain is the one its two sources make, and the draw lies below it on a wet day and not on a
+dry one; a cell that no storm reaches is said to be reached by none, and the strongest storm named is the one of the
+row of the table of storms given, with its kind, its birth day and its strength.
 
 The rules are the ones that the checks of build step 2 found broken or found untested: the first review's; five that
 the fourth check found broken (a cell at the brim of a lake said to lie in it and to be reached by no lake; water
@@ -28,7 +36,8 @@ respects. It says nothing about whether the numbers are right, nor about faults 
 What holds the scan itself: tests/test_world.py plants 33 faults in true answers, one for each kind of fault that a
 check found and for some of the other rules, and asks that the scan report each and nothing else. Most of the
 rules below have no planted fault of their own: the fifth check took four of them out, one at a time, and no test
-noticed (those four have one now).
+noticed (those four have one now). tests/test_days.py plants 8 faults in the answers of a day in the same way, one
+for each of eight of the rules of the weather.
 """
 import re
 import sys
@@ -42,7 +51,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import yaml                                              # noqa: E402
 
 from worldengine import console, store                   # noqa: E402
-from worldengine.causes import as_text, explain          # noqa: E402
+from worldengine.causes import WORTH_SAYING, as_text, explain          # noqa: E402
 from worldengine.library import drainage as dr           # noqa: E402
 
 FIELDS = ("river_discharge", "runoff", "runoff_annual", "lake_fraction", "lake_level", "soil_moisture", "evapotranspiration",
@@ -57,7 +66,11 @@ BROKEN = [(re.compile(pattern), what) for pattern, what in (
     (r"\d{9,}", "a number of nine digits or more"), (r":\s*$", "ends on a colon"), (r"; [A-Z]", "a capital after a semicolon"))]
 
 
+WEATHER_FIELDS = ("weather_temperature", "weather_precipitation", "weather_pressure", "weather_wind", "storm_influence")
 IN_A_LAKE, CLOSED_LAKE, AT_THE_BRIM, UNDER_A_CLOSED_LAKE = 1, 2, 4, 5       # the classes of the driver river_discharge.place
+DRY_DAY, WET_DAY, NO_RAIN = 0, 1, 2                                         # ... of weather_precipitation.day_kind
+STORM_KINDS = {1: "a mid-latitude storm", 2: "a tropical cyclone"}          # the codes of the table of storms
+PERCENT = r"(?:under 1|over 99|\d+) %"
 
 
 def number(text) -> float:
@@ -81,10 +94,25 @@ def close(said, stored, volume=False) -> bool:
     return abs(said - stored) <= (0.51 * step if step else 0.006 * size + 1e-12)
 
 
+def printed(x) -> float:
+    """Half the step in which a sentence prints a number (causes._fmt), a little more: how far the number printed may
+    lie from the one it stands for."""
+    a = abs(x)
+    return 0.51 * (1.0 if a >= 1000 else 0.1 if a >= 10 else 0.01 if a >= 0.1 else 0.006 * a + 1e-12)
+
+
+def percent(text) -> float:
+    """A share as a sentence prints it: "37 %", "under 1 %", "over 99 %"."""
+    return 0.0025 if text.startswith("under") else 0.9975 if text.startswith("over") else float(text.split()[0]) / 100.0
+
+
 def scan(view, cells=None, fields=FIELDS) -> list:
-    """The problems found: a list of (cell, field, what is wrong, the sentence)."""
+    """The problems found: a list of (cell, field, what is wrong, the sentence). The answers for the weather of a day are
+    read from a view of that day (Engine.day_view)."""
     have = set(view.field_names())
     fields = [f for f in fields if f in have]
+    day = getattr(view, "day", None)
+    of_the_day = set(view.day_fields()) if day is not None else set()
     wanted = set(fields) | {"ocean_mask", "lake_fraction", "runoff", "snow_water", "snow_cover", "river_discharge", "flow_receiver",
                            "depression_id", "elevation", "sea_depth", "height_above_sea", "biome"}
     f = {name: np.asarray(view.field(name)) for name in wanted if name in have}
@@ -92,6 +120,8 @@ def scan(view, cells=None, fields=FIELDS) -> list:
     lat, lon = np.asarray(view.mesh_array("lat")), np.asarray(view.mesh_array("lon"))
     sea = f["ocean_mask"].astype(bool) if "ocean_mask" in f else np.zeros(n, dtype=bool)
     year = lambda name: f[name].astype(np.float64).mean(axis=0) if f[name].ndim == 2 else f[name].astype(np.float64)
+    today = lambda name: np.linalg.norm(f[name].astype(np.float64), axis=-1) if f[name].ndim == 2 else f[name].astype(np.float64)
+    record = lambda name, term: np.asarray(view.driver(name, term))
     share = f["lake_fraction"].astype(np.float64) if "lake_fraction" in f else np.zeros(n)
     runoff = year("runoff") if "runoff" in f else np.zeros(n)
     snow = f["snow_water"].astype(np.float64) if "snow_water" in f else np.zeros((1, n))
@@ -157,10 +187,13 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                 return None if not found else [number(g) for g in found.groups()]
             heading = as_text(answer).split("\n", 1)[0]
             at = PLACE.search(heading)
-            if not heading.startswith(f"Why is {field} like this at ") or not heading.endswith(f" (cell {cell})?") or not at \
+            on = f"on day {day} " if field in of_the_day else ""
+            if not heading.startswith(f"Why is {field} like this {on}at ") or not heading.endswith(f" (cell {cell})?") or not at \
                     or not is_place(at.groups(), lat[cell], lon[cell]):
                 wrong("the heading does not give the place of the cell", heading)
             for step in chain:
+                if "writer" in step and step["field"] in of_the_day and not re.search(rf"(^|: )On day {day}, ", step["text"]):
+                    wrong("does not name the day asked about", step["text"])
                 for pattern, what in BROKEN:
                     if pattern.search(step["text"]):
                         wrong(what, step["text"])
@@ -181,7 +214,17 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                     here = lat[step["cell"]]
                     if abs(float(said.group(1)) - abs(here)) > 0.051 or (said.group(2) != ("north" if here >= 0 else "south") and abs(here) > 0.05):
                         wrong("gives another latitude than that of the cell the step is about", step["text"])
-            value = year(field)[cell] if f[field].dtype.kind == "f" else None
+            value = (today(field) if field in of_the_day else year(field))[cell] if f[field].dtype.kind == "f" else None
+            rest = first.split(":", 1)[1] if ":" in first else ""      # what follows the colon: the parts of a sum
+
+            def adds_up(parts, unit, whole, half_step=None, unsaid=0):
+                """The parts of a sum read out of a sentence add up to the whole, as far as the sentence prints them (to
+                half_step each, where the unit prints a fixed number of decimals), and but for as many as `unsaid` parts
+                too small to be named (causes.WORTH_SAYING)."""
+                room = (len(parts) + 1) * half_step if half_step else sum(printed(x) for x in parts) + printed(whole)
+                room += unsaid * WORTH_SAYING * max((abs(x) for x in parts), default=0.0)
+                if not parts or abs(sum(parts) - whole) > room:
+                    wrong(f"gives parts that add up to {sum(parts):.4g} {unit}, where the field holds {whole:.4g}")
             wet, full, part = bool(sea[cell]), share[cell] >= 1.0, 0.0 < share[cell] < 1.0
             if field in ("runoff", "precipitation") and first.startswith(("Runoff here averages", "Precipitation here averages")) and ":" in first:
                 # the parts of a sum add up to the value given: a part of any size left out, or printed in another unit, shows
@@ -338,6 +381,75 @@ def scan(view, cells=None, fields=FIELDS) -> list:
                     height = max(float(f["height_above_sea"][cell]), 0.0)
                     if number(cooled.group(1)) > 0.05 or abs(number(cooled.group(1))) > 0.012 * height + 0.2:
                         wrong(f"gives {cooled.group(1)} °C for the cooling by a height of {height:.0f} m, which no lapse of temperature with height gives")
+            elif field == "weather_temperature":
+                celsius = value - 273.15
+                said = read(rf"the temperature here is ({NUMBER}) °C", "temperature in °C")
+                if said and abs(said[0] - celsius) > 0.051:
+                    wrong(f"gives {said[0]:g} °C, where the day holds {celsius:.3f} °C")
+                changes = re.findall(r"changes it by (\S+) °C", rest)
+                for change in changes:
+                    if not re.fullmatch(r"[+-]\d+\.\d", change):
+                        wrong(f"gives a change of temperature without its sign, or not as a change: {change!r}")
+                adds_up([number(x) for x in re.findall(rf"give ({NUMBER}) °C", rest)] +
+                        [number(x) for x in changes if re.fullmatch(r"[+-]\d+\.\d", x)], "°C", celsius, half_step=0.051)
+                must("the day's own departure", float(record(field, "departure")[cell]) != 0.0)
+            elif field == "weather_pressure":
+                said = read(rf"the pressure at sea level here is ({NUMBER}) Pa", "pressure in Pa")
+                if said and not close(said[0], value):
+                    wrong(f"gives {said[0]:g} Pa, where the day holds {value:.6g}")
+                adds_up([number(x) for x in re.findall(rf"({NUMBER}) Pa", rest)], "Pa", value)
+                must("the storms passing today", float(record(field, "from_storms")[cell]) != 0.0)
+                must("the day's own warmth", float(record(field, "from_warm_day")[cell]) != 0.0)
+            elif field == "weather_wind":
+                said = read(rf"the wind here blows at ({NUMBER}) m/s", "speed of the wind in m/s")
+                if said and not close(said[0], value):
+                    wrong(f"gives {said[0]:g} m/s, where the day's wind blows at {value:.4g}")
+                adds_up([number(x) for x in re.findall(rf"({NUMBER}) m/s", rest)], "m/s", value)
+                gust, wind = record(field, "gust")[cell].astype(np.float64), f[field][cell].astype(np.float64)
+                must("the day's own gust", float(gust @ wind) != 0.0)
+            elif field == "storm_influence":
+                reached = int(record(field, "reached")[cell]) == 1
+                must("no storm of the day comes within twice its radius", not reached)
+                must_not("no storm of the day comes within", reached)
+                row = int(record(field, "strongest_storm")[cell])
+                if reached:
+                    adds_up([number(x) for x in re.findall(rf"(?:give|takes) ({NUMBER})", re.sub(r"\([^)]*\)", "", rest))], "", value, unsaid=2)
+                    named = re.search(rf"the strongest storm here is (a mid-latitude storm|a tropical cyclone), born on day (\d+), at "
+                                      rf"strength ({NUMBER}) today \(row (\d+) of the table of storms\)", first)
+                    storms = view.table("storms")
+                    if row < 0 or not named:
+                        wrong("names no strongest storm in the form asked, or names one where the record holds none")
+                    elif (int(named.group(4)) != row or named.group(1) != STORM_KINDS.get(int(storms["kind"][row]))
+                          or int(named.group(2)) != int(storms["born_day"][row]) or not close(number(named.group(3)), float(storms["strength"][row]))):
+                        wrong(f"names a storm that is not the one of row {row} of the table of storms (born on day "
+                              f"{int(storms['born_day'][row])}, strength {float(storms['strength'][row]):.3g})")
+            elif field == "weather_precipitation":
+                kind = int(record(field, "day_kind")[cell])
+                must("It is a wet day", value > 0)
+                must_not("It is a wet day", value == 0)
+                must("no rain or snow falls here", value == 0)
+                must("It is a dry day", kind == DRY_DAY)
+                must("the months around this date bring none", kind == NO_RAIN)
+                if (kind == WET_DAY) != (value > 0):
+                    wrong("its cause record calls the day wet where no rain falls, or not wet where rain falls")
+                if value > 0:
+                    said = read(rf"On day \d+, ({NUMBER}) mm of rain or snow falls here", "rain of the day in mm")
+                    if said and not close(said[0], value):
+                        wrong(f"gives {said[0]:g} mm, where the day holds {value:.4g}")
+                if kind in (WET_DAY, DRY_DAY):
+                    shares = re.search(rf"the chance of rain today is ({PERCENT}), which joins the ({PERCENT}) of the month's days "
+                                       rf"that are wet to a chance of ({PERCENT}) that the storms passing today bring rain, and the "
+                                       rf"remembered noise of this date drew ({PERCENT}), (below|not below) it", first)
+                    if not shares:
+                        wrong("gives no chance of rain and its sources in the form asked")
+                    else:
+                        chance, wet_share, by_storms, drew = (percent(g) for g in shares.groups()[:4])
+                        if abs(chance - (1.0 - (1.0 - wet_share) * (1.0 - by_storms))) > 0.02:
+                            wrong(f"gives a chance of rain of {chance:.2f} that its two sources, {wet_share:.2f} and {by_storms:.2f}, do not make")
+                        below = shares.group(5) == "below"
+                        if below != (value > 0) or (below and drew > chance + 0.01) or (not below and drew < chance - 0.01):
+                            wrong(f"gives a draw of {drew:.2f} on the wrong side of the chance of rain, {chance:.2f}, for a "
+                                  f"{'wet' if value > 0 else 'dry'} day")
             elif field == "flow_receiver":
                 to = int(f["flow_receiver"][cell])
                 must(f"runs to cell {to} ")
@@ -356,17 +468,24 @@ def scan(view, cells=None, fields=FIELDS) -> list:
     return problems
 
 
-def report(world, every=1, say=print) -> int:
-    """Scan a world (the path of its store, or a view of it) and say what was found. Returns the number of problems."""
+def report(world, every=1, say=print, day=None) -> int:
+    """Scan a world (the path of its store, or a view of it) and say what was found, with the weather of a day if one is
+    given. Returns the number of problems."""
     v = world if isinstance(world, store.WorldView) else store.StoreView(world)
     n = v.attrs["meta"]["cells"]
     found = scan(v, range(0, n, every))
+    weather = 0
+    if day is not None:
+        from worldengine.engine import engine_for_store
+        today = engine_for_store(v).day_view(v, day)
+        found += scan(today, range(0, n, every), WEATHER_FIELDS)
+        weather = len([f for f in WEATHER_FIELDS if f in today.day_fields()])
     kinds = {}
     for cell, field, what, text in found:
         kinds.setdefault((field, what), []).append((cell, text))
     for (field, what), cases in sorted(kinds.items()):
         say(f"{field}: {what}: {len(cases)} answers, the first at cell {cases[0][0]}:\n    {cases[0][1]}")
-    asked = len(range(0, n, every)) * len([f for f in FIELDS if f in v.field_names()])
+    asked = len(range(0, n, every)) * (len([f for f in FIELDS if f in v.field_names()]) + weather)
     say(f"{asked} answers read; {len(found)} problems" if found else f"{asked} answers read; none says anything its numbers contradict")
     return len(found)
 
@@ -375,6 +494,8 @@ def parser():
     p = console.tool_parser(__doc__, "python tools/why_scan.py")
     p.add_argument("store", metavar="STORE")
     p.add_argument("--every", type=console.whole_number(1), default=1, metavar="N")
+    p.add_argument("--day", type=console.whole_number(0), default=None, metavar="N",
+                   help="read the answers for the weather of this day as well")
     return p
 
 
@@ -384,7 +505,12 @@ def main(argv=None) -> int:
     if not Path(args.store).exists():
         print(f"no world store at {args.store}", file=sys.stderr)
         return 2
-    return 1 if report(args.store, args.every) else 0
+    from worldengine.engine import EngineError
+    try:
+        return 1 if report(args.store, args.every, day=args.day) else 0
+    except EngineError as e:                                 # a world without a weather stage
+        print(f"refused: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

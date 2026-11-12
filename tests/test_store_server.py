@@ -13,9 +13,11 @@ import yaml
 
 import toy_processes as T
 from conftest import DATA
+from test_days import save_weather_world
 from test_engine_cases import BOOL_TABLE, GEO_FIELDS, engine, slot
 from worldengine import store
-from worldengine.engine import Engine
+from worldengine.causes import explain
+from worldengine.engine import Engine, engine_for_store
 from worldengine.server import WorldService, make_server
 
 
@@ -329,3 +331,55 @@ def test_the_page_is_warned_when_the_engine_is_not_the_one_that_built_the_world(
     service.view.attrs["engine_version"] = "0.0.0"
     said = service.world()["warnings"]
     assert len(said) == 3 and said[0].startswith("This world was built by engine version 0.0.0") and "lock file" in said[2]
+
+
+# ---------------------------------------------------------------------------------------------- the "why" answers of a day
+@pytest.fixture(scope="module")
+def weather_served(tmp_path_factory):
+    """The weather world of tests/test_days.py (the real weather processes around a planted climate) behind a server."""
+    view = save_weather_world(tmp_path_factory.mktemp("weather") / "world.zarr")
+    srv = make_server(view.path, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield view, srv.server_address[1]
+    srv.shutdown()
+
+
+def test_the_server_answers_why_for_a_field_of_a_day_as_the_engine_does(weather_served):
+    """/api/explain with a day gives the answer that the day, worked out alone with its causes, gives; /api/weather gives
+    that day's values, from the same working of the day. The answer is the same whichever days the server was asked for
+    before, and in a second server."""
+    view, port = weather_served
+    cell = 1234
+    fresh = engine_for_store(view).day_view(view, 200)
+    want = explain(fresh, cell, "weather_precipitation")
+    status, body = raw_get(port, f"/api/explain?cell={cell}&field=weather_precipitation&day=200")
+    assert status == 200 and json.loads(body) == json.loads(json.dumps(want)) and json.loads(body)["day"] == 200
+    for name in ("weather_temperature", "storm_influence"):
+        got = np.frombuffer(raw_get(port, f"/api/weather?name={name}&day=200")[1], dtype="<f4")
+        assert got.tobytes() == np.ascontiguousarray(fresh.field(name), dtype="<f4").tobytes()
+    for day in (199, 41, 7):                                     # other days, then the first again: it is worked out anew
+        assert raw_get(port, f"/api/weather?name=weather_wind&day={day}")[0] == 200
+        assert raw_get(port, f"/api/explain?cell={cell}&field=weather_wind&day={day}")[0] == 200
+    assert raw_get(port, f"/api/explain?cell={cell}&field=weather_precipitation&day=200")[1] == body
+    other = make_server(view.path, port=0)
+    threading.Thread(target=other.serve_forever, daemon=True).start()
+    try:
+        assert raw_get(other.server_address[1], f"/api/explain?cell={cell}&field=weather_precipitation&day=200")[1] == body
+    finally:
+        other.shutdown()
+    climate = json.loads(raw_get(port, f"/api/explain?cell={cell}&field=surface_temperature")[1])
+    assert "day" not in climate and climate == json.loads(json.dumps(explain(view, cell, "surface_temperature")))
+
+
+@pytest.mark.parametrize("query,words", [
+    ("cell=5&field=weather_temperature", "is a field of a day, worked out on request: ask with a day"),
+    ("cell=5&field=surface_temperature&day=3", "is not a field of a day: ask for it without a day"),
+    ("cell=5&field=weather_temperature&day=-1", "day -1 is before the first day, 0"),
+    ("cell=5&field=weather_temperature&day=soon", "day must be a whole number, got 'soon'"),
+    ("cell=99999&field=weather_temperature&day=3", "cell 99999 is outside 0 to 2561"),
+    ("cell=5&field=no_such_field&day=3", "the world holds no field named no_such_field"),
+], ids=["no day", "not of a day", "before the first day", "not a number", "no such cell", "no such field"])
+def test_the_server_refuses_a_why_of_a_day_it_cannot_answer_in_words_that_say_why(weather_served, query, words):
+    _, port = weather_served
+    status, body = raw_get(port, "/api/explain?" + query)
+    assert status == 400 and words in json.loads(body)["error"]

@@ -20,7 +20,8 @@ A pattern entry, under the slot and the field it writes:
               text put after the number
     ends:     text saying why the chain ends here (a parameter, a seeded starting condition)
     follows:  fields the walk continues to when no driver says otherwise
-    drivers:  per driver: says (slot {v}, and {at} for the cell that the driver named under "at" holds),
+    drivers:  per driver: says (slot {v}, and {at} for the cell that the driver named under "at" holds, and every slot of
+              the pattern's own sentence),
               follows (fields), at (a driver holding the cell to continue at),
               ends (text saying why the chain ends at this driver: it is given, once, where the driver is one of
               those that the walk would follow),
@@ -30,7 +31,13 @@ A pattern entry, under the slot and the field it writes:
               a column called row, and one slot per column; values maps a column's codes to words, and units
               maps a column to the unit its number is printed in),
               aside (the driver is a number for the sentences to use by its name: it is no part of a sum, is not
-              spoken by itself and is not followed)
+              spoken by itself and is not followed),
+              follow_first (for form sum: the sentence names this driver and the walk follows it first, whatever its
+              size, where it is not nothing. The day's own part of a day's weather is small beside the month's mean it
+              is added to, and it is the part that the question is about)
+
+The answers for a field of a day (the weather, worked out on request) are read from a view that holds that day
+(store.DayView, made by Engine.day_view): it gives the sentences the slot {day}, and the heading names the day.
 """
 from __future__ import annotations
 
@@ -119,6 +126,9 @@ def explain(view, cell: int, field: str) -> dict:
     attrs = view.attrs
     specs, lineage, patterns = attrs["fields"], attrs["lineage"], attrs.get("explanations") or {}
     lat, lon = view.mesh_array("lat"), view.mesh_array("lon")
+    day = getattr(view, "day", None)
+    if field in specs and specs[field]["shape"] == "day_cell" and field not in lineage:
+        raise KeyError(f"{field} is a field of a day, worked out on request: ask with a day")
     if field not in specs or field not in lineage:
         raise KeyError(f"the world holds no field named {field}")
     n = attrs["meta"]["cells"]
@@ -199,6 +209,8 @@ def explain(view, cell: int, field: str) -> dict:
         shown = value.replace("_", " ") if isinstance(value, str) else _fmt(value, unit)
         slots = _Safe(value=shown, lat=f"{abs(lat[c]):.1f}° {'north' if lat[c] >= 0 else 'south'}",
                       lon=f"{abs(lon[c]):.1f}° {'east' if lon[c] >= 0 else 'west'}", planet=attrs["planet"], field=f)
+        if day is not None:
+            slots["day"] = str(day)
         for t, v in dvals.items():
             p = dpat.get(t) or {}
             if t in names:
@@ -213,7 +225,7 @@ def explain(view, cell: int, field: str) -> dict:
 
         def said_by(t, p, text):
             """A driver's sentence, with {v} for its value and {at} for the cell that its "at" driver names."""
-            given = _Safe(v=slots[t])
+            given = _Safe({**slots, "v": slots[t]})
             other = dvals.get(p.get("at"), -1) if p.get("at") else -1
             if p.get("at"):
                 given["at"] = "no other cell" if other < 0 else (
@@ -236,7 +248,8 @@ def explain(view, cell: int, field: str) -> dict:
             largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
             for t in order:
                 p = dpat.get(t) or {}
-                if abs(dvals[t]) <= WORTH_SAYING * largest and not p.get("always") and t not in base:
+                if abs(dvals[t]) <= WORTH_SAYING * largest and not p.get("always") and t not in base and \
+                        not (p.get("follow_first") and dvals[t] != 0.0):
                     continue
                 said = said_by(t, p, p.get("says") or (t.replace("_", " ") + " {v}"))
                 if p.get("group"):                               # name each member of the sum that acts in this cell
@@ -343,7 +356,8 @@ def explain(view, cell: int, field: str) -> dict:
         elif pat.get("form") == "sum":
             largest = max((abs(dvals[t]) for t in order if t not in base), default=0.0)
             worth = [t for t in order if t not in base and abs(dvals[t]) > 0.0 and abs(dvals[t]) >= WORTH_FOLLOWING * largest]
-            candidates = worth[:FOLLOW_TOP if depth <= 1 else 1]
+            first = [t for t in order if (dpat.get(t) or {}).get("follow_first") and abs(dvals[t]) > 0.0]
+            candidates = first + [t for t in worth[:FOLLOW_TOP if depth <= 1 else 1] if t not in first]
         else:
             candidates = order
         closes = None
@@ -390,11 +404,18 @@ def explain(view, cell: int, field: str) -> dict:
             notices.append(f"{nt['slot']} noted: {nt['what']}.")
         elif nt["kind"] == "run_time_over_limit":
             notices.append(f"The build took {nt['seconds']} seconds, more than the {nt['limit_s']} seconds its profile allows.")
-    return {"cell": int(cell), "lat": float(lat[cell]), "lon": float(lon[cell]), "field": field, "chain": list(chain), "notices": notices}
+        elif nt["kind"] == "patterns_borrowed" and any(f in nt["fields"] for f, _ in seen):
+            notices.append("This world was stored before the weather had sentence patterns of its own; the patterns of this "
+                           "copy of the engine (data/explanations.yaml) word the answers of the day.")
+    answer = {"cell": int(cell), "lat": float(lat[cell]), "lon": float(lon[cell]), "field": field, "chain": list(chain), "notices": notices}
+    if day is not None and specs[field]["shape"] == "day_cell":
+        answer["day"] = int(day)
+    return answer
 
 
 def as_text(answer: dict) -> str:
-    lines = [f"Why is {answer['field']} like this at {abs(answer['lat']):.1f}° {'N' if answer['lat'] >= 0 else 'S'}, "
+    on = f"on day {answer['day']} " if answer.get("day") is not None else ""
+    lines = [f"Why is {answer['field']} like this {on}at {abs(answer['lat']):.1f}° {'N' if answer['lat'] >= 0 else 'S'}, "
              f"{abs(answer['lon']):.1f}° {'E' if answer['lon'] >= 0 else 'W'} (cell {answer['cell']})?"]
     for k, step in enumerate(answer["chain"], 1):
         lines.append(f"{k}. {step['text']}")

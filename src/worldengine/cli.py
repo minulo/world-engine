@@ -5,6 +5,7 @@
                                   [--history-my 500 --continue-from worlds/older.zarr]
     python -m worldengine serve   worlds/first.zarr [--port 8765] [--host 127.0.0.1] [--open] [--check]
     python -m worldengine explain worlds/first.zarr --lat 48 --lon -20 --field biome
+    python -m worldengine explain worlds/first.zarr --lat 50 --lon 10 --field weather_precipitation --day 180
     python -m worldengine info    worlds/first.zarr
 """
 from __future__ import annotations
@@ -159,6 +160,8 @@ def main(argv=None) -> int:
     sp.add_argument("--cell", type=int)
     sp.add_argument("--lat", type=float)
     sp.add_argument("--lon", type=float)
+    sp.add_argument("--day", type=int, default=None, help="for a field of a day (the weather): the day, from the first day "
+                                                          "of year 0; the day is worked out with its cause records")
     sp.add_argument("--json", action="store_true")
     sp = sub.add_parser("info")
     sp.add_argument("store")
@@ -217,6 +220,22 @@ def main(argv=None) -> int:
         if args.cmd == "explain":
             from .causes import as_text, explain
             cell = args.cell if args.cell is not None else _nearest_cell(view, args.lat, args.lon)
+            daily = (view.specs.get(args.field) or {}).get("shape") == "day_cell"
+            if daily and args.day is None:
+                print(f"refused: {args.field} is a field of a day, worked out on request: ask with --day N", file=sys.stderr)
+                return 2
+            if args.day is not None:
+                if not daily:
+                    print(f"refused: {args.field} is not a field of a day: ask for it without --day", file=sys.stderr)
+                    return 2
+                from .engine import EngineError, engine_for_store
+                if not (0 <= cell < view.meta["cells"]):
+                    raise IndexError(f"cell {cell} is outside 0 to {view.meta['cells'] - 1}")
+                try:
+                    view = engine_for_store(view).day_view(view, args.day)
+                except EngineError as e:
+                    print(f"refused: {e}", file=sys.stderr)
+                    return 2
             ans = explain(view, cell, args.field)
             print(json.dumps(ans, indent=1) if args.json else as_text(ans))
             return 0

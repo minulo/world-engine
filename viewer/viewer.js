@@ -13,6 +13,7 @@ const state = {
   idmap: null, idW: 0, idH: 0, data: null, stats: null, selected: -1, playing: null, cache: new Map(), sea: null,
   frame: -1, filming: null,                // frame: a picture of the geological history, or -1 for the world as it ends
   day: 0, stepping: null, dayRanges: {},   // day: the date of the weather shown; a day's colour scale is kept from the first day shown
+  whyAsked: "",                            // the "why" answer last asked for: an answer that comes back after a later one is dropped
 };
 
 // ---------------------------------------------------------------- colour
@@ -364,16 +365,17 @@ async function showCell(id) {
   if (isDaily() && state.data) { const s = spec(), v = state.data[id];
     rows.unshift(`<tr class="current"><td>${state.field.replace(/_/g, " ")} (day ${state.day})</td><td class="num">${fmt(v, s.unit)}</td></tr>`); }
   $("cellvalues").innerHTML = `<table><thead><tr><th>Field</th><th>Value (month ${state.month})</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
-  const why = $("why");
-  if (isDaily()) { why.innerHTML = `<p class="muted small">The weather of a day keeps no cause records: it is drawn from the seed and the date ` +
-    `around the climate. Ask why of the climate it is drawn around: surface temperature, precipitation, daily temperature spread, wet day fraction.</p>`; return; }
+  const why = $("why"), q = new URLSearchParams({ cell: id, field: state.field });
+  if (isDaily()) q.set("day", state.day);  // a day's field: the server works the day out with its cause records
+  const asked = q.toString(); state.whyAsked = asked;
   why.innerHTML = `<p class="muted small">asking why…</p>`;
   try {
-    const a = await getJSON(`/api/explain?cell=${id}&field=${encodeURIComponent(state.field)}`);
+    const a = await getJSON("/api/explain?" + asked);
+    if (state.whyAsked !== asked) return;  // another cell, field or day was asked for meanwhile: its answer is the one to show
     const items = a.chain.map((st) => `<li class="${st.push ? "push" : ""}">${st.text.replace(/</g, "&lt;")}</li>`).join("");
-    why.innerHTML = `<h2>Why is ${state.field.replace(/_/g, " ")} like this here?</h2>` +
+    why.innerHTML = `<h2>Why is ${state.field.replace(/_/g, " ")} like this here${a.day !== undefined ? ` on day ${a.day}` : ""}?</h2>` +
       a.notices.map((n) => `<div class="notice">${n}</div>`).join("") + `<ol>${items}</ol>`;
-  } catch (e) { why.innerHTML = `<p class="muted small">No "why" answer: ${e.message}</p>`; }
+  } catch (e) { if (state.whyAsked === asked) why.innerHTML = `<p class="muted small">No "why" answer: ${e.message}</p>`; }
 }
 
 // ---------------------------------------------------------------- controls
