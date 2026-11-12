@@ -122,6 +122,15 @@ The first run on Windows found that a closed port of the same computer is refuse
 the panel's Stop then took for a server still running; the panel now waits long enough. Nobody has used the panel
 by hand on Windows or on a Mac.
 
+The **Version** list was checked on Linux [MEASURED on 2026-11-12: Python 3.13.14 of python-build-standalone, Tk 9.0.3
+under Xvfb, git 2.43.0]. Six tests of `tests/test_panel.py` move real Git repositories to another version, on along
+it, and back, and through each refusal, where they check that nothing changed. In a fresh clone of this repository the
+window itself, with a later version chosen and both of its questions answered with yes, switched the folder, deleted
+the default world, kept another world, and opened the later version's panel while the old window closed. The first
+such run showed that the closing window still read its queue once more and printed an error; it no longer does. On
+Windows and macOS the workflow runs the same tests and the self-test of the window, which shows a made-up list of
+versions; nobody has chosen a version by hand there.
+
 Two things about the macOS app were not checked by hand:
 
 - Gatekeeper. macOS checks an app when it is first opened if the app carries the quarantine attribute, which the

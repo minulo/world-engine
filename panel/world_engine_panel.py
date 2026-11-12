@@ -318,7 +318,7 @@ class Panel:
 
     def _drain(self):
         try:
-            while True:
+            while not self._closing:                         # an action's end may close the window (Stop and quit)
                 kind, *rest = self.queue.get_nowait()
                 if kind == "status":
                     self.render(rest[0])
@@ -330,7 +330,7 @@ class Panel:
                     self.show_versions(*rest)
         except queue.Empty:
             pass
-        if self.root.winfo_exists():
+        if not self._closing and self.root.winfo_exists():
             self.root.after(150, self._drain)
 
     def run_action(self, name, work, done=None, title=None):
@@ -481,10 +481,11 @@ class Panel:
                 f"2. switch this copy from {was} to the version {chosen.branch} (git fetch, then git checkout);\n")
         else:
             title, second = "Upgrade the world engine?", "2. fetch the new version with git pull --ff-only;\n"
+        worlds = control.ENGINE_WORLDS
         text = ("The panel will:\n\n"
                 "1. stop the world engine, if it runs;\n" + second +
-                f"3. if the code changed, delete the default world {control.DEFAULT_WORLD}, so that the next start "
-                "builds it again with the new engine (one to two minutes). Other worlds are kept.\n\n"
+                f"3. if the code changed, delete the default world{'s' if len(worlds) > 1 else ''} {' and '.join(worlds)}, "
+                "so that the next start builds it again with the new engine (one to two minutes). Other worlds are kept.\n\n"
                 + ("Switch now?" if other else "Upgrade now?"))
         if not messagebox.askokcancel(title, text, parent=self.root):
             return
