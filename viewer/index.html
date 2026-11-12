@@ -14,9 +14,20 @@
 <div id="banner" hidden></div>
 <main>
   <aside id="controls">
+    <div id="lookrow" hidden>
+      <label>Look</label>
+      <div class="row seg" role="group" aria-label="Look">
+        <button id="lookmap" type="button" aria-pressed="false">Illustrated</button>
+        <button id="lookdata" type="button" aria-pressed="true">Data</button>
+      </div>
+      <p id="mapnote" class="muted small">A drawing of this world, made from its sea, heights, biomes, ice, lakes and rivers. The cells hold what is true: everything smaller than a cell (the bends of the coasts and rivers, the ridges, the lines in the shadows) is the viewer's hand. Click a place for its cell's stored values, or choose <b>Data</b> to see one field exactly as stored.</p>
+      <label class="check" id="seasonrow"><input id="season" type="checkbox"> Show the month's snow and rivers</label>
+    </div>
+
     <label for="field">Field</label>
     <select id="field"></select>
     <p id="fielddesc" class="muted small"></p>
+    <label class="check" id="smoothrow"><input id="smooth" type="checkbox"> Blend the colours between cells</label>
 
     <div id="partrow" hidden>
       <label for="part">Show</label>
@@ -66,10 +77,16 @@
       <summary>The model behind this field</summary>
       <div id="model" class="small"></div>
     </details>
-    <p class="muted small">Drag to turn or move the map. Scroll to zoom. Click a cell for its values and its "why" answer.</p>
+    <p class="muted small">Drag to turn or move the map. To zoom: scroll, pinch, double-click, or press the + and − buttons on the map (Shift with a double-click zooms out). Click a cell for its values and its "why" answer.</p>
   </aside>
   <section id="stage">
-    <canvas id="gl" aria-label="Map of the selected field"></canvas>
+    <canvas id="gl" tabindex="0" aria-label="Map of the world: drag to move, scroll or press + and - to zoom"></canvas>
+    <div id="zoomctl" role="group" aria-label="Zoom">
+      <button id="zoomin" type="button" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      <button id="zoomout" type="button" title="Zoom out (-)" aria-label="Zoom out">−</button>
+      <button id="zoomreset" type="button" title="Show the whole world (0)" aria-label="Show the whole world">⤢</button>
+    </div>
+    <div id="scale" title="The length of the bar at the middle of the view"><span id="scalebar"></span><span id="scaletext"></span></div>
     <div id="status" class="muted small"></div>
   </section>
   <aside id="cellpanel">
@@ -78,6 +95,7 @@
     <div id="cellvalues"></div>
   </aside>
 </main>
+<script src="draw.js"></script>
 <script src="viewer.js"></script>
 </body>
 </html>

@@ -4016,3 +4016,100 @@ with the most heat warms by 1.04 K and the half with the least by 0.88 K: the sp
 7. A magic world built before this section is another world: its fields of the layer differ, and it holds
    `spent_mana_heat` where this one holds `mana_spent`. It still opens; the viewer says the engine's code has changed.
 
+## 32. The viewer: a zoom that can be found, cells with exact borders, and an illustrated look (2026-11-12)
+
+The owner could not zoom into the map to look at the geography, and asked whether the map could have good graphics,
+drawn in a style of its own. Two things were wrong, and they are different things. The zoom was there (the mouse
+wheel) but nothing on the page showed it, and a pinch did nothing in a browser that sends it as an event of its own.
+And zooming showed nothing new: every cell was one flat colour, and its borders followed a grid of nearest cells, so
+that a cell of 223 km on the preview mesh became a block with steps 39 km wide. This section is the work on both, in
+the viewer alone: `viewer/draw.js` (new: the shaders and the arithmetic that prepares a world for them),
+`viewer/viewer.js`, the page and its styles, one new request of the server, and `tools/viewer_check.py`. No field, no
+process and no stored world changes.
+
+### 32.1 The zoom
+
+Scroll, pinch (two fingers on a touch screen; on a trackpad as most browsers send it, the wheel with the control key
+down; and as Safari sends it, a gesture of its own), double-click (with Shift: out), the buttons + and − on the map,
+and the keys + and − with the map in focus (0 shows the whole world; the arrows move it). Every one of them keeps the
+place under the pointer under it, on the flat map exactly and on the globe by turning it. The zoom runs from 0.5 to
+60. A bar on the map gives a round number of kilometres at the middle of the view.
+
+### 32.2 Cells with exact borders (the data look)
+
+The server gives the mesh to the page (`GET /api/mesh?part=xyz` and `?part=nbr`: the centres of the cells and each
+cell's neighbours; another part is refused, with a test). The shader takes the grid's cell and then the nearest of it
+and its neighbours, so a cell's border is the true border at any zoom; the same arithmetic finds the cell under the
+pointer. Once a cell is large on the screen, thin lines mark the borders. A box, "Blend the colours between cells",
+shows a field of numbers smoothly between the centres; it is for the eye only: the status line and the cell's panel
+keep showing what is stored.
+
+### 32.3 The illustrated look
+
+A drawing of the world, made from several of its fields at once, and what a world now opens with (a request that
+names a field, `?field=`, opens the data look, and choosing a field shows the data).
+
+- **Sea and land.** Each cell is land or sea (`ocean_mask`). Between the centres of the cells the drawing blends the
+  cells around a place, each with a weight that falls to nothing one spacing from its centre, and the coast is where
+  the blend is half land. The place looked up is first moved by a few sizes of bend, each half as long as the one
+  before, the largest 0.42 of a spacing: this is what gives the coast its bays. The bends are drawn from whole-number
+  arithmetic on the place, so they are the same on every machine and at every visit.
+- **Colour.** The biome that holds the most of the weight of the land around, in the look's own flat colours by the
+  biome's name (a biome it does not know keeps the engine's colour, paled). Above 1,500 m and above 2,700 m the land
+  turns to two bands of rock and snow. Ice is white: the biome ice, and where the snow and ice cover never falls
+  below a half in the year.
+- **Light.** The slope of the land's heights at each cell (fitted to its neighbours by least squares), blended as
+  above, with drawn ridges on it where the heights change fast from cell to cell, lit from the upper left, and cut
+  into three flat steps: light, plain, shadow; the deepest shadow carries strokes.
+- **The sea.** A pale band along the coasts (drawn, not a depth), the open sea, and the sea deeper than 3,800 m; and
+  three thin lines along the shore, as on old charts.
+- **Rivers.** For each cell of land that hands a flow on (`flow_receiver`, `river_discharge`), a curve to the cell
+  that receives it, through the cell above and the cell below, bent with the land, as wide as its flow asks, and
+  wider downstream. Closer in, smaller rivers are drawn too. A river ends at the drawn coast and is not drawn under
+  ice. Lakes (`lake_fraction`) are drawn in.
+- **Signs.** Small signs say what kind of country a place is: a tree for forest, a conifer, a flat-topped tree among
+  tufts for open woodland, tufts for grass, dots for sand, strokes for tundra, and peaks where the heights change
+  fast. They grow as the view comes closer, and when they have doubled, a finer net of small ones takes their place.
+- **Seasons.** A box shows the month's snow and the month's rivers in place of the year's; the month slider and Play
+  then run the year.
+- **The selected cell** is shown where it truly lies, with its true border, over the drawing.
+
+**What is true in it, and what is not.** The cells hold what is true. The drawing invents everything smaller than a
+cell: the bends of the coasts and rivers, the ridges, the bands' edges, the lines in the shadows; and a sign marks a
+kind of country, not a thing that stands at that spot. The page says this beside the look's buttons and in the
+legend, and the stored values are one click away [the look's rules are the viewer's own, set by eye on the preview
+world; none comes from a source].
+
+### 32.4 What was checked, and how
+
+- `tools/viewer_check.py` on the default world with magic (preview mesh), in a headless Chromium that draws without a
+  graphics card [MEASURED on 2026-11-12]: the viewer opened in the illustrated look with 29,120 parts of rivers; a
+  cell with nothing but sea around was drawn in the sea's colours and one with nothing but land in a land colour;
+  the buttons, the wheel, the double-click, the trackpad's pinch, the keys, two fingers and Safari's gesture each
+  changed the zoom as they should, and the place under the pointer moved by at most 0.20 degrees on the flat map and
+  0.09 on the globe; the seasons changed the rivers (14,784 parts in month 1, 18,720 in month 7) and switched the
+  month slider on; choosing a field showed the data and the button brought the drawing back; and every check the
+  tool made before still passed, with no error from the page.
+- `tests/test_viewer_draw.py` runs the arithmetic of `draw.js` with node where there is one: the spacing of the
+  cells, the slope of a field that rises northward (within 3 % at every cell of a mesh of 642), a river's way from
+  cell to cell (whole, never narrower downstream, the same width where two ways meet), the colours and signs by
+  biome; that the shaders are whole texts and use none of the words GLSL keeps for itself as a name (the first
+  version used one, and no browser would have compiled it); and that the page holds every part its scripts reach for.
+- `tests/test_store_server.py` holds the new request and its refusal; the server's own check (`serve --check`) now
+  asks for `draw.js` as well.
+
+### 32.5 Limits
+
+1. The look was seen only in that headless Chromium. It was not opened in Safari, Firefox or Edge, on Windows or on
+   a Mac, or on any graphics card; a real pinch on a trackpad or a touch screen was not tried (the checks send the
+   events a browser would send).
+2. How fast it draws on a graphics card was not measured. Without one it is slow: after a run of drawings, one
+   picture of 1500 by 860 points took about 12 s. The page draws only when something changes.
+3. Only the preview mesh was looked at. On the standard mesh the page asks for 24 monthly maps and draws about
+   sixteen times as many parts of rivers; this was not tried.
+4. Near a drawn coast, the place clicked and the cell selected can disagree: the drawn coast lies up to about 0.4 of
+   a spacing from the cells' true border, and the cell selected is the true one.
+5. The drawing shows the world as it ends: not the geological history's pictures, and not the weather of a day.
+6. The colours, the bands and the signs were set by eye on one world. A world with another list of biomes gets the
+   engine's colours, paled, and no signs.
+7. No names: the world holds no named places unless a push sets `place_label`, and the drawing does not show those.

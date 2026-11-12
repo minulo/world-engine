@@ -1,9 +1,10 @@
-// World viewer. It reads one world through the engine's local server and draws any stored field
-// on a globe or a flat map. No third-party code: one WebGL2 fragment shader does the drawing.
+// World viewer. It reads one world through the engine's local server and shows it on a globe or a flat map, in one of
+// two looks: any stored field, a colour for each cell (the data look), or a drawing of the world made from several
+// fields at once (the illustrated look). No third-party code: the shaders and the arithmetic they need are in draw.js.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const DATA_W = 1024;
+const ZOOM_MIN = 0.5, ZOOM_MAX = 60;
 const NO_CLASS = [217, 26, 191];           // the colour of a class code that the field's list does not hold
 const NO_VALUE = [115, 115, 115];          // a cell without a value
 const NOTHING_ON_LAND = [176, 166, 148];   // on a log scale, a cell that holds exactly zero: no colour of the scale is its own,
@@ -14,6 +15,10 @@ const state = {
   frame: -1, filming: null,                // frame: a picture of the geological history, or -1 for the world as it ends
   day: 0, stepping: null, dayRanges: {},   // day: the date of the weather shown; a day's colour scale is kept from the first day shown
   whyAsked: "",                            // the "why" answer last asked for: an answer that comes back after a later one is dropped
+  look: "data",                            // "data": one field as stored; "map": the illustrated look
+  mesh: null,                              // where the cells are and which lie next to which (for exact borders and for drawing)
+  map: null,                               // what the illustrated look is drawn from, once it has been asked for
+  season: false, smooth: false,            // the illustrated look follows the month; the data look blends between cells
 };
 
 // ---------------------------------------------------------------- colour
@@ -77,85 +82,53 @@ function palette(n, given) {
 // ---------------------------------------------------------------- WebGL
 const canvas = $("gl");
 const gl = canvas.getContext("webgl2", { antialias: false });
-const VS = `#version 300 es
-in vec2 aPos; out vec2 vPos; void main() { vPos = aPos; gl_Position = vec4(aPos, 0.0, 1.0); }`;
-const FS = `#version 300 es
-precision highp float; precision highp int; precision highp usampler2D;
-uniform usampler2D uIds; uniform sampler2D uData; uniform sampler2D uLut; uniform sampler2D uPal; uniform sampler2D uSea;
-uniform int uFlat, uCategorical, uClasses, uSplit, uSel, uReady, uLog, uZeroNone, uHasSea; uniform ivec2 uIdSize; uniform mat3 uRot;
-uniform float uZoom, uLo, uHi, uAspect; uniform vec2 uPan; uniform vec3 uSpace;
-in vec2 vPos; out vec4 frag;
-const float PI = 3.141592653589793;
-void main() {
-  vec2 p = vec2(vPos.x * uAspect, vPos.y);
-  float lat, lon, shade = 1.0;
-  if (uFlat == 1) {
-    float fit = min(1.0, uAspect / 2.0);                 // the whole map fits the canvas at zoom 1
-    lon = (vPos.x * uAspect / 2.0 / fit / uZoom + uPan.x) * PI; lat = (vPos.y / fit / uZoom + uPan.y) * PI / 2.0;
-    if (abs(lat) > PI / 2.0) { frag = vec4(uSpace, 1.0); return; }
-    lon = mod(lon + PI, 2.0 * PI) - PI;
-  } else {
-    vec2 q = p / uZoom; float r2 = dot(q, q);
-    if (r2 > 1.0) { frag = vec4(uSpace, 1.0); return; }
-    float z = sqrt(1.0 - r2); vec3 w = uRot * vec3(q, z);
-    lat = asin(clamp(w.z, -1.0, 1.0)); lon = atan(w.y, w.x); shade = 0.72 + 0.28 * z;
-  }
-  if (uReady == 0) { frag = vec4(vec3(0.25) * shade, 1.0); return; }
-  int ix = clamp(int(floor((lon + PI) / (2.0 * PI) * float(uIdSize.x))), 0, uIdSize.x - 1);
-  int iy = clamp(int(floor((PI / 2.0 - lat) / PI * float(uIdSize.y))), 0, uIdSize.y - 1);
-  int id = int(texelFetch(uIds, ivec2(ix, iy), 0).r);
-  float v = texelFetch(uData, ivec2(id % ${DATA_W}, id / ${DATA_W}), 0).r;
-  vec3 c;
-  if (isnan(v)) c = vec3(${NO_VALUE.map((x) => (x / 255).toFixed(3)).join(", ")});
-  else if (uCategorical == 1) {                           // a code outside the list of classes has a colour of its own
-    int k = int(floor(v + 0.5));
-    c = (k < 0 || k >= uClasses) ? vec3(${NO_CLASS.map((x) => (x / 255).toFixed(3)).join(", ")}) : texelFetch(uPal, ivec2(k, 0), 0).rgb;
-  }
-  else if (uCategorical == 2) {                           // a number that names a thing (a plate, a basin): one colour each
-    float k = floor(v + 0.5);
-    if (k < 0.0 || (uZeroNone == 1 && k == 0.0)) c = vec3(${NO_VALUE.map((x) => (x / 255).toFixed(3)).join(", ")});
-    else {
-      float h = fract(k * 0.61803398875) * 6.0, l = 0.40 + 0.22 * fract(k * 0.36787944117), s = 0.55;
-      float a = s * min(l, 1.0 - l);
-      vec3 n = mod(vec3(0.0, 4.0, 2.0) + h, 6.0);
-      c = l - a * clamp(min(n - 1.0, 3.0 - n), -1.0, 1.0);
-    }
-  }
-  else {
-    float t = 0.0; bool nothing = false;
-    if (uSplit == 1) t = v <= 0.0 ? 0.498 - 0.498 * clamp(v / min(uLo, -1e-30), 0.0, 1.0) : 0.502 + 0.498 * clamp(v / max(uHi, 1e-30), 0.0, 1.0);
-    else if (uLog == 1) { if (v > 0.0) t = clamp(log(v / uLo) / log(uHi / uLo), 0.0, 1.0); else nothing = true; }
-    else t = clamp((v - uLo) / max(uHi - uLo, 1e-30), 0.0, 1.0);
-    if (nothing) {                                        // exactly zero has no place on a log scale
-      bool sea = uHasSea == 1 && texelFetch(uSea, ivec2(id % ${DATA_W}, id / ${DATA_W}), 0).r > 0.5;
-      c = sea ? vec3(${NOTHING_AT_SEA.map((x) => (x / 255).toFixed(3)).join(", ")}) : vec3(${NOTHING_ON_LAND.map((x) => (x / 255).toFixed(3)).join(", ")});
-    } else c = texture(uLut, vec2(t, 0.5)).rgb;
-  }
-  if (id == uSel) c = mix(c, vec3(1.0), 0.65);
-  frag = vec4(c * shade, 1.0);
-}`;
-let prog, uni = {}, tex = {};
-function initGL() {
-  if (!gl) { $("status").textContent = "This browser has no WebGL2, which the viewer needs."; return false; }
+let prog, uni = {}, tex = {}, looks = {}, quad, riverVAO, riverBuf;
+// each texture keeps a unit of its own, so that no drawing has to bind one again
+const UNITS = { ids: 0, data: 1, lut: 2, pal: 3, sea: 4, pos: 5, nbr: 6, a: 7, b: 8, biome: 9 };
+const SAMPLERS = { uIds: 0, uData: 1, uLut: 2, uPal: 3, uSea: 4, uPos: 5, uNbr: 6, uA: 7, uB: 8, uBiome: 9 };
+function program(vs, fs, attributes) {
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
-  prog = gl.createProgram(); gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
-  gl.useProgram(prog);
-  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  attributes.forEach((name, i) => gl.bindAttribLocation(p, i, name));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {};
+  for (let i = 0; i < gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS); i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  gl.useProgram(p);
+  for (const [name, unit] of Object.entries(SAMPLERS)) if (u[name]) gl.uniform1i(u[name], unit);
+  return { prog: p, uni: u };
+}
+function initGL() {
+  if (!gl) { $("status").textContent = "This browser has no WebGL2, which the viewer needs."; return false; }
+  looks.data = program(VS_QUAD, dataShader(NO_CLASS, NO_VALUE, NOTHING_AT_SEA, NOTHING_ON_LAND), ["aPos"]);
+  looks.map = program(VS_QUAD, FS_MAP, ["aPos"]);
+  looks.river = program(VS_RIVER, FS_RIVER, ["aCorner", "aA", "aB", "aQ"]);
+  prog = looks.data.prog; uni = looks.data.uni;         // the data look's program is the one in use between two drawings
+  quad = gl.createVertexArray(); gl.bindVertexArray(quad);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(prog, "aPos"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  for (const n of ["uIds", "uData", "uLut", "uPal", "uSea", "uFlat", "uCategorical", "uClasses", "uSplit", "uLog", "uZeroNone", "uHasSea", "uSel", "uReady",
-    "uIdSize", "uRot", "uZoom", "uLo", "uHi", "uAspect", "uPan", "uSpace"]) uni[n] = gl.getUniformLocation(prog, n);
-  ["ids", "data", "lut", "pal", "sea"].forEach((n, i) => { tex[n] = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + i);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  riverVAO = gl.createVertexArray(); gl.bindVertexArray(riverVAO);       // one strip of four corners, drawn once for each part of a river
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  riverBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, riverBuf);
+  [[1, 3, 0], [2, 3, 12], [3, 2, 24]].forEach(([loc, size, at]) => { gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, at); gl.vertexAttribDivisor(loc, 1); });
+  gl.bindVertexArray(quad);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  for (const [n, unit] of Object.entries(UNITS)) { tex[n] = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, tex[n]);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, n === "lut" ? gl.LINEAR : gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, n === "lut" ? gl.LINEAR : gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); });
-  gl.uniform1i(uni.uIds, 0); gl.uniform1i(uni.uData, 1); gl.uniform1i(uni.uLut, 2); gl.uniform1i(uni.uPal, 3); gl.uniform1i(uni.uSea, 4);
-  gl.uniform1i(uni.uHasSea, 0);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // one empty point each, of the kind the shaders read, until the world's own arrive
+    if (n === "ids") gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, 1, 1, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, new Uint32Array(1));
+    else if (n === "data" || n === "sea") gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, 1, 1, 0, gl.RED, gl.FLOAT, new Float32Array(1));
+    else if (n === "lut" || n === "pal" || n === "biome") gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1, 1, 0, gl.RGBA, gl.FLOAT, new Float32Array(4)); }
+  gl.useProgram(prog); gl.uniform1i(uni.uHasSea, 0);
   return true;
 }
 function rotation() {
@@ -165,19 +138,53 @@ function rotation() {
   const u = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]];
   return { r, u, f };
 }
+function pxPerRad(height, aspect) {       // pixels to one radian at the middle of the view (on the flat map: of latitude)
+  return state.flat ? height / 2 * Math.min(1, aspect / 2) * state.zoom / (Math.PI / 2) : height / 2 * state.zoom;
+}
+function shared(u, w, h, ready) {         // what every program is told before it draws
+  const { r, u: up, f } = rotation();
+  gl.uniformMatrix3fv(u.uRot, false, new Float32Array([...r, ...up, ...f]));
+  gl.uniform1i(u.uFlat, state.flat ? 1 : 0); gl.uniform1f(u.uZoom, state.zoom); gl.uniform1f(u.uAspect, w / h);
+  gl.uniform2f(u.uPan, state.panX, state.panY); gl.uniform1i(u.uSel, state.selected);
+  gl.uniform1i(u.uReady, ready ? 1 : 0); gl.uniform2i(u.uIdSize, state.idW, state.idH);
+  gl.uniform1i(u.uMesh, state.mesh ? 1 : 0); gl.uniform1f(u.uCell, state.mesh ? state.mesh.cell : 0.03);
+  gl.uniform1f(u.uPxPerRad, pxPerRad(h, w / h));
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  gl.uniform3f(u.uSpace, dark ? 0.02 : 0.043, dark ? 0.027 : 0.059, dark ? 0.043 : 0.09);
+  gl.uniform1i(u.uDark, dark ? 1 : 0);
+}
 function draw() {
   if (!prog) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2), w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   gl.viewport(0, 0, w, h);
-  const { r, u, f } = rotation();
-  gl.uniformMatrix3fv(uni.uRot, false, new Float32Array([...r, ...u, ...f]));
-  gl.uniform1i(uni.uFlat, state.flat ? 1 : 0); gl.uniform1f(uni.uZoom, state.zoom); gl.uniform1f(uni.uAspect, w / h);
-  gl.uniform2f(uni.uPan, state.panX, state.panY); gl.uniform1i(uni.uSel, state.selected);
-  gl.uniform1i(uni.uReady, state.idmap && state.data ? 1 : 0); gl.uniform2i(uni.uIdSize, state.idW, state.idH);
-  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  gl.uniform3f(uni.uSpace, dark ? 0.02 : 0.043, dark ? 0.027 : 0.059, dark ? 0.043 : 0.09);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindVertexArray(quad); gl.disable(gl.BLEND);
+  if (state.look !== "map") {
+    gl.useProgram(prog); shared(uni, w, h, state.idmap && state.data);
+    gl.uniform1i(uni.uSmooth, state.smooth ? 1 : 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  } else {
+    const m = state.map, ready = !!(m && state.idmap), pxCell = (state.mesh ? state.mesh.cell : 0.03) * pxPerRad(h, w / h);
+    // as many sizes of bend as the screen can show: the smallest a few pixels long
+    const oct = Math.max(2, Math.min(9, Math.floor(Math.log2(Math.max(1, pxCell * DRAWING.warpStep / 3))) + 1));
+    const M = looks.map; gl.useProgram(M.prog); shared(M.uni, w, h, ready);
+    gl.uniform1i(M.uni.uOct, oct); gl.uniform1f(M.uni.uDpr, dpr);
+    gl.uniform1i(M.uni.uRidge, Math.max(1, Math.min(4, Math.floor(Math.log2(Math.max(1, pxCell * 0.9 / (12 * dpr)))) + 1)));
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    if (ready && m.riverCount) {
+      const R = looks.river; gl.useProgram(R.prog); shared(R.uni, w, h, ready);
+      gl.uniform1i(R.uni.uOct, oct); gl.uniform1f(R.uni.uDpr, dpr); gl.uniform2f(R.uni.uView, w, h);
+      const turns = state.zoom / (state.flat ? 1 : 0.92);   // how far in the view is, 1 for the whole world
+      gl.uniform1f(R.uni.uWide, Math.max(0.6, Math.min(2.4, 0.72 * Math.pow(turns, 0.4))));
+      gl.uniform1f(R.uni.uQMin, Math.max(DRAWING.riverFloor, 0.11 / Math.pow(turns, 1.2)));   // closer in, smaller rivers are drawn too
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.bindVertexArray(riverVAO);
+      for (const shift of state.flat ? [-2, 0, 2] : [0]) { gl.uniform1f(R.uni.uShift, shift); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, m.riverCount); }
+      gl.disable(gl.BLEND); gl.bindVertexArray(quad);
+    }
+    gl.useProgram(prog);
+  }
+  showScale();
 }
 function screenToLatLon(cx, cy) {
   const rect = canvas.getBoundingClientRect(), x = ((cx - rect.left) / rect.width * 2 - 1) * (rect.width / rect.height), y = 1 - (cy - rect.top) / rect.height * 2;
@@ -193,11 +200,17 @@ function screenToLatLon(cx, cy) {
   const w = [0, 1, 2].map((k) => r[k] * qx + u[k] * qy + f[k] * z);
   return [Math.asin(Math.max(-1, Math.min(1, w[2]))) * 180 / Math.PI, Math.atan2(w[1], w[0]) * 180 / Math.PI];
 }
-function cellAt(lat, lon) {
+function cellAt(lat, lon) {                // as the shaders: the grid's cell, then the nearest of it and its neighbours
   if (!state.idmap) return -1;
   const ix = Math.min(state.idW - 1, Math.max(0, Math.floor((lon + 180) / 360 * state.idW)));
   const iy = Math.min(state.idH - 1, Math.max(0, Math.floor((90 - lat) / 180 * state.idH)));
-  return state.idmap[iy * state.idW + ix];
+  const c = state.idmap[iy * state.idW + ix], m = state.mesh;
+  if (!m) return c;
+  const la = lat * Math.PI / 180, lo = lon * Math.PI / 180, w = [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+  const near = (j) => w[0] * m.xyz[j * 3] + w[1] * m.xyz[j * 3 + 1] + w[2] * m.xyz[j * 3 + 2];
+  let best = near(c), bc = c;
+  for (let k = 0; k < 6; k++) { const j = m.nbr[c * 6 + k]; if (j >= 0 && near(j) > best) { best = near(j); bc = j; } }
+  return bc;
 }
 
 // ---------------------------------------------------------------- data
@@ -239,6 +252,96 @@ async function loadField() {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, DATA_W, h, 0, gl.RED, gl.FLOAT, filled);
   draw();
 }
+
+// ---------------------------------------------------------------- the mesh, and the illustrated look
+function cellTexture(name, width, rows, rgba) {            // four numbers for each cell (or for each half of a cell's neighbours)
+  gl.activeTexture(gl.TEXTURE0 + UNITS[name]); gl.bindTexture(gl.TEXTURE_2D, tex[name]);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, rows, 0, gl.RGBA, gl.FLOAT, rgba);
+}
+async function loadMesh() {
+  const n = state.world.meta.cells, rows = Math.ceil(n / DATA_W);
+  const xyz = new Float32Array(await getBuffer("/api/mesh?part=xyz")), nbr = new Int32Array(await getBuffer("/api/mesh?part=nbr"));
+  const h = cellSpacing(xyz, nbr), pos = new Float32Array(DATA_W * rows * 4), around = new Float32Array(DATA_W * rows * 8).fill(-1);
+  let sum = 0;
+  for (let i = 0; i < n; i++) { pos.set([xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2], h[i]], i * 4); sum += h[i];
+    for (let k = 0; k < 6; k++) around[i * 8 + k] = nbr[i * 6 + k]; }
+  cellTexture("pos", DATA_W, rows, pos); cellTexture("nbr", DATA_W * 2, rows, around);
+  state.mesh = { xyz, nbr, h, cell: sum / n };
+}
+function canDraw() { return !!(state.mesh && state.world && state.world.fields.ocean_mask); }
+async function loadMap() {                 // everything the illustrated look is drawn from, asked for once
+  if (state.map) return state.map;
+  const f = state.world.fields, n = state.world.meta.cells;
+  const plane = async (name, month) => new Float32Array(await getBuffer("/api/field?" + new URLSearchParams(month ? { name, month } : { name })));
+  const one = (name) => f[name] ? plane(name) : null;
+  const year = (name) => !f[name] ? null : f[name].shape === "month_cell" ? Promise.all(MONTHS(state.world.meta.months).map((mo) => plane(name, mo))) : plane(name).then((a) => [a]);
+  const [sea, up, depth, elevation, biome, lake, recv, flow, snow] = await Promise.all([one("ocean_mask"), one("height_above_sea"), one("sea_depth"),
+    one("elevation"), one("biome"), one("lake_fraction"), one("flow_receiver"), year("river_discharge"), year("snow_ice_cover")]);
+  const height = new Float32Array(n), ground = new Float32Array(n);     // metres above the sea, below it as less than nothing; and the land's own
+  for (let i = 0; i < n; i++) { height[i] = sea[i] ? -(depth ? depth[i] : 3000) : Math.max(0, up ? up[i] : elevation ? elevation[i] : 0); ground[i] = Math.max(0, height[i]); }
+  const mean = (planes) => { const out = new Float32Array(n); for (const a of planes) for (let i = 0; i < n; i++) out[i] += a[i] / planes.length; return out; };
+  const least = (planes) => { const out = new Float32Array(n).fill(Infinity); for (const a of planes) for (let i = 0; i < n; i++) out[i] = Math.min(out[i], a[i]); return out; };
+  const names = biome ? f.biome.categories : [], colours = drawnBiomeColours(names, state.world.colors.biome);
+  const pal = new Uint8Array(Math.max(1, colours.length) * 4); colours.forEach((c, i) => pal.set([c[0], c[1], c[2], c[3] * 30], i * 4));   // the fourth: the biome's sign
+  gl.activeTexture(gl.TEXTURE0 + UNITS.biome); gl.bindTexture(gl.TEXTURE_2D, tex.biome);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, Math.max(1, colours.length), 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pal);
+  const flowYear = flow ? mean(flow) : null;
+  state.map = { sea, height, biome, lake, recv, flow, snow, names, colours, ice: names.indexOf("ice"),
+                slope: cellGradients(state.mesh.xyz, state.mesh.nbr, ground), flowYear, snowLeast: snow ? least(snow) : null,
+                top: flowYear ? percentile(Array.from(flowYear).filter((v, i) => !sea[i]), 99.5) : 0, riverCount: 0 };
+  redrawMap();
+  return state.map;
+}
+function redrawMap() {                     // the parts of the drawing that follow the month when the seasons are shown
+  const m = state.map, n = state.world.meta.cells, rows = Math.ceil(n / DATA_W), mo = state.season ? state.month - 1 : -1;
+  const A = new Float32Array(DATA_W * rows * 4), B = new Float32Array(DATA_W * rows * 4);
+  const snow = m.snow ? (mo >= 0 && m.snow.length > 1 ? m.snow[mo] : m.snowLeast) : null;
+  for (let i = 0; i < n; i++) {
+    const ice = (m.biome && m.biome[i] === m.ice) || (snow && snow[i] >= 0.5);
+    A.set([m.sea[i] ? 0 : 1, m.height[i], m.biome ? m.biome[i] : -1, ice ? 1 : 0], i * 4);
+    B.set([m.slope[i * 3], m.slope[i * 3 + 1], m.slope[i * 3 + 2], m.lake && m.lake[i] >= 0.5 ? 1 : 0], i * 4);
+  }
+  cellTexture("a", DATA_W, rows, A); cellTexture("b", DATA_W, rows, B);
+  if (m.recv && m.flow && m.top > 0) {
+    const parts = riverParts(state.mesh.xyz, m.recv, mo >= 0 && m.flow.length > 1 ? m.flow[mo] : m.flowYear, m.sea, m.top);
+    gl.bindBuffer(gl.ARRAY_BUFFER, riverBuf); gl.bufferData(gl.ARRAY_BUFFER, parts, gl.DYNAMIC_DRAW);
+    m.riverCount = parts.length / 8;
+  }
+}
+function mapLegend() {                     // what the colours and lines of the drawing stand for
+  const m = state.map, legend = $("legend"); legend.textContent = "";
+  const ul = document.createElement("ul"), here = new Set();
+  if (m.biome) for (let i = 0; i < m.biome.length; i++) if (!m.sea[i]) here.add(m.biome[i]);
+  m.names.forEach((name, i) => { if (here.has(i) && name !== "ocean") ul.append(swatch(m.colours[i], name.replace(/_/g, " "))); });
+  ul.append(swatch([174, 222, 218], "sea near the coast (a drawn band)"), swatch([139, 202, 208], "open sea"), swatch([110, 178, 196], "sea deeper than 3,800 m"));
+  if (m.lake && m.lake.some((v) => v >= 0.5)) ul.append(swatch([153, 212, 214], "lake"));
+  ul.append(swatch([190, 172, 167], "above 1,500 m"), swatch([237, 232, 230], "above 2,700 m"), swatch([39, 100, 133], "river, wider with its flow"));
+  legend.append(ul);
+  const note = document.createElement("p"); note.className = "muted small";
+  note.textContent = "The small signs say what kind of country a place is: trees for forest, a flat-topped tree among tufts for open woodland, " +
+    "tufts for grass, dots for sand, short strokes for tundra, peaks where the heights change fast. None of them marks a thing that stands at that spot.";
+  legend.append(note);
+}
+async function setLook(look) {
+  if (look === "map" && !canDraw()) look = "data";
+  state.look = look; document.body.dataset.look = look;
+  $("lookmap").setAttribute("aria-pressed", String(look === "map")); $("lookdata").setAttribute("aria-pressed", String(look !== "map"));
+  if (look === "map") {
+    if (state.playing && !state.season) togglePlay();
+    $("status").textContent = "drawing the map…"; draw();
+    await loadMap();
+    $("status").textContent = ""; mapLegend(); monthRow(); draw();
+  } else await selectField();
+}
+function monthRow() {                      // the month matters to a monthly field, and to the drawing when it shows the seasons
+  const on = state.look === "map" ? state.season : isMonthly();
+  $("monthrow").style.opacity = on ? 1 : 0.4; $("month").disabled = $("play").disabled = !on;
+  if (!on && state.playing) togglePlay();
+}
+async function showMonth() {               // the month has changed
+  if (state.look === "map") { if (state.map && state.season) { redrawMap(); draw(); } }
+  else await loadField();
+}
 function rangeOf(arr, positive) {       // as the server's stats: the 2nd and 98th percentiles, and the 99.9th for a log scale
   const f = Array.from(arr).filter(Number.isFinite).sort((a, b) => a - b);
   if (!f.length) return { min: null, max: null, low: null, high: null, top: null };
@@ -269,8 +372,7 @@ async function selectField() {
   $("dayrow").hidden = !isDaily();
   if (!isDaily() && state.stepping) toggleDays();
   if (!inHistory() && state.filming) toggleFilm();
-  $("monthrow").style.opacity = isMonthly() ? 1 : 0.4; $("month").disabled = $("play").disabled = !isMonthly();
-  if (!isMonthly() && state.playing) togglePlay();
+  monthRow();
   const shown = s.display && MAPS[s.display.map] ? [s.display.map, false, s.display.scale] : null;   // a map that fields.yaml names
   const [mapName, split0, scale] = FIELD_MAP[state.field] || shown || ["viridis", false];
   let lo = 0, hi = 1, split = false, log = false;
@@ -388,7 +490,7 @@ function togglePlay() {
   if (state.playing) { clearInterval(state.playing); state.playing = null; b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); return; }
   b.textContent = "Pause"; b.setAttribute("aria-pressed", "true");
   state.playing = setInterval(async () => { state.month = state.month % state.world.meta.months + 1; $("month").value = state.month;
-    $("monthlabel").textContent = state.month; await loadField(); }, 700);
+    $("monthlabel").textContent = state.month; await showMonth(); }, 700);
 }
 function frameLabel() {
   const h = state.world.history, n = h.rounds.length;
@@ -427,10 +529,35 @@ function setView(flat) {
   state.flat = flat; state.zoom = flat ? 1 : 0.92; state.panX = state.panY = 0;
   $("viewflat").setAttribute("aria-pressed", String(flat)); $("viewglobe").setAttribute("aria-pressed", String(!flat)); draw();
 }
+function showScale() {                     // a bar of a round number of kilometres, for the middle of the view
+  if (!state.world || !canvas.clientHeight) return;
+  const kmPerPx = state.world.planet.radius_m / 1000 / pxPerRad(canvas.clientHeight, canvas.clientWidth / canvas.clientHeight);
+  const most = 120 * kmPerPx, ten = 10 ** Math.floor(Math.log10(most)), km = [5, 2, 1].map((k) => k * ten).find((k) => k <= most);
+  $("scalebar").style.width = `${km / kmPerPx}px`;
+  $("scaletext").textContent = `${km.toLocaleString()} km` + (state.flat ? " north to south" : "");
+}
+// Zoom to `zoom`, keeping the place under a point of the window (cx, cy) under it; without a point, about the middle.
+function zoomTo(zoom, cx, cy) {
+  const z0 = state.zoom, z1 = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+  if (z1 === z0) return;
+  const rect = canvas.getBoundingClientRect(), pointed = cx !== undefined;
+  if (state.flat && pointed) {
+    const x = ((cx - rect.left) / rect.width * 2 - 1) * (rect.width / rect.height), y = 1 - (cy - rect.top) / rect.height * 2;
+    const fit = Math.min(1, rect.width / rect.height / 2), k = 1 / z0 - 1 / z1;
+    state.panX += x / 2 / fit * k; state.panY = Math.max(-1, Math.min(1, state.panY + y / fit * k)); state.zoom = z1;
+  } else if (!state.flat && pointed) {
+    const before = screenToLatLon(cx, cy); state.zoom = z1;
+    for (let pass = 0; before && pass < 3; pass++) {       // turn the globe until that place is under the point again
+      const now = screenToLatLon(cx, cy); if (!now) break;
+      state.lon0 += ((before[1] - now[1] + 540) % 360) - 180; state.lat0 = Math.max(-90, Math.min(90, state.lat0 + before[0] - now[0]));
+    }
+  } else state.zoom = z1;
+  draw();
+}
 function wire() {
-  $("field").addEventListener("change", (e) => { state.field = e.target.value; state.part = ""; $("part").value = ""; selectField(); });
+  $("field").addEventListener("change", (e) => { state.field = e.target.value; state.part = ""; $("part").value = ""; setLook("data"); });
   $("part").addEventListener("change", (e) => { state.part = e.target.value; selectField(); });
-  $("month").addEventListener("input", async (e) => { state.month = +e.target.value; $("monthlabel").textContent = state.month; await loadField();
+  $("month").addEventListener("input", async (e) => { state.month = +e.target.value; $("monthlabel").textContent = state.month; await showMonth();
     if (state.selected >= 0) showCell(state.selected); });
   $("play").addEventListener("click", togglePlay);
   $("frame").addEventListener("input", (e) => showFrame(+e.target.value));
@@ -438,15 +565,28 @@ function wire() {
   $("day").addEventListener("input", (e) => showDay(+e.target.value));
   $("playdays").addEventListener("click", toggleDays);
   $("viewglobe").addEventListener("click", () => setView(false)); $("viewflat").addEventListener("click", () => setView(true));
-  let drag = null;
-  canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; canvas.setPointerCapture(e.pointerId); canvas.classList.add("dragging"); });
+  $("lookmap").addEventListener("click", () => setLook("map")); $("lookdata").addEventListener("click", () => setLook("data"));
+  $("smooth").addEventListener("change", (e) => { state.smooth = e.target.checked; draw(); });
+  $("season").addEventListener("change", (e) => { state.season = e.target.checked; monthRow(); if (state.map) { redrawMap(); draw(); } });
+  $("zoomin").addEventListener("click", () => zoomTo(state.zoom * 1.6)); $("zoomout").addEventListener("click", () => zoomTo(state.zoom / 1.6));
+  $("zoomreset").addEventListener("click", () => setView(state.flat));
+  const touching = new Map(); let drag = null, pinch = null;          // one finger or the mouse drags; two fingers pinch
+  const spread = () => { const [a, b] = [...touching.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
+  canvas.addEventListener("pointerdown", (e) => { touching.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* a pointer the browser no longer holds */ }
+    canvas.classList.add("dragging");
+    if (touching.size === 2) { pinch = { ...spread(), zoom: state.zoom }; if (drag) drag.moved = true; }
+    else drag = { x: e.clientX, y: e.clientY, moved: false }; });
   canvas.addEventListener("pointermove", (e) => {
+    if (touching.has(e.pointerId)) touching.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && touching.size === 2) { const now = spread(); zoomTo(pinch.zoom * now.d / pinch.d, now.x, now.y); return; }
     const ll = screenToLatLon(e.clientX, e.clientY);
-    if (ll && state.data) { const id = cellAt(ll[0], ll[1]), v = state.data[id], s = spec();
+    if (ll && state.look === "map" && state.map) $("status").textContent = `${place(ll)} · ${drawnAt(cellAt(ll[0], ll[1]))}`;
+    else if (ll && state.data) { const id = cellAt(ll[0], ll[1]), v = state.data[id], s = spec();
       const shown = s.kind === "category" ? (s.categories[v] || `no class (code ${v})`).replace(/_/g, " ") : s.kind === "boolean" ? (v ? "true" : "false")
         : s.kind === "index" ? named(state.field, v) : fmt(v, s.unit);
-      $("status").textContent = `${Math.abs(ll[0]).toFixed(1)}° ${ll[0] >= 0 ? "N" : "S"}, ${Math.abs(ll[1]).toFixed(1)}° ${ll[1] >= 0 ? "E" : "W"} · ${shown}`; }
-    if (!drag) return;
+      $("status").textContent = `${place(ll)} · ${shown}`; }
+    if (!drag || pinch) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
     const k = 2 / canvas.clientHeight / state.zoom;
     if (state.flat) { const fit = Math.min(1, canvas.clientWidth / canvas.clientHeight / 2);
@@ -454,10 +594,37 @@ function wire() {
     else { state.lon0 -= dx * k * 60; state.lat0 = Math.max(-90, Math.min(90, state.lat0 + dy * k * 60)); }
     drag.x = e.clientX; drag.y = e.clientY; draw();
   });
-  canvas.addEventListener("pointerup", (e) => { canvas.classList.remove("dragging");
-    if (drag && !drag.moved) { const ll = screenToLatLon(e.clientX, e.clientY); if (ll) showCell(cellAt(ll[0], ll[1])); } drag = null; });
-  canvas.addEventListener("wheel", (e) => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(40, state.zoom * Math.exp(-e.deltaY * 0.0015))); draw(); }, { passive: false });
+  const lift = (e) => { touching.delete(e.pointerId); if (!touching.size) { canvas.classList.remove("dragging"); pinch = null; } };
+  canvas.addEventListener("pointerup", (e) => { const was = drag, pinched = pinch; lift(e);
+    if (was && !was.moved && !pinched) { const ll = screenToLatLon(e.clientX, e.clientY); if (ll) showCell(cellAt(ll[0], ll[1])); }
+    if (!touching.size) drag = null; });
+  canvas.addEventListener("pointercancel", (e) => { lift(e); drag = null; });
+  // the wheel, and a pinch on a trackpad, which most browsers send as the wheel with the control key down
+  canvas.addEventListener("wheel", (e) => { e.preventDefault();
+    zoomTo(state.zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0015)), e.clientX, e.clientY); }, { passive: false });
+  let gesture = 1;                         // Safari sends a pinch on a trackpad as a gesture of its own
+  canvas.addEventListener("gesturestart", (e) => { e.preventDefault(); gesture = state.zoom; });
+  canvas.addEventListener("gesturechange", (e) => { e.preventDefault(); zoomTo(gesture * e.scale, e.clientX, e.clientY); });
+  canvas.addEventListener("dblclick", (e) => { e.preventDefault(); zoomTo(state.zoom * (e.shiftKey ? 0.5 : 2), e.clientX, e.clientY); });
+  canvas.addEventListener("keydown", (e) => {
+    const step = 60 * 2 / canvas.clientHeight / state.zoom, move = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+    if (e.key === "+" || e.key === "=") zoomTo(state.zoom * 1.6);
+    else if (e.key === "-" || e.key === "_") zoomTo(state.zoom / 1.6);
+    else if (e.key === "0") setView(state.flat);
+    else if (move && state.flat) { const fit = Math.min(1, canvas.clientWidth / canvas.clientHeight / 2);
+      state.panX += move[0] * step / fit / 2; state.panY = Math.max(-1, Math.min(1, state.panY + move[1] * step / fit)); draw(); }
+    else if (move) { state.lon0 += move[0] * step * 60; state.lat0 = Math.max(-90, Math.min(90, state.lat0 + move[1] * step * 60)); draw(); }
+    else return;
+    e.preventDefault();
+  });
   window.addEventListener("resize", draw);
+}
+function place(ll) { return `${Math.abs(ll[0]).toFixed(1)}° ${ll[0] >= 0 ? "N" : "S"}, ${Math.abs(ll[1]).toFixed(1)}° ${ll[1] >= 0 ? "E" : "W"}`; }
+function drawnAt(id) {                     // in the illustrated look: what the cell under the pointer holds of what is drawn
+  const m = state.map, h = m.height[id];
+  if (m.sea[id]) return `sea, ${fmt(-h, "m")} deep`;
+  const name = m.biome && m.names[m.biome[id]] ? m.names[m.biome[id]].replace(/_/g, " ") : "land";
+  return `${m.lake && m.lake[id] >= 0.5 ? "lake" : name}, ${fmt(h, "m")} above the sea`;
 }
 function asked0() { return new URLSearchParams(location.search); }
 async function start() {
@@ -489,6 +656,9 @@ async function start() {
   if (asked.has("lon")) state.lon0 = +asked.get("lon");
   if (asked.has("month")) { state.month = Math.max(1, Math.min(m.months, +asked.get("month"))); $("month").value = state.month; $("monthlabel").textContent = state.month; }
   if (asked.get("view") === "flat") setView(true);
+  if (asked.has("zoom")) state.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, +asked.get("zoom") || state.zoom));
+  if (asked.has("smooth")) { state.smooth = true; $("smooth").checked = true; }
+  if (asked.has("season")) { state.season = true; $("season").checked = true; }
   const hist = w.history || { rounds: [], times_my: [], fields: [] };
   w.history = hist;
   $("frame").max = hist.rounds.length; $("frame").value = hist.rounds.length;
@@ -509,7 +679,12 @@ async function start() {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, DATA_W, h, 0, gl.RED, gl.FLOAT, filled);
     gl.uniform1i(uni.uHasSea, 1);
   }
+  try { await loadMesh(); } catch (e) { console.warn("no mesh from the server: the cells' borders follow the grid", e); }
+  $("lookrow").hidden = !canDraw();
+  // the drawing is what a world opens with; a request that names a field (?field=) asks for the data look
+  document.body.dataset.look = "data";
   await selectField();
+  if ((asked.get("look") || (asked.has("field") ? "data" : "map")) === "map" && canDraw()) await setLook("map");
   $("status").textContent = "";
   window.viewerReady = true;
 }

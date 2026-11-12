@@ -230,8 +230,9 @@ The browser opens the viewer at **http://127.0.0.1:8765/** (with Docker, open ht
 If no browser opens, type the address in. The first time, the launcher makes `.venv`, installs the packages and
 builds `worlds/first.zarr` before it serves; later it opens at once.
 
-In the viewer: choose a field, drag to turn the globe, scroll to zoom, click a cell for its values and its "why"
-answer. The day slider under "Storms and weather" steps through the days.
+The viewer opens with a drawing of the world (the illustrated look); the **Data** button, or choosing a field, shows
+any one field exactly as stored. Drag to turn the globe; to zoom, scroll, pinch, double-click or press the + and −
+buttons on the map; click a cell for its values and its "why" answer. The day slider under "Storms and weather" steps through the days.
 
 Options (on Windows the same with one dash and a capital: `-Port`, `-Seed`, `-World`, `-Profile`, `-Fantasy`, `-NoBrowser`):
 

@@ -169,6 +169,24 @@ def test_server_answers_the_page(served, geometry_store):
     assert stats["low"] < stats["high"] <= stats["top"] <= stats["max"]            # top: the scale of a field a few cells of which hold most
 
 
+def test_server_gives_the_mesh_for_a_drawing(served, geometry_store):
+    """The viewer draws between the cells' centres: it needs where they are and which cells lie next to which."""
+    _, w, _ = geometry_store
+    xyz = np.frombuffer(get(served + "/api/mesh?part=xyz")[0], dtype="<f4").reshape(-1, 3)
+    nbr = np.frombuffer(get(served + "/api/mesh?part=nbr")[0], dtype="<i4").reshape(-1, 6)
+    assert xyz.shape[0] == nbr.shape[0] == w.n and np.allclose(np.linalg.norm(xyz, axis=1), 1.0, atol=1e-6)
+    assert np.allclose(np.degrees(np.arcsin(xyz[:, 2])), w.fields["latitude"], atol=1e-3)
+    count = (nbr >= 0).sum(axis=1)
+    assert set(count.tolist()) == {5, 6} and int((count == 5).sum()) == 12 and nbr.max() < w.n
+    for c in (0, 7, w.n - 1):                                 # next to each other both ways, and one cell's step apart
+        for j in nbr[c][nbr[c] >= 0]:
+            assert c in nbr[j] and np.linalg.norm(xyz[c] - xyz[j]) < 5.0 / np.sqrt(w.n)    # a mean step is 3.5 / sqrt(n)
+    for q, why in (("/api/mesh", "the request needs part"), ("/api/mesh?part=faces", "the mesh has no part 'faces'")):
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get(served + q)
+        assert err.value.code == 400 and why in json.loads(err.value.read())["error"]
+
+
 def test_same_request_in_two_server_sessions_gives_the_same_bytes(served, geometry_store):
     _, _, path = geometry_store
     other = make_server(path, port=0)
@@ -345,7 +363,7 @@ def test_the_check_of_a_running_server_refuses_a_wrong_page_or_an_empty_world():
         with pytest.raises(RuntimeError, match="GET / gave 7 bytes of text/plain; expected text/html holding World viewer"):
             server.check(stand_in, timeout_s=30)
         answers.update({"/": ("text/html", b"World viewer"), "/viewer.js": ("text/javascript", b"WebGL2"),
-                        "/style.css": ("text/css", b""),
+                        "/draw.js": ("text/javascript", b"#version 300 es"), "/style.css": ("text/css", b""),
                         "/api/world": ("application/json", json.dumps({"meta": {"cells": 0}, "fields": {}, "seed": 1}).encode())})
         with pytest.raises(RuntimeError, match="GET /api/world gave a world of 0 cells and 0 fields"):
             server.check(stand_in, timeout_s=30)

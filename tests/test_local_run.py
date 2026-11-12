@@ -49,7 +49,8 @@ def test_serve_check_starts_the_server_asks_it_for_the_page_and_the_world_and_st
     assert cli.main(["serve", str(geometry_store), "--port", "0", "--check"]) == 0
     out = capsys.readouterr().out
     assert "check: GET / gave" in out and "text/html" in out and "GET /viewer.js gave" in out and "text/javascript" in out
-    assert "GET /style.css gave" in out and "GET /api/world gave a world of 10242 cells" in out and "check passed" in out
+    assert "GET /draw.js gave" in out and "GET /style.css gave" in out and "GET /api/world gave a world of 10242 cells" in out
+    assert "check passed" in out
 
 
 def test_serve_check_fails_when_the_page_is_not_whole(geometry_store, tmp_path):
@@ -80,7 +81,8 @@ def test_the_viewer_files_go_out_with_their_own_types_whatever_the_system_says(r
     sheet or script. Stood in for here by a mimetypes that says text/plain for everything."""
     monkeypatch.setattr(mimetypes, "guess_type", lambda *a, **k: ("text/plain", None))
     port = running.server_address[1]
-    for path, want in (("/", "text/html"), ("/index.html", "text/html"), ("/viewer.js", "text/javascript"), ("/style.css", "text/css")):
+    for path, want in (("/", "text/html"), ("/index.html", "text/html"), ("/viewer.js", "text/javascript"), ("/draw.js", "text/javascript"),
+                       ("/style.css", "text/css")):
         status, ctype, _ = raw_get(port, path)
         assert status == 200 and ctype == want + "; charset=utf-8", (path, ctype)
 
