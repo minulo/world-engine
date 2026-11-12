@@ -17,8 +17,38 @@ NEWTON_SHARE = 0.1             # a cell's own balance is solved to this share of
 
 
 @njit(cache=True)
-def sweep(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_coef, w_sat, rain_scale, rain_steepness,
-          rain_humidity, lift_coef, source, extra, orders, cycles, newton_steps, newton_tolerance):
+def prepare(nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_coef, w_sat, rain_scale, rain_steepness,
+            rain_humidity, source):
+    """What sweep() and residual() take from coefficients that stay the same through a solve, worked out once for the
+    solve and not again in every visit of a cell: the same products and sums, in the same order, so that the answer
+    is the same to the last bit (build-speed, in docs/BUILD_NOTES.md).
+
+    Returns, for each cell: the source's share of the gain (area * source); the loss coefficient, the sum over the
+    sides of out + mix_own; for each side, in + mix_other; the rain law's value in air that holds no water; the law's
+    value at saturation; and the slope of the evaporation law below saturation."""
+    n = area.shape[0]
+    own = np.empty(n)
+    loss = np.empty(n)
+    inflow = np.zeros_like(in_coef)
+    in_dry_air = np.empty(n)
+    at_saturation = np.empty(n)
+    dry_slope = np.empty(n)
+    for i in range(n):
+        own[i] = area[i] * source[i]
+        total = 0.0
+        for k in range(nbr_count[i]):
+            inflow[i, k] = in_coef[i, k] + mix_other[i, k]
+            total += out_coef[i, k] + mix_own[i, k]
+        loss[i] = total
+        in_dry_air[i] = rain_scale[i] * np.exp(-rain_steepness * rain_humidity[i])
+        at_saturation[i] = rain_scale[i] * np.exp(rain_steepness * (1.0 - rain_humidity[i]))
+        dry_slope[i] = -evap_coef[i] / w_sat[i]
+    return own, loss, inflow, in_dry_air, at_saturation, dry_slope
+
+
+@njit(cache=True)
+def sweep(w, nbr, nbr_count, inflow, loss, own, area, evap_coef, w_sat, rain_scale, rain_steepness, rain_humidity,
+          lift_coef, in_dry_air, at_saturation, slope_of_dry, extra, orders, cycles, newton_steps, newton_tolerance):
     """Solve cell by cell, in each of the given orders, `cycles` times over
 
         sum_k out[i,k] W[i] - sum_k in[i,k] W[j] + sum_k (mix_own[i,k] W[i] - mix_other[i,k] W[j]) + area[i] rain(W[i])
@@ -30,6 +60,7 @@ def sweep(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_c
     Above saturation (W > Wsat) the first term goes on as a straight line with the slope it has at saturation,
     and nothing evaporates. mix_own and mix_other are the same number where two cells stand at the same height;
     where they do not, each carries the share of its column that lies above the higher of the two grounds.
+    The sums over the sides and the parts that do not change with W come from prepare().
     The cell's own equation is not linear, so it is solved by a few Newton steps. W is changed in place.
     Returns the largest change of the last cycle.
     """
@@ -40,30 +71,28 @@ def sweep(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_c
         for s in range(orders.shape[0]):
             for idx in range(n):
                 i = orders[s, idx]
-                gain = area[i] * source[i] + extra[i]
-                loss = 0.0
+                gain = own[i] + extra[i]
                 for k in range(nbr_count[i]):
-                    j = nbr[i, k]
-                    gain += (in_coef[i, k] + mix_other[i, k]) * w[j]
-                    loss += out_coef[i, k] + mix_own[i, k]
+                    gain += inflow[i, k] * w[nbr[i, k]]
+                lose = loss[i]
                 x = w[i]
-                in_dry_air = rain_scale[i] * np.exp(-rain_steepness * rain_humidity[i])     # what the law would give at no water
+                dry_air = in_dry_air[i]
                 for _n in range(newton_steps):
                     humidity = x / w_sat[i]
                     if humidity <= 1.0:
                         grown = rain_scale[i] * np.exp(rain_steepness * (humidity - rain_humidity[i]))
-                        wet = grown - in_dry_air
+                        wet = grown - dry_air
                         wet_slope = grown * rain_steepness / w_sat[i]
                         dry = evap_coef[i] * (1.0 - humidity)
-                        dry_slope = -evap_coef[i] / w_sat[i]
+                        dry_slope = slope_of_dry[i]
                     else:                                    # above saturation the law goes on as a straight line
-                        top = rain_scale[i] * np.exp(rain_steepness * (1.0 - rain_humidity[i]))
-                        wet = top * (1.0 + rain_steepness * (humidity - 1.0)) - in_dry_air
+                        top = at_saturation[i]
+                        wet = top * (1.0 + rain_steepness * (humidity - 1.0)) - dry_air
                         wet_slope = top * rain_steepness / w_sat[i]
                         dry = 0.0
                         dry_slope = 0.0
-                    f = loss * x + area[i] * (wet + lift_coef[i] * x * x / w_sat[i] - dry) - gain
-                    slope = loss + area[i] * (wet_slope + 2.0 * lift_coef[i] * x / w_sat[i] - dry_slope)
+                    f = lose * x + area[i] * (wet + lift_coef[i] * x * x / w_sat[i] - dry) - gain
+                    slope = lose + area[i] * (wet_slope + 2.0 * lift_coef[i] * x / w_sat[i] - dry_slope)
                     step = f / slope
                     x -= step
                     if x < 0.0:
@@ -78,28 +107,24 @@ def sweep(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_c
 
 
 @njit(cache=True)
-def residual(w, nbr, nbr_count, out_coef, in_coef, mix_own, mix_other, area, evap_coef, w_sat, rain_scale, rain_steepness,
-             rain_humidity, lift_coef, source, extra):
+def residual(w, nbr, nbr_count, inflow, loss, own, area, evap_coef, w_sat, rain_scale, rain_steepness, rain_humidity,
+             lift_coef, in_dry_air, at_saturation, slope_of_dry, extra):
     """What is left of each cell's balance: right-hand side minus left-hand side of the equation in sweep()."""
     n = w.shape[0]
     r = np.empty(n)
     for i in range(n):
-        gain = area[i] * source[i] + extra[i]
-        loss = 0.0
+        gain = own[i] + extra[i]
         for k in range(nbr_count[i]):
-            j = nbr[i, k]
-            gain += (in_coef[i, k] + mix_other[i, k]) * w[j]
-            loss += out_coef[i, k] + mix_own[i, k]
+            gain += inflow[i, k] * w[nbr[i, k]]
         x = w[i]
         humidity = x / w_sat[i]
-        in_dry_air = rain_scale[i] * np.exp(-rain_steepness * rain_humidity[i])
         if humidity <= 1.0:
-            wet = rain_scale[i] * np.exp(rain_steepness * (humidity - rain_humidity[i])) - in_dry_air
+            wet = rain_scale[i] * np.exp(rain_steepness * (humidity - rain_humidity[i])) - in_dry_air[i]
             dry = evap_coef[i] * (1.0 - humidity)
         else:
-            wet = rain_scale[i] * np.exp(rain_steepness * (1.0 - rain_humidity[i])) * (1.0 + rain_steepness * (humidity - 1.0)) - in_dry_air
+            wet = at_saturation[i] * (1.0 + rain_steepness * (humidity - 1.0)) - in_dry_air[i]
             dry = 0.0
-        r[i] = gain - loss * x - area[i] * (wet + lift_coef[i] * x * x / w_sat[i] - dry)
+        r[i] = gain - loss[i] * x - area[i] * (wet + lift_coef[i] * x * x / w_sat[i] - dry)
     return r
 
 
@@ -107,14 +132,22 @@ class Ladder:
     """The meshes from coarse to fine, with the budget's coefficients on each."""
 
     def __init__(self, meshes, coefficients):
-        self.meshes, self.co = meshes, coefficients      # coefficients[k]: what sweep() takes after w, with the orders last
+        # coefficients[k]: nbr, nbr_count, out, in, mix_own, mix_other, area, evap, w_sat, rain_scale, rain_steepness,
+        # rain_humidity, lift, source and the orders of the sweeps, on mesh k
+        self.meshes, self.co = meshes, coefficients
+        self.args = []                                   # what sweep() and residual() take after w, on each mesh
+        for nbr, count, out, inc, mix_own, mix_other, area, evap, w_sat, scale, steep, humid, lift, source, orders in coefficients:
+            own, loss, inflow, in_dry_air, at_saturation, dry_slope = prepare(count, out, inc, mix_own, mix_other, area,
+                                                                              evap, w_sat, scale, steep, humid, source)
+            self.args.append(((nbr, count, inflow, loss, own, area, evap, w_sat, scale, steep, humid, lift, in_dry_air,
+                               at_saturation, dry_slope), orders))
 
     def _sweep(self, k, w, extra, cycles, steps, newton_tolerance):
-        c = self.co[k]
-        return sweep(w, *c[:-1], extra, c[-1], cycles, steps, newton_tolerance)
+        args, orders = self.args[k]
+        return sweep(w, *args, extra, orders, cycles, steps, newton_tolerance)
 
     def _residual(self, k, w, extra):
-        return residual(w, *self.co[k][:-1], extra)
+        return residual(w, *self.args[k][0], extra)
 
     def cycle(self, k, w, extra, steps, newton_tolerance, coarsest_cycles):
         """One trip down the ladder and back up from mesh k. Returns the largest change of the last sweep on mesh k."""

@@ -4,7 +4,7 @@ Moved here from processes/tectonics_snapshot.py (build step 3) so that the snaps
 seeded start and one reading of the boundaries; no process imports another. See the snapshot's file for the model.
 """
 import numpy as np
-import scipy.sparse as sp
+from numba import njit
 from scipy.spatial import cKDTree
 
 from . import operators as op  # noqa: F401
@@ -187,12 +187,8 @@ def boundaries(mesh, plate, ctype, rotation, radius, k, b):
                 rows += [s1[joined], s2[joined]]
                 cols += [s2[joined], s1[joined]]
     rows, cols = np.concatenate(rows), np.concatenate(cols)
-    step = sp.csr_matrix((np.ones(rows.size), (rows, cols)), shape=(cell.size, cell.size)) + sp.identity(cell.size, format="csr")
-    runs = sp.csr_matrix((np.ones(cell.size), (cell, np.arange(cell.size))), shape=(n, cell.size))     # a cell's own sides
-    for _ in range(int(np.ceil(JOINED_STEPS_PER_CELL * b["direction_reach_cells"]))):
-        runs = runs @ step
-        runs.data[:] = 1.0
-    joined = np.asarray(runs[at, side]).ravel() > 0
+    # a side within so many joined steps of one of the cell's own sides: a walk outward from them, step by step
+    joined = _joined_within(cell, rows, cols, at, side, int(np.ceil(JOINED_STEPS_PER_CELL * b["direction_reach_cells"])))
     at, side = at[joined], side[joined]
     order = np.lexsort((side, at))                                           # a fixed order, so the sums never vary
     at, side = at[order], side[order]
@@ -221,6 +217,58 @@ def boundaries(mesh, plate, ctype, rotation, radius, k, b):
     b_close = np.zeros(n)
     b_close[bcell] = closing
     return is_boundary, facing, faces_continent, b_kind, b_close
+
+@njit(cache=True)
+def _joined_within(cell, rows, cols, at, side, steps):
+    """For each pair (at[p], side[p]): whether the side can be reached from one of the sides of cell at[p] (the sides
+    s with cell[s] == at[p]) in at most `steps` steps from a side to a side it is joined to (a pair (rows[e], cols[e])).
+    A plain walk outward, one ring of sides at a time; the answer is a yes or no, the same whatever order the walk
+    takes (until build-speed, in docs/BUILD_NOTES.md, it was worked out as products of sparse matrices)."""
+    m = cell.size
+    count = np.zeros(m + 1, dtype=np.int64)                  # the sides joined to each side
+    for e in range(rows.size):
+        count[rows[e] + 1] += 1
+    start = np.cumsum(count)
+    fill = start[:-1].copy()
+    nxt = np.empty(rows.size, dtype=np.int64)
+    for e in range(rows.size):
+        nxt[fill[rows[e]]] = cols[e]
+        fill[rows[e]] += 1
+    order = np.argsort(cell)                                 # the sides of each cell, together
+    pairs = np.argsort(at)                                   # the pairs of each cell, together
+    seen = np.full(m, -1, dtype=np.int64)                    # the cell whose walk last reached each side
+    ring = np.empty(m, dtype=np.int64)
+    out = np.zeros(at.size, dtype=np.bool_)
+    first_side, p = 0, 0
+    while p < pairs.size:
+        c = at[pairs[p]]
+        while first_side < m and cell[order[first_side]] < c:
+            first_side += 1
+        size = 0
+        q = first_side
+        while q < m and cell[order[q]] == c:
+            seen[order[q]] = c
+            ring[size] = order[q]
+            size += 1
+            q += 1
+        lo, hi = 0, size
+        for _ in range(steps):
+            for r in range(lo, hi):
+                s = ring[r]
+                for t in range(start[s], start[s + 1]):
+                    u = nxt[t]
+                    if seen[u] != c:
+                        seen[u] = c
+                        ring[size] = u
+                        size += 1
+            lo, hi = hi, size
+            if lo == hi:
+                break
+        while p < pairs.size and at[pairs[p]] == c:
+            out[pairs[p]] = seen[side[pairs[p]]] == c
+            p += 1
+    return out
+
 
 def diving(plate, facing, faces_continent, b_kind, ocean, age, k, equal_within_my):
     """Which boundary cells lie on the side of a trench that dives.
