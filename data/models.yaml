@@ -317,7 +317,9 @@ slots:
                                                #  its upper branch and the cloud by surface (2026-10-25): the fall from the tropics to the
                                                #  polar caps is 40.2 K at 0.565 and 39.8 K at 0.575, CRU's 40.0 K between (0.52 before
                                                #  the overturning was closed; the 0.649 of North, Cahalan and Coakley 1981 was fitted
-                                               #  with spreading as the only transport)]
+                                               #  with spreading as the only transport). With the second version of OceanCurrents, which
+                                               #  is not the default, the fall is 40.1 K at 0.545 and 39.5 K at 0.56, CRU's at 0.549
+                                               #  (handoff/overturning/fit_spreading.log)]
       spreading_constant_radius_m: 6.371e+6    # the radius D was fitted on; the spreading length of 3,550 km is kept on other planets [INFERRED]
       heat_capacity_land_j_m2_k: 1.055e+7      # 0.16 B years [DOCUMENTED: the same paper, p. 100], with B above and a year of 3.156e7 s
       heat_capacity_sea_j_m2_k: 3.10e+8        # 4.7 B years, an ocean mixed layer of 75 m [DOCUMENTED: the same]
@@ -398,6 +400,11 @@ slots:
       radius_m: [5.0e+6, 8.0e+6]
 
   OceanCurrents:
+    # A second version adds the overturning driven by density and the salt that sets it, with the constants under
+    # `overturning` below: worldengine.processes.ocean_wind_and_density:WindAndDensityOcean, which writes two fields more
+    # (sea_surface_salinity, overturning_sinking). It is not the default: on the preview Earth twin it turns the ocean's
+    # heat across the equator from 0.52 PW southward to 0.13 and warms the northern summer by 1.1 K, and it wets the
+    # Sahara's summer and dries the Amazon past what the Earth tests allow (docs/notes_pending/ocean-overturning.md).
     implementation: worldengine.processes.ocean_wind_driven:WindDrivenOcean
     standing: Established
     model: "The wind-driven loops of one uniform layer over a flat floor: Sverdrup balance in mid-ocean, closed by a western boundary current through friction (Stommel 1948). Upwelling from the divergence of the wind-driven surface transport (Ekman), with friction near the equator. Heat carried by the loops and the drift, and taken by upwelled water."
@@ -433,6 +440,49 @@ slots:
       mixed_layer_m: [20.0, 150.0]             # the stirred depth is kept between these [PROVISIONAL]
       upwelling_cooling_limit_w_m2: 100.0      # soft limit of the cooling by upwelling [PROVISIONAL: about the largest seen off Peru, UNVERIFIED]
       carried_heat_limit_w_m2: 250.0           # soft limit of the heat the loops and drift bring to a cell [PROVISIONAL: about the Gulf Stream's loss, UNVERIFIED]
+      overturning:                             # the second version only (ocean_wind_and_density.py): the overturning driven by density
+        thermal_expansion_per_k: 1.67e-4       # the simplified equation of state of Vallis 2006: rho = rho0 [1 - a (T - T0) - (c / 2) (T - T0)^2
+        cabbeling_per_k2: 1.0e-5               #  + b (S - S0)], with rho0 the density above. a and c [DOCUMENTED: Nycander, Hieronymus and Roquet
+        reference_temperature_k: 283.15        #  2015, read in a search service's excerpt, give a = 1.67e-4 per K, c = 1e-5 per K2, T0 = 10 C,
+        haline_contraction_per_psu: 7.8e-4     #  S0 = 35 psu]; b [UNVERIFIED: recalled from Vallis 2006; the excerpt stopped before it]
+        mean_salinity_psu: 35.0                # the sea's mean salinity, and S0 above [UNVERIFIED: Earth's mean is about 34.7, recalled; only
+                                               #  differences of salinity act, so the reference of the equation of state is taken for both]
+        freezing_point_k: 271.35               # the sea's water is held at or above this, -1.8 C, where the engine's air over a winter sea is
+                                               #  colder [UNVERIFIED: the textbook value at 35 psu, as Cryosphere's notes give it]
+        open_to_deep_m: 1000.0                 # deep water forms only over sea at least this deep, and a latitude goes round only if sea of
+                                               #  this depth does [INFERRED: deeper than the light upper water, a few hundred metres here]
+        band_spacings: 2.0                     # the bands in which a latitude that goes round is sought are this many cell spacings wide
+                                               #  [INFERRED: the narrowest band whose cells join along it all the way round]
+        sinking_contrast_kg_m3: 0.5            # a cell's share of its region's sinking falls by a factor e for every this much by which its
+                                               #  water counts as lighter than the region's densest [PROVISIONAL. MEASURED: with 0.3, in an
+                                               #  earlier form of the process, the default world's climate did not settle in 60 rounds, its
+                                               #  sinking leaping between a northern and a southern sea from round to round]
+        vertical_diffusivity_m2_s: 1.0e-5      # Kv, the mixing that lifts deep water through the light upper water [DOCUMENTED: Gnanadesikan
+                                               #  1999 takes 0.1 to 0.15 cm2/s, as a search service's excerpt of the paper gives it]
+        eddy_diffusivity_m2_s: 1000.0          # A_I, the eddies' return across a latitude that goes round [DOCUMENTED: a GFDL study of the
+                                               #  model took 300 to 4000 m2/s, as a search service's excerpt gives it. PROVISIONAL: 1000]
+        resistance_per_spin: 2.0               # eps = this times |f| where the water sinks, in the sinking g' D^2 / eps [UNVERIFIED: the
+                                               #  transport of a current in the balance of the spin whose light layer thins from D to nothing
+                                               #  across it is g' D^2 / (2 f), recalled; the excerpts read call eps a resistance that holds
+                                               #  friction and geometry and gave no value]
+        branch_share: 0.7                      # the share of the gap between the surface and the deep water that the overturning's upper water
+                                               #  carries [CALIBRATED on Earth's numbers at 26.5 N as search excerpts of the RAPID array's papers
+                                               #  give them (DOCUMENTED at second hand): 17.2 Sv and 1.22 to 1.25 PW, 88 % of the heat by the
+                                               #  overturning, an effective gap of 15.6 K, where the surface is about 22 K warmer than the deep
+                                               #  water (UNVERIFIED: recalled)]
+        salt_mixing_m2_s: 1000.0               # the eddies' mixing of salt along the sides, in the layer whose temperature the loops carry
+                                               #  [UNVERIFIED: a common value of the mixing by eddies, recalled]
+        lifting_scale_m_yr: 10.0               # water where the wind's drift presses down at this rate counts as lighter by 1.3 times the
+                                               #  contrast, and where it lifts at this rate by 0.3 times [PROVISIONAL. MEASURED: as a sharp
+                                               #  rule (no deep water where the drift presses down) it left the climate of seed 10 unsettled
+                                               #  after 60 rounds]
+        salt_relaxation: 0.5                   # in each pass the salinity moves this share of the way to the steady state of that pass's
+                                               #  flows [INFERRED: without it the passes did not converge on seed 10, MEASURED]
+        salt_settled_psu: 0.001                # the passes stop once that steady state lies this close to the salinity, on the sea's mean
+        passes: 8                              # ... or after this many passes in a round; they begin from the last round's salinity.
+                                               #  [MEASURED on the preview worlds with this process: the climate settled in 19 rounds on the
+                                               #  Earth twin, 30 on the default world, 43 with seed 7 and 42 with seed 10 (with the first
+                                               #  version: 32, 41, 34 and 27)]
 
   Moisture:
     implementation: worldengine.processes.moisture_one_layer:OneLayerMoisture

@@ -1,0 +1,32 @@
+40-60 N land: swing 22.2 K (Earth 31.1); year -1.5 (3.5); coldest -13.1 (-12.7); warmest 11.3 (18.4)
+snow in every month: 0.7 % of 40-60 N land, 11.0 % of all land
+group A: 17.1 % of the land
+group B: 16.9 % of the land
+group C: 16.4 % of the land
+group D: 16.6 % of the land
+group E: 33.0 % of the land
+the year: 13.5 C against 14.0 (-0.5 K); largest river at a coast 93,112 m3/s
+western Europe permafrost 0.01
+Siberia 55-65 N: boreal 0.00; {'tundra': 46}
+Canada 50-60 N: boreal 0.31; {'taiga': 10, 'tundra': 22}
+genesis potential in the SE Pacific and S Atlantic 0.182; south of the equator 0.597; peak months north 9, south 3
+west coast Peru: -0.5 K against its band; upwelling +23396.92 m a day
+west coast south-west Africa: -2.5 K against its band; upwelling -1279.71 m a day
+west coast north-west Africa: +0.4 K against its band; upwelling -3158.58 m a day
+west coast California: -0.5 K against its band; upwelling -1705.85 m a day
+January coasts: {'western Europe': -2.9, 'east coast of Asia': -15.6}
+Sahara June to August rain 41.3 mm a month
+Arabia June to August rain 84.0 mm a month
+India month 1: east -6.79 m/s, north -2.20 m/s
+India month 7: east -3.36 m/s, north -0.82 m/s
+storm tracks months [0, 1, 11] hemisphere 1: peak at +47.5
+storm tracks months [0, 1, 11] hemisphere -1: peak at -42.5
+storm tracks months [5, 6, 7] hemisphere -1: peak at -57.5
+sea ice: Arctic (north of 70) March 1.00, September 0.00; south of 60 S September 0.92, March 0.00
+permafrost (60, 70, 90, 130): 1.00
+permafrost (60, 70, -100, -80): 0.97
+driest land band north: +24.3 with 481 mm
+driest land band south: -29.2 with 420 mm
+40-60 N land rain 670 mm; far north (>60) 328.6 mm
+biomes: Sahara desert 0.38, aridisols 1.00; Amazon tropical 0.57, Congo 0.73; Amazon oxisols+ultisols 0.57; eastern US temperate 1.00; Greenland ice 1.00
+climate rounds 19, settled True

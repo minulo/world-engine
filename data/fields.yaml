@@ -258,6 +258,15 @@ fields:
   ocean_heat_convergence:
     {family: Ocean, unit: "W/m²", shape: month_cell, kind: number, range: [-2000, 2000],
      description: "Heat the ocean's currents bring to (+) or take from (-) the surface of the sea."}
+  sea_surface_salinity:
+    # settle: the salt of the last round is where the next round's overturning begins. A hundredth of a part per
+    # thousand on the planet's mean and a fifth in a cell (the default tolerances) lie far below the differences that
+    # decide where deep water forms.
+    {family: Ocean, unit: psu, shape: cell, kind: number, default: missing, range: [0, 300], settle: {mean: 0.01, cell: 0.2},
+     description: "Salt in the sea's surface water, on the year's average, in parts per thousand: high where the sea loses more water to the air than rain and rivers give back, low where rivers run in. Zero on land."}
+  overturning_sinking:
+    {family: Ocean, unit: m/yr, shape: cell, kind: number, range: [-1.0e+6, 1.0e+6],
+     description: "Surface water sinking to the deep sea (+) where the sea is densest, or deep water rising back to the surface (-), in the overturning driven by density, on the year's average."}
 
 # Groups: named sums that several processes add to (design, Layer 2).
 groups:
