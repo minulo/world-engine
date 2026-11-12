@@ -29,6 +29,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 8765
 DEFAULT_WORLD = "worlds/first.zarr"
+ENGINE_WORLDS = (DEFAULT_WORLD,)           # the worlds the launcher builds by itself: an upgrade deletes them
 APP_NAME = "World Engine"
 ON_WINDOWS = sys.platform == "win32"
 ON_MAC = sys.platform == "darwin"
@@ -391,10 +392,26 @@ def button_states(st: Status, action=None) -> dict:
 
 @dataclass
 class UpgradeResult:
-    changed: bool
+    changed: bool                # the code of this copy changed
     message: str
     output: str = ""
     deleted: list = field(default_factory=list)
+    panel_changed: bool = False  # the panel's own code changed too: it must be opened again to use it
+
+
+@dataclass
+class Version:
+    """One version of the engine: a branch of the repository this copy was cloned from, at its newest commit there."""
+    branch: str                  # "" for a copy that is on no branch (it holds one commit, checked out by its id)
+    commit: str
+    date: str = ""               # of the commit, as 2026-11-12
+    subject: str = ""            # the first line of what the commit says
+    current: bool = False        # the branch this copy is on
+    behind: int = 0              # for the current branch: the commits of the newest version that this copy lacks
+
+    @property
+    def label(self) -> str:
+        return f"{self.branch}   ({self.date})"
 
 
 class Controller:
@@ -414,6 +431,7 @@ class Controller:
         self._log_lines = []                       # the launcher's output, for the window and for errors
         self._pending = []                         # the output not yet taken by the window
         self._error = None
+        self._git_lock = threading.RLock()         # one of the panel's threads changes the clone at a time
 
     # ------------------------------------------------------------------ settings
     @property
@@ -653,45 +671,149 @@ class Controller:
         except subprocess.TimeoutExpired:
             raise ControlError(f"git {' '.join(args)} did not finish within {timeout} s.") from None
 
-    def upgrade(self, log=lambda text: None) -> UpgradeResult:
-        """Stop the engine, fetch the new version with `git pull --ff-only`, and delete the default world so that the
-        next start builds it with the new engine (docs/RUNNING.md, section 4). If git is missing or the pull fails,
-        nothing else is done."""
+    def _need_clone(self, to="upgraded with git pull"):
         if not (self.repo / ".git").exists():
-            raise ControlError(f"{self.repo} is not a Git clone, so it cannot be upgraded with git pull. Download the "
-                               f"new version into a new folder instead.")
+            raise ControlError(f"{self.repo} is not a Git clone, so it cannot be {to}. Download the new version into "
+                               f"a new folder instead.")
+
+    def _remote(self) -> str:
+        """The name of the place this copy was cloned from (origin, unless somebody renamed it)."""
+        names = self._git("remote").stdout.split()
+        if not names:
+            raise ControlError("This copy does not know where it was cloned from (git remote lists nothing), so there is "
+                               "nowhere to fetch versions from. Clone the repository again into a new folder.")
+        return "origin" if "origin" in names else names[0]
+
+    def current_version(self):
+        """The version this copy holds: its branch and its commit. None where that cannot be told (no Git, no clone)."""
+        if not (self.repo / ".git").exists() or not shutil.which("git"):
+            return None
+        r = self._git("log", "-1", "--date=short", "--format=%H%x09%cd%x09%s")
+        if r.returncode != 0 or not r.stdout.strip():
+            return None
+        commit, date, subject = (r.stdout.strip().split("\t", 2) + ["", ""])[:3]
+        b = self._git("symbolic-ref", "--short", "-q", "HEAD")
+        return Version(b.stdout.strip() if b.returncode == 0 else "", commit, date, subject, current=True)
+
+    def _fetch(self, remote, log, timeout=300):
+        """Learn of every branch of the remote and its newest commit. Changes no file of the folder, only what the
+        clone knows of the remote (also in a clone that was made of one branch alone)."""
+        log(f"$ git fetch --prune {remote}\n")
+        r = self._git("fetch", "--prune", remote, f"+refs/heads/*:refs/remotes/{remote}/*", timeout=timeout)
+        output = (r.stdout + r.stderr).strip()
+        if output:
+            log(output + "\n")
+        if r.returncode != 0:
+            raise ControlError(f"The versions could not be fetched (git fetch, exit code {r.returncode}). Is this "
+                               f"computer online? Nothing was changed.\n\n{output[-1500:]}")
+
+    def versions(self, fetch=True, log=lambda text: None, timeout=300) -> list:
+        """The versions that can be chosen, the newest first: each branch of the repository this copy was cloned from.
+        With `fetch` they are asked for there first (git fetch); without, the list is what the clone knew already."""
+        self._need_clone("moved to another version")
+        with self._git_lock:
+            remote = self._remote()
+            if fetch:
+                self._fetch(remote, log, timeout)
+            r = self._git("for-each-ref", "--sort=-committerdate", f"refs/remotes/{remote}", "--format="
+                          "%(refname:lstrip=3)%09%(objectname)%09%(committerdate:short)%09%(subject)")
+            if r.returncode != 0:
+                raise ControlError(f"git for-each-ref failed (exit code {r.returncode}).\n\n{(r.stdout + r.stderr)[-1500:]}")
+            here = self.current_version()
+            found = []
+            for line in r.stdout.splitlines():
+                branch, commit, date, subject = (line.split("\t", 3) + ["", "", ""])[:4]
+                if not branch or branch == "HEAD" or not commit:
+                    continue
+                v = Version(branch, commit, date, subject)
+                if here is not None and here.branch == branch:
+                    v.current = True
+                    n = self._git("rev-list", "--count", f"HEAD..refs/remotes/{remote}/{branch}")
+                    v.behind = int(n.stdout.strip()) if n.returncode == 0 and n.stdout.strip().isdigit() else 0
+                found.append(v)
+            return found
+
+    def _pull(self, log) -> str:
+        log("$ git pull --ff-only\n")
+        r = self._git("pull", "--ff-only")
+        output = (r.stdout + r.stderr).strip()
+        log(output + "\n")
+        if r.returncode != 0:
+            low, hint = output.lower(), ""
+            if "fast-forward" in low or "diverg" in low:
+                hint = (" Your copy has commits of its own that the new version does not have, so it cannot simply "
+                        "move forward. Nothing was changed. Ask for help, or keep your changes elsewhere and run "
+                        "\"git reset --hard @{u}\" in the folder.")
+            elif "would be overwritten" in low:
+                hint = " Files you changed in the folder would be overwritten. Nothing was changed."
+            elif "not currently on a branch" in low or "no tracking information" in low:
+                hint = (" This copy follows no version of its own (it is on no branch, or on one that was never "
+                        "published). Nothing was changed. Choose a version in the panel and upgrade to that one.")
+            raise ControlError(f"git pull --ff-only failed (exit code {r.returncode}).{hint}\n\n{output[-1500:]}")
+        return output
+
+    def _switch(self, version, log) -> str:
+        """Move this copy to the newest commit of the branch `version` of the remote. Either all of it happens or
+        nothing does: the one command that changes files (git checkout -B) refuses as a whole."""
+        remote = self._remote()
+        self._fetch(remote, log)
+        theirs = f"refs/remotes/{remote}/{version}"
+        if version.startswith("-") or self._git("show-ref", "--verify", "--quiet", theirs).returncode != 0:
+            raise ControlError(f"There is no version \"{version}\" at {remote}. Look for versions again and choose one of "
+                               f"the list. Nothing was changed.")
+        mine = f"refs/heads/{version}"
+        if (self._git("show-ref", "--verify", "--quiet", mine).returncode == 0
+                and self._git("merge-base", "--is-ancestor", mine, theirs).returncode != 0):
+            raise ControlError(f"This copy has commits of its own on the version \"{version}\" that {remote} does not "
+                               f"have, so it cannot simply move forward to it. Nothing was changed. Ask for help, or "
+                               f"keep your changes elsewhere and delete your branch (git branch -D {version}).")
+        log(f"$ git checkout -B {version} --track {remote}/{version}\n")
+        r = self._git("checkout", "-B", version, "--track", theirs)
+        output = (r.stdout + r.stderr).strip()
+        log(output + "\n")
+        if r.returncode != 0:
+            hint = (" Files you changed or added in the folder would be overwritten. Nothing was changed."
+                    if "would be overwritten" in output.lower() else "")
+            raise ControlError(f"git checkout failed (exit code {r.returncode}).{hint}\n\n{output[-1500:]}")
+        return output
+
+    def upgrade(self, log=lambda text: None, version=None) -> UpgradeResult:
+        """Stop the engine, fetch the new version, and delete the default world so that the next start builds it with
+        the new engine (docs/RUNNING.md, section 4). The new version is the newest commit of the branch this copy is on
+        (`git pull --ff-only`) or, with `version` the name of another branch, of that one, to which the copy switches.
+        If git is missing or the fetch fails, nothing else is done."""
+        self._need_clone()
         self._git("--version")
+        here = self.current_version()
+        switch = bool(version) and (here is None or version != here.branch)
         stopped = self.stop_if_running()
         if stopped:
             log(f"Stopped: {stopped}\n")
-        self._doing(WORKING, "Upgrading: git pull --ff-only")
+        self._doing(WORKING, f"Switching to the version {version}" if switch else "Upgrading: git pull --ff-only")
         try:
-            before = self._git("rev-parse", "HEAD").stdout.strip()
-            log("$ git pull --ff-only\n")
-            r = self._git("pull", "--ff-only")
-            output = (r.stdout + r.stderr).strip()
-            log(output + "\n")
-            if r.returncode != 0:
-                hint = ""
-                if "fast-forward" in output.lower() or "diverg" in output.lower():
-                    hint = (" Your copy has commits of its own that the new version does not have, so it cannot simply "
-                            "move forward. Nothing was changed. Ask for help, or keep your changes elsewhere and run "
-                            "\"git reset --hard @{u}\" in the folder.")
-                elif "would be overwritten" in output.lower():
-                    hint = " Files you changed in the folder would be overwritten. Nothing was changed."
-                raise ControlError(f"git pull --ff-only failed (exit code {r.returncode}).{hint}\n\n{output[-1500:]}")
-            after = self._git("rev-parse", "HEAD").stdout.strip()
-            if before == after:
-                return UpgradeResult(False, "Already up to date: nothing was changed, and the world is kept.", output)
+            with self._git_lock:
+                before = self._git("rev-parse", "HEAD").stdout.strip()
+                output = self._switch(version, log) if switch else self._pull(log)
+                after = self._git("rev-parse", "HEAD").stdout.strip()
+                now = f" This copy is now on the version {version}." if switch else ""
+                if before == after:
+                    if switch:
+                        return UpgradeResult(False, f"{now.strip()} It holds the same code ({after[:8]}), so nothing else "
+                                             f"was changed, and the world is kept.", output)
+                    return UpgradeResult(False, "Already up to date: nothing was changed, and the world is kept.", output)
+                panel_changed = self._git("diff", "--quiet", before, after, "--", "panel", "scripts").returncode != 0
             deleted = []
-            for p in (self.world_path(DEFAULT_WORLD), self.world_path(DEFAULT_WORLD + ".partial")):
-                if remove(p, self.repo):
-                    deleted.append(p)
-            msg = f"Upgraded from {before[:8]} to {after[:8]}."
-            if deleted:
-                msg += f" The default world {DEFAULT_WORLD} was deleted, so the next start builds it with the new engine."
-            msg += " Close and open the panel again to use its new version too."
-            return UpgradeResult(True, msg, output, deleted)
+            for world in ENGINE_WORLDS:
+                for p in (self.world_path(world), self.world_path(world + ".partial")):
+                    if remove(p, self.repo):
+                        deleted.append(p)
+            msg = f"Upgraded from {before[:8]} to {after[:8]}.{now}"
+            for world in ENGINE_WORLDS:
+                if self.world_path(world) in deleted:
+                    msg += f" The default world {world} was deleted, so the next start builds it with the new engine."
+            if panel_changed:
+                msg += " The control panel changed too: open it again to use its new version."
+            return UpgradeResult(True, msg, output, deleted, panel_changed)
         finally:
             self._doing(None)
 
@@ -795,6 +917,22 @@ def panel_python(executable=None, windows=ON_WINDOWS) -> str:
     if windows and exe.name.lower() == "python.exe" and exe.with_name("pythonw.exe").exists():
         return str(exe.with_name("pythonw.exe"))
     return str(exe)
+
+
+def panel_command(repo=REPO, executable=None, windows=ON_WINDOWS) -> list:
+    """The command that opens the panel of this folder, with the Python that runs this one."""
+    return [panel_python(executable, windows), str(Path(repo) / "panel" / "world_engine_panel.py")]
+
+
+def open_panel_again(repo=REPO, command=None) -> subprocess.Popen:
+    """Open a new panel that outlives this one (after an upgrade, the new one runs the panel's new code)."""
+    cmd = command or panel_command(repo)
+    kwargs = {"creationflags": NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP} if ON_WINDOWS else {"start_new_session": True}
+    try:
+        return subprocess.Popen(cmd, cwd=repo, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, **kwargs)
+    except OSError as e:
+        raise ControlError(f"Could not open the panel again ({cmd[0]}): {e.strerror or e}. Open it yourself.") from None
 
 
 def install_windows_shortcuts(repo=REPO, dest_dirs=None) -> list:
