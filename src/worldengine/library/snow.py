@@ -49,8 +49,11 @@ def degree_day_melt(temperature_k: np.ndarray, freezing_k: float, factor_mm_per_
     """What a month could melt (mm of water): the factor times the degrees above freezing times the days of the month.
     With a daily spread, the days of the month scatter around its mean as a normal distribution of that standard
     deviation, and the degrees above freezing are those the days have on average: s phi(x / s) + x Phi(x / s), x the
-    month's mean above freezing [INFERRED: the expected positive part of a normal distribution; using it for the
-    positive degree-days of a month is, as I recall, the method of Reeh 1991 and Calov and Greve 2005, UNVERIFIED]. A
+    month's mean above freezing [INFERRED: the expected positive part of a normal distribution. DOCUMENTED: using it for
+    the positive degree-days of a month is the method of Reeh 1991; Calov and Greve 2005, as Consensus gives their
+    opening: "It was suggested by Braithwaite (1984) that the number of positive degree-days, PDD, could be calculated
+    from the normal probability distribution around the long-term monthly mean temperatures. A form, which is based on
+    that and is widely used in current ice-dynamic models, was proposed by Reeh (1991)." Reeh's paper was not read]. A
     month just below freezing then melts some snow on its warmer days."""
     x = temperature_k - freezing_k
     if daily_spread_k <= 0.0:

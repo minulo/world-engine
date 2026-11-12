@@ -14,6 +14,11 @@ Class: a rule table over Jenny's five factors (climate, living things, relief, p
 of the USDA Soil Taxonomy, plus no-soil classes for ice, bare rock and shifting sand [DOCUMENTED in the design: Soils of
 Canada for the factors; University of Idaho for the orders]. The rows are tried in order and the first that matches
 wins; their thresholds are mine [PROVISIONAL], drawn from the definitions of the orders as the design describes them.
+The search for a published model that the design asks for, made on 2026-11-09, found none that gives the class from its
+causes: global maps of soil classes are learned from Earth's soil profiles (SoilGrids, Hengl et al. 2017) and do not
+carry to another planet, and the mechanistic models give horizons or properties, not classes. The nearest published
+table is Gray et al. 2011, the dominant groups of the World Reference Base for 70 combinations of climate, parent rock
+and relief [DOCUMENTED: both abstracts]. The rule table stays; a replacement could follow Gray et al. 2011 [INFERRED].
 Fertility: a set share for each order, the soil's store of the nutrients plants take [PROVISIONAL].
 
 Ignores: everything finer than an order, farming, and soil laid down by rivers, wind and ice. Flood plains and belts of

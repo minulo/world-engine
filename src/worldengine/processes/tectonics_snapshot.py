@@ -12,7 +12,8 @@ arcs, hot spots, shelves and rifts are absent.
 Wrong where: everywhere a history matters. The size and width of the thickening are tuned
 numbers, not derived. A plate with no ridge of its own, or floor far from one, gets the oldest
 age allowed: a quarter to a half of the ocean floor sits at that cap, where Earth's floor is on
-average about 60 My old [UNVERIFIED: recalled]. A continent ends in a cliff: crust of its full
+average about 60 My old [DOCUMENTED: Seton et al. 2020, abstract: "the mean age of oceanic
+crust is 64.2 Myr"]. A continent ends in a cliff: crust of its full
 thickness stands beside ocean floor with no shelf or slope between, so a coastal cell can stand
 kilometres high. Build step 3 replaces this with the full plate history.
 
