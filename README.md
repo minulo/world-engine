@@ -96,7 +96,13 @@ the 138 fields of the preview world, the one built in Docker differed from the o
 the one built on Windows in 88 and the one built on macOS in 96, among them the mesh's own cell areas [MEASURED: run
 40146705857, the job "The worlds of the systems, side by side"]. The numba loops are compiled for the processor they
 run on, and numpy chooses its routines by processor too, so two machines may round differently [INFERRED]. How far
-the worlds differ, in the last digits or in their continents, was not measured: the job compares fingerprints only.
+the worlds differ, in the last digits or in their continents, was not measured on that run: the job compared
+fingerprints only. `python tools/compare_worlds.py STORE_A STORE_B [--json OUT]` measures it for two stores: for every
+field the largest difference, the share of the cells that differ beyond the rounding of a float32, the share of the
+cells whose class differs, the rows of every table, and a verdict (identical, the same planet with rounding noise,
+the same planet with grown differences, or a different planet; the thresholds and why are at the head of the tool).
+The workflow now uploads each system's world and runs the tool on each against the world of ubuntu-latest, so that
+it measures the size of the differences. It has not run with that change yet, so no result is quoted here.
 The numbers this README and the notes quote are those of the build machine. A world built on one system opens on any other: nothing refuses a world for its fingerprints.
 The viewer shows a warning when the engine's code or the lock file differ from those that built it.
 
@@ -259,6 +265,7 @@ Extra checks that are not part of the test run:
     python handoff/step3/relief_report.py worlds/first.zarr [older.zarr]   # relief, ocean floor, rivers and lakes
     python tools/world_report.py worlds/first.zarr # the numbers by which a world is judged
     python tools/why_scan.py worlds/first.zarr     # reads the "why" answers of every cell against the numbers of the cell
+    python tools/compare_worlds.py A.zarr B.zarr   # how far two worlds differ, field by field, and a verdict
     python tools/earth_climate_patterns.py         # the patterns of steps 4 and 5 on the Earth twin, beside Earth
     python tools/gcm_compare.py RUN.json           # the engine's aquaplanet against an ExoPlaSim run (build step 10)
     python tools/viewer_check.py worlds/first.zarr shots biome river_discharge   # screenshots and checks in a headless browser

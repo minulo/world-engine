@@ -264,6 +264,10 @@ class WorldView:
     def table(self, name) -> dict:
         raise NotImplementedError
 
+    def table_names(self) -> list:
+        """The tables the world holds (a table the engine declares but no process of this world fills is not among them)."""
+        raise NotImplementedError
+
     def push_arrays(self, push_id) -> dict:
         raise NotImplementedError
 
@@ -291,6 +295,9 @@ class MemoryView(WorldView):
 
     def table(self, name):
         return self._w.tables[name]
+
+    def table_names(self):
+        return sorted(self._w.tables)
 
     def push_arrays(self, push_id):
         return {k: v for k, v in self._w.push_records[push_id].items() if isinstance(v, np.ndarray)}
@@ -392,6 +399,9 @@ class StoreView(WorldView):
             return {c: g[c][...].astype(bool) if (name, c) in self._bool_columns else g[c][...] for c in sorted(g.array_keys())}
         return dict(self._keep(("table", name), read))
 
+    def table_names(self):
+        return sorted(self._root["tables"].group_keys())
+
     def push_arrays(self, push_id):
         def read():
             g = self._root["causes/pushes"][self._push_group[push_id]]
@@ -419,7 +429,7 @@ class StoreView(WorldView):
         out = {}
         for name in self.field_names():
             out[name] = hashlib.sha256(np.ascontiguousarray(self.field(name)).tobytes()).hexdigest()
-        for t in sorted(self._root["tables"].group_keys()):
+        for t in self.table_names():
             for col, a in sorted(self.table(t).items()):
                 out[f"table:{t}.{col}"] = hashlib.sha256(np.ascontiguousarray(a).tobytes()).hexdigest()
         return out
