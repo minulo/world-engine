@@ -1,6 +1,7 @@
 """World Engine: a window that shows whether the world engine runs, with buttons to start, stop, open, upgrade,
-rebuild, reset and delete it. It runs on the system's Python with tkinter (standard library only), before the engine's
-environment .venv exists; all its work is done by control.py, which the launchers of scripts/ do the rest for.
+rebuild, reset and delete it, and a list of the versions of the engine to choose the one to run from. It runs on the
+system's Python with tkinter (standard library only), before the engine's environment .venv exists; all its work is
+done by control.py, which the launchers of scripts/ do the rest for.
 
     python panel/world_engine_panel.py                    open the window (scripts/panel.cmd, scripts/panel.command)
     python panel/world_engine_panel.py --install-shortcut make "World Engine" on the Desktop and in the Start menu
@@ -40,7 +41,8 @@ INSTALL_LABEL = "Install app" if control.ON_MAC else "Install shortcut"
 HINTS = {"start": "Start the world engine: install it and build the world the first time, then serve it.",
          "stop": "Stop the world engine (also one started from a terminal with scripts/run.sh).",
          "browser": "Open the viewer in your browser.",
-         "upgrade": "Fetch the new version (git pull) and build the default world again with it.",
+         "upgrade": "Fetch the newest code of the version chosen under Settings, and build the default world again with it.",
+         "check": "Ask the repository which versions there are now (git fetch). It changes no file of the engine.",
          "rebuild": "Delete the selected world and build it again.",
          "reset": "Delete the environment .venv; the next start installs the packages again.",
          "delete": "Remove the environment, the worlds and the panel's files from this computer.",
@@ -71,20 +73,24 @@ class Panel:
         self.action = None                                  # the name of the action that runs, if one does
         self.status = Status(STOPPED)
         self.details_open = False
+        self.versions = {}                                  # what the Version box lists: its text to a control.Version
+        self.here = None                                    # the version this copy holds
         self._wake = threading.Event()
         self._closing = False
 
         root.title(control.APP_NAME)
-        root.geometry("540x440")
-        root.minsize(480, 380)
+        root.geometry("620x530")
+        root.minsize(520, 470)
         self._set_theme()
         self._load_images()
         self._build()
         self.render(self.status)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         root.after(100, self._drain)
+        self._read_versions()
         if poll:
             threading.Thread(target=self._poll, daemon=True).start()
+            threading.Thread(target=self._look_for_versions, daemon=True).start()
 
     # ------------------------------------------------------------------ looks
     def _set_theme(self):
@@ -187,7 +193,19 @@ class Panel:
         ttk.Label(settings, text="World").grid(row=0, column=2, sticky="w")
         self.world_var = tk.StringVar(value=self.c.world)
         self.world_box = ttk.Combobox(settings, textvariable=self.world_var, values=self._worlds())
-        self.world_box.grid(row=0, column=3, sticky="ew", padx=(6, 0))
+        self.world_box.grid(row=0, column=3, columnspan=2, sticky="ew", padx=(6, 0))
+        ttk.Label(settings, text="Version").grid(row=2, column=0, sticky="w", pady=(6, 0))     # row 1: the Magic box
+        self.version_var = tk.StringVar()
+        self.version_box = ttk.Combobox(settings, textvariable=self.version_var, state="readonly")
+        self.version_box.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(6, 6), pady=(6, 0))
+        self.version_box.bind("<<ComboboxSelected>>", lambda e: self._say_version())
+        self.check_button = ttk.Button(settings, text="Check for new", command=self.on_check)
+        self.check_button.grid(row=2, column=4, sticky="e", pady=(6, 0))
+        self.check_button.bind("<Enter>", lambda e: self.hint.configure(text=HINTS["check"]))
+        self.check_button.bind("<Leave>", lambda e: self.hint.configure(text=""))
+        self.version_note = ttk.Label(settings, style="Small.TLabel", wraplength=480, justify="left")
+        self.version_note.grid(row=3, column=0, columnspan=5, sticky="w", pady=(4, 0))
+        settings.bind("<Configure>", lambda e: self.version_note.configure(wraplength=max(200, e.width - 30)))
         for w in (self.port_entry, self.world_box):
             w.bind("<FocusOut>", lambda e: self.apply_settings(quiet=True))
             w.bind("<Return>", lambda e: self.apply_settings())
@@ -255,6 +273,8 @@ class Panel:
             b.state(["!disabled"] if on else ["disabled"])
         for w in (self.port_entry, self.world_box, self.magic_box):
             w.state(["!disabled"] if allowed["settings"] else ["disabled"])
+        for w in (self.version_box, self.check_button):       # a version is chosen for Upgrade, so with Upgrade
+            w.state(["!disabled"] if allowed["upgrade"] and self.here is not None else ["disabled"])
         return allowed
 
     def append_output(self, text):
@@ -306,6 +326,8 @@ class Panel:
                     self.append_output(rest[0])
                 elif kind == "done":
                     self._finish(*rest)
+                elif kind == "versions":
+                    self.show_versions(*rest)
         except queue.Empty:
             pass
         if self.root.winfo_exists():
@@ -369,6 +391,70 @@ class Panel:
         self.world_var.set(self.c.world)
         self._wake.set()
 
+    # ------------------------------------------------------------------ versions
+    def _read_versions(self):
+        """Show the versions the clone knows already (no network); what cannot be read is said in the note."""
+        try:
+            self.show_versions(self.c.versions(fetch=False), self.c.current_version())
+        except ControlError as e:
+            self.show_versions([], None, why=str(e).splitlines()[0])
+
+    def _look_for_versions(self):
+        """Once, when the panel opens and off the window's thread: ask the repository for its versions. A computer that
+        is offline keeps the list it had; the reason goes to the details."""
+        try:
+            self.queue.put(("versions", self.c.versions(fetch=True, timeout=60), self.c.current_version()))
+        except Exception as e:                               # the panel works without the list
+            self.queue.put(("output", f"(could not look for new versions: {str(e).splitlines()[0]})\n"))
+
+    def show_versions(self, found, here, why=None):
+        chosen = self.chosen_version()
+        self.here = here
+        self.versions = {v.label: v for v in found}
+        self.version_box.configure(values=list(self.versions))
+        keep = next((v for v in found if chosen is not None and v.branch == chosen.branch and not v.current), None)
+        now = keep or next((v for v in found if v.current), None)
+        self.version_var.set(now.label if now else (f"{here.commit[:8]} (on no version)" if here else ""))
+        self._say_version(why)
+        self.render(self.status)
+
+    def chosen_version(self):
+        """The control.Version chosen in the box; None if nothing can be chosen."""
+        return self.versions.get(self.version_var.get())
+
+    def _say_version(self, why=None):
+        here, chosen = self.here, self.chosen_version()
+        self.version_box.selection_clear()
+        if here is None:
+            text = why or "This folder is not a Git clone (or Git is missing), so no other version can be fetched here."
+        elif chosen is not None and not chosen.current:
+            text = (f"Chosen: {chosen.branch} at {chosen.commit[:8]}, of {chosen.date}: {chosen.subject}\n"
+                    f"Press Upgrade… to switch to it. This copy is on {here.branch or 'no version'} ({here.commit[:8]}).")
+        else:
+            text = f"This copy: {here.branch or 'on no version'} at {here.commit[:8]}, of {here.date}: {here.subject}"
+            if chosen is not None and chosen.behind:
+                text += (f"\nA newer one is there ({chosen.behind} commit{'s' if chosen.behind > 1 else ''} ahead): "
+                         f"press Upgrade… to fetch it.")
+            elif chosen is not None:
+                text += "\nIt is the newest of its version, as far as this copy knows."
+        self.version_note.configure(text=text)
+
+    def on_check(self):
+        if not self.details_open:
+            self.toggle_details()
+        self.run_action("Check for new", lambda: (self.c.versions(fetch=True, log=self.post_output), self.c.current_version()),
+                        lambda got: self.show_versions(*got), title="The versions could not be fetched")
+
+    def reopen(self):
+        """Open a new panel, which runs the panel's new code, and close this one."""
+        from tkinter import messagebox
+        try:
+            control.open_panel_again(self.c.repo)
+        except ControlError as e:
+            messagebox.showerror(control.APP_NAME, str(e), parent=self.root)
+            return
+        self._quit()
+
     # ------------------------------------------------------------------ buttons
     def on_start(self):
         if self.apply_settings():
@@ -387,23 +473,37 @@ class Panel:
 
     def on_upgrade(self):
         from tkinter import messagebox
+        chosen, here = self.chosen_version(), self.here
+        other = chosen is not None and not chosen.current
+        if other:
+            was = here.branch or f"the commit {here.commit[:8]}" if here else "what it holds"
+            title, second = "Switch to another version?", (
+                f"2. switch this copy from {was} to the version {chosen.branch} (git fetch, then git checkout);\n")
+        else:
+            title, second = "Upgrade the world engine?", "2. fetch the new version with git pull --ff-only;\n"
         text = ("The panel will:\n\n"
-                "1. stop the world engine, if it runs;\n"
-                "2. fetch the new version with git pull --ff-only;\n"
-                f"3. if the version changed, delete the default world {control.DEFAULT_WORLD}, so that the next start "
-                "builds it again with the new engine (one to two minutes). Other worlds are kept.\n\nUpgrade now?")
-        if not messagebox.askokcancel("Upgrade the world engine?", text, parent=self.root):
+                "1. stop the world engine, if it runs;\n" + second +
+                f"3. if the code changed, delete the default world {control.DEFAULT_WORLD}, so that the next start "
+                "builds it again with the new engine (one to two minutes). Other worlds are kept.\n\n"
+                + ("Switch now?" if other else "Upgrade now?"))
+        if not messagebox.askokcancel(title, text, parent=self.root):
             return
         if not self.details_open:
             self.toggle_details()
 
         def done(result):
-            if result.changed:
+            self._read_versions()
+            if result.changed and result.panel_changed and messagebox.askyesno(
+                    "Upgraded", result.message + "\n\nOpen the control panel again now? (This window closes, and the "
+                    "new one opens with the new version's buttons.)", parent=self.root):
+                self.reopen()
+            elif result.changed:
                 if messagebox.askyesno("Upgraded", result.message + "\n\nStart the world engine now?", parent=self.root):
                     self.on_start()
             else:
                 messagebox.showinfo("Upgrade", result.message, parent=self.root)
-        self.run_action("Upgrade", lambda: self.c.upgrade(log=self.post_output), done, title="The upgrade did not work")
+        self.run_action("Upgrade", lambda: self.c.upgrade(log=self.post_output, version=chosen.branch if other else None),
+                        done, title="The upgrade did not work")
 
     def on_rebuild(self):
         from tkinter import messagebox
@@ -572,6 +672,19 @@ def self_test(root, panel, out=None) -> int:
     if "viewer at" not in panel.text.get("1.0", "end"):
         problems.append("the details do not show the output")
     panel.toggle_details()
+    seen, here = panel.versions, panel.here                  # the Version box, with two versions that are made up
+    mine = control.Version("main", "a" * 40, "2026-01-01", "the first", current=True, behind=2)
+    other = control.Version("claude/another", "b" * 40, "2026-02-02", "the second")
+    panel.show_versions([other, mine], mine)
+    root.update()
+    if panel.chosen_version() is not mine or "2 commits ahead" not in panel.version_note.cget("text"):
+        problems.append(f"the Version box does not show this copy's version: {panel.version_note.cget('text')!r}")
+    panel.version_var.set(other.label)
+    panel._say_version()
+    root.update()
+    if panel.chosen_version() is not other or "Press Upgrade… to switch" not in panel.version_note.cget("text"):
+        problems.append(f"the Version box does not say what was chosen: {panel.version_note.cget('text')!r}")
+    panel.show_versions(list(seen.values()), here)
     choice = ask_choice(root, "Leave the world engine running?", "(self-test)", ("Keep running", "Stop and quit", "Cancel"),
                         auto="Keep running")
     if choice != "Keep running":
