@@ -485,23 +485,33 @@ class StoreView(WorldView):
 
 
 # ---------------------------------------------------------------------------------------------- run stores (build step 8)
-def save_run(path, world, first_day, day_reached, fields, lagged, drivers=None):
-    """A run store: the state of the stages that step through dates, beside a world store that it never changes."""
+RUN_NESTED = ("tables", "lagged_tables", "group_now", "group_lagged", "drivers")   # name -> column, member or term -> array
+
+
+def save_run(path, world, first_day, day_reached, fields, lagged, drivers=None, steps=None, calendar=None,
+             tables=None, lagged_tables=None, group_now=None, group_lagged=None):
+    """A run store: the state of the stages that step through dates, beside a world store that it never changes. It
+    names its world, its first day, the day it has reached and the calendar its steps were counted by, and for each
+    stage its step (a day, a month or a year) and the number of the step it reached. Beside the fields and the copies
+    read from the previous step it keeps the stages' tables, their members of groups and the causes of their last steps."""
     path = Path(path)
     if path.exists():
         raise FileExistsError(f"{path} exists; a run store is written once. Continue into a new one.")
     root = zarr.open_group(store=str(path), mode="w")
-    root.attrs.update({"world": world, "first_day": int(first_day), "day_reached": int(day_reached), "format": FORMAT})
+    root.attrs.update({"world": world, "first_day": int(first_day), "day_reached": int(day_reached), "format": FORMAT,
+                       "steps": _clean(steps or {}), "calendar": _clean(calendar)})
     for key, group in (("fields", fields), ("lagged", lagged)):
         g = root.create_group(key)
         for name, a in sorted(group.items()):
             _put(g, name, np.asarray(a))
-    d = root.create_group("drivers")
-    for field, terms in sorted((drivers or {}).items()):
-        if field in fields:
-            fg = d.create_group(field)
-            for term, a in sorted(terms.items()):
-                _put(fg, term, np.asarray(a))
+    nested = {"tables": tables, "lagged_tables": lagged_tables, "group_now": group_now, "group_lagged": group_lagged,
+              "drivers": {f: terms for f, terms in (drivers or {}).items() if f in fields}}
+    for key in RUN_NESTED:
+        g = root.create_group(key)
+        for name, parts in sorted((nested[key] or {}).items()):
+            sg = g.create_group(name)
+            for part, a in sorted(parts.items()):
+                _put(sg, part.replace(":", "~"), np.asarray(a))      # a push's member of a group is named push:<id>
     return path
 
 
@@ -511,7 +521,12 @@ def read_run(path) -> dict:
         raise FileNotFoundError(f"no run store at {path}")
     root = zarr.open_group(store=str(path), mode="r")
     a = dict(root.attrs)
-    return {"world": a["world"], "first_day": a["first_day"], "day_reached": a["day_reached"],
-            "fields": {k: root["fields"][k][...] for k in root["fields"].array_keys()},
-            "lagged": {k: root["lagged"][k][...] for k in root["lagged"].array_keys()}}
-
+    out = {"world": a["world"], "first_day": a["first_day"], "day_reached": a["day_reached"],
+           "steps": a.get("steps") or {}, "calendar": a.get("calendar"),
+           "fields": {k: root["fields"][k][...] for k in root["fields"].array_keys()},
+           "lagged": {k: root["lagged"][k][...] for k in root["lagged"].array_keys()}}
+    for key in RUN_NESTED:                                   # a run store written before they were kept holds none
+        g = root[key] if key in root else None
+        out[key] = {} if g is None else {name: {part.replace("~", ":"): g[name][part][...] for part in g[name].array_keys()}
+                                         for name in g.group_keys()}
+    return out

@@ -771,3 +771,63 @@ class PlantedClimate(Process):
         ctx.write("storm_track_density", np.broadcast_to(3.0 * mid, (m, n)))
         ctx.write("tc_genesis_potential", 5.0 * tropics[None, :] * (1.0 + season) / 2.0)
         ctx.write("potential_intensity", np.broadcast_to(np.where(sea, 70.0, 0.0), (m, n)))
+
+
+# ------------------------------------------------------------------------------- steps of a month and a year (dated steps)
+class MonthlyFlock(Process):
+    """A flock that steps by a month: it keeps a share of last month's flock and grows on the water it found in the
+    barrel when its month began, with a little drawn from the seed and the month's number, less the warmth it gave off
+    in its month before. It writes what it found, adds its warmth to a group, and logs the number and the length in
+    days of every step it makes in a table that it carries from step to step."""
+    stage = "flock"
+    reads_lagged = ("flock", "barrel", "table:toy_items")
+    reads_groups_lagged = ("toy_heat",)
+    writes = ("flock", "flock_saw", "table:toy_items")
+    adds_to = {"toy_heat": "flock_heat"}
+    draws = ("graze",)
+    model = "toy flock"
+    drivers = {"flock": ("kept", "grown")}
+    additive = ("flock",)
+
+    def run(self, ctx):
+        saw = ctx.read_lagged("barrel")
+        kept = ctx.const["keep"] * ctx.read_lagged("flock")
+        grown = ctx.const["share"] * saw + ctx.const["jitter"] * ctx.draw.uniform("graze", ctx.mesh.n) \
+            - ctx.read_group_lagged("toy_heat").total
+        ctx.write("flock", kept + grown)
+        ctx.write("flock_saw", saw)
+        ctx.add_to_group("toy_heat", ctx.const["heat"] * (kept + grown))
+        ctx.driver("flock", "kept", kept)
+        ctx.driver("flock", "grown", grown)
+        log = ctx.read_lagged("table:toy_items")
+        ctx.write_table("table:toy_items", {"item": np.append(log["item"], ctx.round),
+                                            "value": np.append(log["value"], ctx.step_length)})
+
+
+class FlockBarrel(Process):
+    """The barrel of RainBarrel, from which the flock drinks what it added to the group: a daily stage that reads a
+    monthly stage's member of a group as it stands."""
+    stage = "barrel"
+    reads = ("toy_rain",)
+    reads_lagged = ("barrel",)
+    reads_groups = ("toy_heat",)
+    writes = ("barrel",)
+    model = "toy barrel with a flock"
+
+    def run(self, ctx):
+        drunk = ctx.read_group("toy_heat").total
+        ctx.write("barrel", ctx.const["keep"] * ctx.read_lagged("barrel") + ctx.read("toy_rain") - drunk)
+
+
+class YearlyGrove(Process):
+    """A grove that steps by a year: it keeps a share of last year's grove and grows on the flock as it stood when the
+    year began; it adds up the days of the years it has stepped through and writes the number of its last year."""
+    stage = "grove"
+    reads_lagged = ("grove", "grove_days", "flock")
+    writes = ("grove", "grove_days", "grove_year")
+    model = "toy grove"
+
+    def run(self, ctx):
+        ctx.write("grove", ctx.const["keep"] * ctx.read_lagged("grove") + ctx.const["share"] * ctx.read_lagged("flock"))
+        ctx.write("grove_days", ctx.read_lagged("grove_days") + ctx.step_length)
+        ctx.write("grove_year", np.full(ctx.mesh.n, float(ctx.round)))

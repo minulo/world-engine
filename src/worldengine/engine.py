@@ -21,6 +21,7 @@ from . import __version__
 from . import interventions as iv
 from .draws import Draws
 from .fields import Registry
+from .library import days as dy
 from .mesh import get_mesh
 from .params import ParameterError, Parameters, fingerprint, freeze
 from .process import ContractError, GroupValue, Process, declaration
@@ -145,6 +146,8 @@ class Context:
         self.months = engine.months
         self.const = engine.constants[name]
         self.shared = engine.shared_for[name]
+        # On the dated clock the round is the number of the step (the day, the month counted over the years, or the year)
+        # and the step's length is the number of days it holds; on the geological clock the length is the round's My.
         self.round = round_no
         self.step_length = step_length
         self.draw = Draws(engine.seed, name, engine.allowed_draws.get(name, ()), when)
@@ -440,6 +443,11 @@ class Engine:
             if cfg["clock"] in ("weather", "dated") and any(st.startswith("Default[") for st in self.plan.order[name]):
                 problems.append(f"stages.yaml: stage {name} runs on the {cfg['clock']} clock, which is computed on request and "
                                 f"never stored; no label field may belong to it")
+            if cfg["clock"] == "dated" and cfg.get("step") in ("month", "year"):
+                length = dy.days_in_year(self.planet) / (self.months if cfg["step"] == "month" else 1)
+                if length < 1:
+                    problems.append(f"stages.yaml: stage {name} steps by a {cfg['step']}, but a {cfg['step']} of this planet "
+                                    f"lasts {length:.3g} days; a step must hold at least one whole day")
             for key in ("round_length_my", "history_length_my"):
                 if key in cfg and cfg["clock"] != "geological":
                     problems.append(f"stages.yaml: stage {name} gives {key}, which only a stage on the geological clock takes")
@@ -760,6 +768,7 @@ class Engine:
                 for key in [k for k in members if self.member_stage.get((g, k)) == stage]:
                     del members[key]
         when = "start" if starting else round_no
+        length = self._days_in_step(stage, round_no) if self.clocks[stage] == "dated" else cfg.get("round_length_my")
         spent = {}
         w.round_times.append({"stage": stage, "round": round_no, "cause_pass": bool(replay), "start_step": bool(starting), "seconds": spent})
         for step in self.plan.order[stage]:
@@ -778,7 +787,7 @@ class Engine:
                 proc, decl = self.procs[step], self.decls[step]
                 if starting and not decl["start"]:
                     continue
-                ctx = Context(self, step, proc, decl, stage, round_no, when, cfg.get("round_length_my"), recording, replay)
+                ctx = Context(self, step, proc, decl, stage, round_no, when, length, recording, replay)
                 (proc.start if starting else proc.run)(ctx)
                 ctx._finish(starting)
             spent[step] = time.perf_counter() - t0
@@ -1101,8 +1110,7 @@ class Engine:
         are the same bit for bit either way."""
         if not self.weather_stages():
             raise EngineError("this world has no weather stage: no process runs on the weather clock")
-        if not isinstance(day, (int, np.integer)) or day < 0:
-            raise EngineError(f"a day is a whole number from 0, the first day of year 0; asked for {day!r}")
+        day = self._whole_day(day)
         if self.world is None or getattr(self, "_weather_source", None) is not source:
             self._world_from(source)
             self._weather_source = source
@@ -1161,40 +1169,139 @@ class Engine:
                         borrowed.append(f)
         return patterns, borrowed
 
+    @staticmethod
+    def _whole_day(day) -> int:
+        if not isinstance(day, (int, np.integer)) or day < 0:
+            raise EngineError(f"a day is a whole number from 0, the first day of year 0; asked for {day!r}")
+        return int(day)
+
+    def dated_stages(self):
+        return [s for s in self.stage_list if self.clocks[s] == "dated" and visible(self.plan.order[s])]
+
+    def calendar(self) -> dict:
+        """The calendar by which the stages that step through dates are stepped: the planet's year in days, and its months."""
+        return {"days_in_year": float(dy.days_in_year(self.planet)), "months": int(self.months)}
+
+    def step_of(self, stage, day) -> int:
+        """The number of the step of a stage on the dated clock that a day lies in: the day itself, its month counted
+        over the years, or its year (library/days.py)."""
+        return dy.step_of(day, self.planet, self.months, self.stage_cfg[stage].get("step", "day"))
+
+    def _first_day(self, stage, number) -> int:
+        return dy.first_day_of_step(number, self.planet, self.months, self.stage_cfg[stage].get("step", "day"))
+
+    def _days_in_step(self, stage, number) -> int:
+        return dy.days_in_step(number, self.planet, self.months, self.stage_cfg[stage].get("step", "day"))
+
     def run_dated(self, source, run_path, last_day: int, continue_from=None, first_day: int = 0):
         """Step the stages on the dated clock from first_day (or from the day after a run store's last) to last_day,
-        each day after the weather of that day, and write their state to a new run store. The world store is not changed:
-        the run store names its world, its first date and the date it has reached (design, Layer 3)."""
+        and write their state to a new run store. The world store is not changed: the run store names its world, its
+        first date, the date it has reached, the calendar and, for each stage, its step and the step it reached
+        (design, Layer 3).
+
+        How the steps interleave. On each day of the run the weather of that day is worked out first (only where a
+        stage steps by a day: no other may read the weather), and then every stage on the dated clock whose step
+        begins on that day makes its step, in the order of stages.yaml. A stage that steps by a day steps every day;
+        one that steps by a month, on the first day of each month; one that steps by a year, on the first day of each
+        year, by the calendar of library/days.py, which puts a day in the month that the weather of the day mixes most
+        of. On a day on which two stages step, the one listed first steps first. A monthly stage listed before a daily
+        one therefore makes its step on the first day of a month before the daily step of that day: it reads the
+        daily stage as it stood at the end of the month before, and the daily stage reads the month's new value on
+        every day of the month. Listed after it, the monthly stage reads the daily stage as it stands at the end of
+        the month's first day. A step is numbered by its day, by its month counted from the first month of year 0, or
+        by its year (ctx.round); its length is the number of days it holds (ctx.step_length). A run starts on the
+        first day of a step of every stage. A run that stops inside a month has made that month's step, and its
+        continuation makes the next on the first day of the next month, as one long run would."""
         from . import store as st
-        dated = [s for s in self.stage_list if self.clocks[s] == "dated" and visible(self.plan.order[s])]
+        dated = self.dated_stages()
         if not dated:
             raise EngineError("this engine has no stage that steps through dates")
-        bad = [s for s in dated if self.stage_cfg[s].get("step", "day") != "day"]
-        if bad:
-            raise EngineError(f"stage {', '.join(bad)} steps by a {self.stage_cfg[bad[0]]['step']}; only a daily step is built")
+        last_day, first_day = self._whole_day(last_day), self._whole_day(first_day)
+        steps = {s: self.stage_cfg[s].get("step", "day") for s in dated}
         w = self._world_from(source)
-        start = first_day
         if continue_from is not None:
             state = st.read_run(continue_from)
             if state["world"] != source.attrs.get("world_fingerprint"):
                 raise EngineError("the run store belongs to another world; a run continues only on the world it began on")
-            w.fields.update(state["fields"])
-            w.lagged.update(state["lagged"])
+            kept = {s: r["step"] for s, r in state["steps"].items()}
+            if kept != steps:
+                raise EngineError(f"the run store's stages step through dates as follows: {_steps_said(kept)}; this engine's: "
+                                  f"{_steps_said(steps)}. A run continues only with the stages and the steps it began with")
+            if state["calendar"] != self.calendar():
+                old, new = state["calendar"] or {}, self.calendar()
+                raise EngineError(f"the run store's calendar has {old.get('days_in_year')!r} days in a year and {old.get('months')} "
+                                  f"months; this engine's has {new['days_in_year']!r} days and {new['months']} months. A run "
+                                  f"continues only on the calendar it began on")
+            self._load_run(state)
+            reached = {s: int(r["reached"]) for s, r in state["steps"].items()}
             start, first_day = state["day_reached"] + 1, state["first_day"]
+        else:
+            for s in dated:
+                if first_day > 0 and self.step_of(s, first_day - 1) == self.step_of(s, first_day):
+                    number = self.step_of(s, first_day)
+                    raise EngineError(f"a run starts on the first day of a step of each of its stages, but day {first_day} lies "
+                                      f"inside a {steps[s]} of stage {s}, which began on day {self._first_day(s, number)}; the "
+                                      f"next begins on day {self._first_day(s, number + 1)}")
+            reached = {s: self.step_of(s, first_day) - 1 for s in dated}
+            start = first_day
         if last_day < start:
             raise EngineError(f"the run has reached day {start - 1}; asked to stop at day {last_day}")
+        # A stage records its causes in the last step it makes in this run; one that makes none keeps those it had.
+        last_step = {s: self._first_day(s, self.step_of(s, last_day)) for s in dated}
+        daily = "day" in steps.values()
         with self._limit_threads():
             for day in range(start, last_day + 1):
-                for stage in self.weather_stages():
-                    self._run_round(stage, day, recording=False)
+                if daily:
+                    for stage in self.weather_stages():
+                        self._run_round(stage, day, recording=False)
                 for stage in dated:
-                    self._run_round(stage, day, recording=day == last_day)
+                    number = self.step_of(stage, day)
+                    if number == reached[stage]:                 # the stage is inside a step it has made
+                        continue
+                    self._run_round(stage, number, recording=day == last_step[stage])
                     self._end_round(stage, 1.0)
-        fields = {f: w.fields[f] for f, s in self.stage_of.items() if s in dated and f in w.fields}
-        lagged = {f: a for f, a in w.lagged.items() if self.stage_of.get(f) in dated}
+                    reached[stage] = number
+        state = self._dated_state(dated)
         st.save_run(run_path, world=source.attrs.get("world_fingerprint"), first_day=first_day, day_reached=last_day,
-                    fields=fields, lagged=lagged, drivers=dict(w.drivers))
-        return fields
+                    steps={s: {"step": steps[s], "reached": reached[s]} for s in dated}, calendar=self.calendar(), **state)
+        return state["fields"]
+
+    def _dated_state(self, dated) -> dict:
+        """What the stages on the dated clock carry from step to step: their fields and tables, the copies read from
+        the previous step, their members of groups, and the causes of their last steps."""
+        w = self.world
+        ours = lambda g, k: self.member_stage.get((g, k)) in dated
+        members = lambda held: {g: {k: v for k, v in m.items() if ours(g, k)} for g, m in held.items()
+                                if any(ours(g, k) for k in m)}
+        return {"fields": {f: w.fields[f] for f, s in self.stage_of.items() if s in dated and f in w.fields},
+                "lagged": {f: a for f, a in w.lagged.items() if self.stage_of.get(f) in dated},
+                "tables": {t: dict(c) for t, c in w.tables.items() if self.table_stage.get(t) in dated},
+                "lagged_tables": {t: dict(c) for t, c in w.lagged_tables.items() if self.table_stage.get(t) in dated},
+                "group_now": members(w.group_now), "group_lagged": members(w.group_lagged),
+                "drivers": {f: dict(t) for f, t in w.drivers.items() if self.stage_of.get(f) in dated}}
+
+    def _load_run(self, state):
+        """Fill the world with the state that a run store keeps, each field and column in its own type again (a store
+        keeps true and false as 0 and 1)."""
+        w = self.world
+        for key in ("fields", "lagged"):
+            for f, a in state[key].items():
+                spec = self.registry.fields.get(f)
+                a = np.array(a, dtype=spec.dtype if spec else None)
+                a.flags.writeable = False
+                getattr(w, key)[f] = a
+        for key in ("tables", "lagged_tables"):
+            for t, cols in state[key].items():
+                types = self.registry.tables[t].columns
+                typed = {c: np.array(a, dtype=types.get(c)) for c, a in cols.items()}
+                for a in typed.values():
+                    a.flags.writeable = False
+                getattr(w, key)[t] = typed
+        for key in ("group_now", "group_lagged"):
+            for g, held in state[key].items():
+                getattr(w, key).setdefault(g, {}).update(held)
+        for f, terms in state["drivers"].items():
+            w.drivers[f] = dict(terms)
 
     def _check_ranges(self):
         """Each model states the range of planet parameters in which it is expected to hold (design, Layer 9)."""
@@ -1306,6 +1413,10 @@ class Engine:
         if limit is not None and w.meta["build_seconds"] > limit:
             w.notice("run_time_over_limit", profile=self.profile_name, seconds=round(w.meta["build_seconds"], 1), limit_s=limit)
         return w
+
+def _steps_said(steps) -> str:
+    return ", ".join(f"stage {s} by a {step}" for s, step in sorted(steps.items())) or "none"
+
 
 def engine_for_store(view, log=None) -> "Engine":
     """An engine with the parameters a world store was built with, read back from the store's own copy: for what is
