@@ -3,7 +3,7 @@
     python -m worldengine order   [--profile P]
     python -m worldengine build   --profile preview --out worlds/first.zarr [--seed N] [--interventions FILE]
                                   [--history-my 500 --continue-from worlds/older.zarr]
-    python -m worldengine serve   worlds/first.zarr [--port 8765]
+    python -m worldengine serve   worlds/first.zarr [--port 8765] [--host 127.0.0.1] [--open] [--check]
     python -m worldengine explain worlds/first.zarr --lat 48 --lon -20 --field biome
     python -m worldengine info    worlds/first.zarr
 """
@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import secrets
+import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -41,6 +45,86 @@ def _engine(args, log=None):
     return Engine(args.data, profile=args.profile, seed=args.seed, overrides=overrides or None, log=log)
 
 
+def open_browser(url) -> bool:
+    """Open the viewer in the system's browser, from a thread of its own so that the server starts whatever the
+    browser does. On Linux only where there is a screen (DISPLAY or WAYLAND_DISPLAY) or a browser named in BROWSER:
+    without one, webbrowser would start a text browser such as w3m in the terminal that runs the server."""
+    import webbrowser
+    if sys.platform.startswith("linux") and not any(os.environ.get(v) for v in ("DISPLAY", "WAYLAND_DISPLAY", "BROWSER")):
+        print(f"no screen to open a browser on: open {url} in a browser")
+        return False
+    threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+    return True
+
+
+def _serve(args) -> int:
+    from .server import check, local_url, make_server, remove_run_file, write_run_file
+    token = secrets.token_hex(16)                            # for POST /api/stop, from the control panel (panel/)
+    try:
+        srv = make_server(args.store, host=args.host, port=args.port, stop_token=token)
+    except FileNotFoundError:
+        raise
+    except OSError as e:                                     # the port is in use, or not this program's to take
+        print(f"refused: cannot listen on {args.host} port {args.port} ({e.strerror or e}). Another program, or a world "
+              f"server started before, may hold it: stop that one, or choose another port with --port", file=sys.stderr)
+        return 2
+    for wmsg in srv.RequestHandlerClass.service.warnings():
+        print("warning:", wmsg)
+    url = local_url(srv)
+    if args.host not in ("127.0.0.1", "localhost"):
+        print(f"note: listening on {args.host}, so other machines that reach this one can open the viewer too")
+    run_file = write_run_file(srv, args.store, token)        # removed again however the server stops, short of a kill
+    try:
+        if args.check:                                       # serve, ask, answer, stop: for the launchers and the workflow
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            try:
+                for line in check(srv):
+                    print("check:", line, flush=True)
+            except (OSError, RuntimeError, ValueError, KeyError) as e:
+                print(f"check failed at {url}: {type(e).__name__}: {e}", file=sys.stderr)
+                return 1
+            finally:
+                srv.shutdown()
+                srv.server_close()
+            print(f"check passed: the viewer and the world were served at {url}")
+            return 0
+        before = None
+        try:
+            # The handler is set before the address is printed: whoever starts the server and stops it on reading that
+            # line (a test, a service manager) must find it ready. Printed first, a signal could land in between and end
+            # the server with no "stopped" (seen on ubuntu-latest: exit -15 on SIGTERM, a traceback on SIGINT).
+            before = _stop_on_sigterm()
+            print(f"viewer at {url}  (stop with Ctrl+C)", flush=True)
+            if args.open:
+                open_browser(url)
+            srv.serve_forever()                              # returns after POST /api/stop
+            print("stopped (asked by the control panel)", flush=True)
+        except KeyboardInterrupt:
+            print("stopped", flush=True)
+        finally:
+            srv.server_close()
+            if before is not None:
+                signal.signal(signal.SIGTERM, before)
+        return 0
+    finally:
+        remove_run_file(run_file)
+
+
+def _stop_on_sigterm():
+    """Stop on SIGTERM as on Ctrl+C. `docker stop`, `kill` and service managers send SIGTERM, and the first process of
+    a container (the server, in the Dockerfile) has no default action for it: Linux delivers to the first process of
+    a namespace only the signals it has a handler for. [MEASURED in the image of the Dockerfile, without this handler:
+    `docker stop` waited 10.2 s and then killed the server, exit code 137.] Returns the handler it replaced, or None
+    where none can be set (outside the main thread). On Windows the handler is set and never called: a process there
+    is stopped by TerminateProcess, without a signal."""
+    def stop(signum, frame):
+        raise KeyboardInterrupt
+    try:
+        return signal.signal(signal.SIGTERM, stop)
+    except ValueError:
+        return None
+
+
 def _nearest_cell(view, lat, lon):
     la, lo = np.deg2rad(lat), np.deg2rad(lon)
     p = np.array([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)])
@@ -63,8 +147,12 @@ def main(argv=None) -> int:
             sp.add_argument("--continue-from", default=None, help="a world store whose geological history this build goes on from")
     sp = sub.add_parser("serve")
     sp.add_argument("store")
-    sp.add_argument("--port", type=int, default=8765)
-    sp.add_argument("--host", default="127.0.0.1")
+    sp.add_argument("--port", type=int, default=8765, help="the port to listen on; 0 takes a free one (default 8765)")
+    sp.add_argument("--host", default="127.0.0.1", help="the address to listen on: 127.0.0.1, this machine alone (the "
+                                                         "default), or 0.0.0.0, every address (in a container)")
+    sp.add_argument("--open", action="store_true", help="open the viewer in the system's browser")
+    sp.add_argument("--check", action="store_true", help="start, fetch the page and /api/world from the server, say what "
+                                                          "came back and stop: exit code 0 if both answered, 1 if not")
     sp = sub.add_parser("explain")
     sp.add_argument("store")
     sp.add_argument("--field", required=True)
@@ -74,10 +162,22 @@ def main(argv=None) -> int:
     sp.add_argument("--json", action="store_true")
     sp = sub.add_parser("info")
     sp.add_argument("store")
+    sp = sub.add_parser("weather", help="the weather of one day at one place, worked out on request (build step 8)")
+    sp.add_argument("store")
+    sp.add_argument("--day", type=int, required=True, help="days from the first day of year 0")
+    sp.add_argument("--days", type=int, default=1, help="this many days from --day on")
+    sp.add_argument("--cell", type=int)
+    sp.add_argument("--lat", type=float)
+    sp.add_argument("--lon", type=float)
+    sp = sub.add_parser("detail", help="finer cells over one region of a world: a summary of what they hold (build step 11)")
+    sp.add_argument("store")
+    sp.add_argument("--lat", type=float, required=True)
+    sp.add_argument("--lon", type=float, required=True)
+    sp.add_argument("--radius-km", type=float, default=500.0)
     args = ap.parse_args(argv)
     print_anywhere()
-    if args.cmd == "explain" and args.cell is None and (args.lat is None or args.lon is None):
-        print("refused: explain needs a place: --cell N, or --lat and --lon", file=sys.stderr)
+    if args.cmd in ("explain", "weather") and args.cell is None and (args.lat is None or args.lon is None):
+        print(f"refused: {args.cmd} needs a place: --cell N, or --lat and --lon", file=sys.stderr)
         return 2
     try:
         if args.cmd == "order":
@@ -120,17 +220,37 @@ def main(argv=None) -> int:
             ans = explain(view, cell, args.field)
             print(json.dumps(ans, indent=1) if args.json else as_text(ans))
             return 0
-        if args.cmd == "serve":
-            from .server import make_server
-            srv = make_server(args.store, host=args.host, port=args.port)
-            for wmsg in srv.RequestHandlerClass.service.warnings():
-                print("warning:", wmsg)
-            print(f"viewer at http://{args.host}:{args.port}/  (stop with Ctrl+C)")
+        if args.cmd == "weather":
+            from .engine import EngineError, engine_for_store
+            cell = args.cell if args.cell is not None else _nearest_cell(view, args.lat, args.lon)
+            eng = engine_for_store(view)
             try:
-                srv.serve_forever()
-            except KeyboardInterrupt:
-                pass
+                for day in range(args.day, args.day + max(1, args.days)):
+                    w = eng.day_weather(view, day)
+                    wind = w["weather_wind"][cell]
+                    speed = float(np.linalg.norm(wind))
+                    print(f"day {day}: {w['weather_temperature'][cell] - 273.15:6.1f} C, {w['weather_precipitation'][cell]:6.1f} mm, "
+                          f"{w['weather_pressure'][cell] / 100:7.1f} hPa, wind {speed:4.1f} m/s, storms {w['storm_influence'][cell]:.2f}")
+            except EngineError as e:
+                print(f"refused: {e}", file=sys.stderr)
+                return 2
             return 0
+        if args.cmd == "detail":
+            from . import detail as dt
+            from .mesh import get_mesh
+            coarse = get_mesh(int(view.meta["mesh_level"]))
+            region = dt.region_cells(coarse, args.lat, args.lon, args.radius_km, view.attrs["planet"]["radius_m"])
+            if region.size == 0:
+                print("refused: no cell of the world lies within that distance", file=sys.stderr)
+                return 2
+            d = dt.refine(view, region)
+            f = d.fields
+            print(f"{region.size} cells of the world, {d.cells.size} fine cells of mesh level {d.level}")
+            print(f"heights {f['elevation'].min():.0f} to {f['elevation'].max():.0f} m; sea on {f['ocean_mask'].mean():.0%} of the fine "
+                  f"cells, lakes on {f['lake'].mean():.0%}; the largest river carries {f['river_discharge'].max():.0f} m3/s")
+            return 0
+        if args.cmd == "serve":
+            return _serve(args)
     except (ParameterError, Refused, FileNotFoundError, KeyError, IndexError) as e:      # (IndexError: a cell the world does not have)
         print(f"refused: {str(e).strip(chr(39) + chr(34))}", file=sys.stderr)
         return 2

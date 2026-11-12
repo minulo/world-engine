@@ -12,6 +12,7 @@ const state = {
   world: null, field: null, part: "", month: 1, flat: false, lon0: 0, lat0: 20, zoom: 0.92, panX: 0, panY: 0,
   idmap: null, idW: 0, idH: 0, data: null, stats: null, selected: -1, playing: null, cache: new Map(), sea: null,
   frame: -1, filming: null,                // frame: a picture of the geological history, or -1 for the world as it ends
+  day: 0, stepping: null, dayRanges: {},   // day: the date of the weather shown; a day's colour scale is kept from the first day shown
 };
 
 // ---------------------------------------------------------------- colour
@@ -35,6 +36,8 @@ const FIELD_MAP = {
   potential_evapotranspiration: ["rain", false], soil_moisture: ["rain", false], snow_water: ["water", false, "log"],
   snow_cover: ["water", false],
   slope: ["viridis", false, "log"],
+  weather_temperature: ["thermal", false], weather_precipitation: ["rain", false, "log"], storm_influence: ["water", false],
+  daily_temperature_spread: ["thermal", false], wet_day_fraction: ["rain", false],
 };
 const LOG_DECADES = 4;                    // a log scale spans this many powers of ten below its top
 const ZERO_IS_NONE = { depression_id: true };     // index fields in which 0 means "none", drawn in the neutral colour
@@ -198,11 +201,21 @@ async function getJSON(url) { const r = await fetch(url); const j = await r.json
 async function getBuffer(url) { const r = await fetch(url); if (!r.ok) throw new Error((await r.json()).error || r.statusText); return r.arrayBuffer(); }
 function spec() { return state.world.fields[state.field]; }
 function isMonthly() { return spec().shape === "month_cell"; }
+function isDaily() { return spec().shape === "day_cell"; }
 function inHistory() { const h = state.world.history; return !!h && h.fields.includes(state.field); }
 function framed() { return inHistory() && state.frame >= 0 && state.frame < state.world.history.rounds.length; }
 async function loadField() {
-  const s = spec(), key = `${state.field}|${isMonthly() ? state.month : 0}|${state.part}|${framed() ? state.frame : -1}`;
+  const s = spec(), key = `${state.field}|${isMonthly() ? state.month : 0}|${state.part}|${framed() ? state.frame : -1}|${isDaily() ? state.day : -1}`;
   let arr = state.cache.get(key);
+  if (!arr && isDaily()) {
+    const q = new URLSearchParams({ name: state.field, day: state.day });
+    if (s.kind === "direction" && state.part) q.set("part", state.part);
+    $("status").textContent = `working out day ${state.day}…`;
+    arr = new Float32Array(await getBuffer("/api/weather?" + q));
+    $("status").textContent = "";
+    if (state.cache.size > 80) state.cache.clear();
+    state.cache.set(key, arr);
+  }
   if (!arr && framed()) {
     arr = new Float32Array(await getBuffer("/api/history?" + new URLSearchParams({ name: state.field, index: state.frame })));
     if (state.cache.size > 80) state.cache.clear();
@@ -221,6 +234,12 @@ async function loadField() {
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tex.data);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, DATA_W, h, 0, gl.RED, gl.FLOAT, filled);
   draw();
+}
+function rangeOf(arr, positive) {       // as the server's stats: the 2nd and 98th percentiles, and the 99.9th for a log scale
+  const f = Array.from(arr).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!f.length) return { min: null, max: null, low: null, high: null, top: null };
+  const at = (p) => f[Math.min(f.length - 1, Math.floor(p / 100 * f.length))];
+  return { min: f[0], max: f[f.length - 1], low: positive ? 0 : at(2), high: at(98), top: at(99.9) };
 }
 function padded(arr) { const h = Math.ceil(arr.length / DATA_W), out = new Float32Array(DATA_W * h); out.set(arr); return [out, h]; }
 function named(field, v) {                // a number that names a thing is a whole number, and one of them means "none"
@@ -243,6 +262,8 @@ async function selectField() {
   $("fielddesc").textContent = s.description || "";
   $("partrow").hidden = s.kind !== "direction";
   $("historyrow").hidden = !inHistory();
+  $("dayrow").hidden = !isDaily();
+  if (!isDaily() && state.stepping) toggleDays();
   if (!inHistory() && state.filming) toggleFilm();
   $("monthrow").style.opacity = isMonthly() ? 1 : 0.4; $("month").disabled = $("play").disabled = !isMonthly();
   if (!isMonthly() && state.playing) togglePlay();
@@ -272,7 +293,12 @@ async function selectField() {
       "Click a cell for its number. Grey means none" + (ZERO_IS_NONE[state.field] ? " (0)." : " (-1).");
     legend.append(note);
   } else {
-    state.stats = await getJSON("/api/stats?name=" + encodeURIComponent(state.field));
+    if (isDaily()) {                       // no stored values to scale by: the first day shown sets the scale
+      await loadField();
+      const rk = `${state.field}|${state.part}`;
+      state.dayRanges[rk] = state.dayRanges[rk] || rangeOf(state.data, s.kind === "direction" && !state.part);
+      state.stats = state.dayRanges[rk];
+    } else state.stats = await getJSON("/api/stats?name=" + encodeURIComponent(state.field));
     lo = state.stats.low ?? 0; hi = state.stats.high ?? 1;
     log = scale === "log" && state.stats.top > 0;
     if (log) { hi = state.stats.top; lo = hi / 10 ** LOG_DECADES; }
@@ -306,7 +332,8 @@ async function selectField() {
   gl.uniform1i(uni.uCategorical, cat ? 1 : names_a_thing ? 2 : 0); gl.uniform1i(uni.uSplit, split ? 1 : 0);
   gl.uniform1i(uni.uLog, log ? 1 : 0); gl.uniform1i(uni.uZeroNone, ZERO_IS_NONE[state.field] ? 1 : 0);
   gl.uniform1f(uni.uLo, lo); gl.uniform1f(uni.uHi, hi);
-  const line = state.world.lineage[state.field], m = line && state.world.models[line.writer];
+  const writer = state.world.weather && state.world.weather.writers ? state.world.weather.writers[state.field] : null;
+  const line = state.world.lineage[state.field] || (writer ? { writer, pushes: [] } : null), m = line && state.world.models[line.writer];
   $("model").innerHTML = line ? `<p><b>Written by</b> ${line.writer}${line.pushes.length ? ", then pushed by " + line.pushes.join(", ") : ""}.</p>` +
     (m && m.model ? `<p><b>Model.</b> ${m.model}</p><p><b>What it ignores.</b> ${m.ignores || ""}</p><p><b>Where it will be wrong.</b> ${m.wrong_where || ""}</p>` : "") : "";
   draw();
@@ -334,8 +361,13 @@ async function showCell(id) {
     else shown = fmt(v, s.unit);
     rows.push(`<tr class="${name === state.field ? "current" : ""}"><td>${name.replace(/_/g, " ")}</td><td class="num">${shown}</td></tr>`);
   }
+  if (isDaily() && state.data) { const s = spec(), v = state.data[id];
+    rows.unshift(`<tr class="current"><td>${state.field.replace(/_/g, " ")} (day ${state.day})</td><td class="num">${fmt(v, s.unit)}</td></tr>`); }
   $("cellvalues").innerHTML = `<table><thead><tr><th>Field</th><th>Value (month ${state.month})</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
-  const why = $("why"); why.innerHTML = `<p class="muted small">asking why…</p>`;
+  const why = $("why");
+  if (isDaily()) { why.innerHTML = `<p class="muted small">The weather of a day keeps no cause records: it is drawn from the seed and the date ` +
+    `around the climate. Ask why of the climate it is drawn around: surface temperature, precipitation, daily temperature spread, wet day fraction.</p>`; return; }
+  why.innerHTML = `<p class="muted small">asking why…</p>`;
   try {
     const a = await getJSON(`/api/explain?cell=${id}&field=${encodeURIComponent(state.field)}`);
     const items = a.chain.map((st) => `<li class="${st.push ? "push" : ""}">${st.text.replace(/</g, "&lt;")}</li>`).join("");
@@ -369,6 +401,22 @@ function toggleFilm() {
   if (state.frame < 0) state.frame = n;
   state.filming = setInterval(async () => { await showFrame(state.frame < 0 ? 0 : (state.frame + 1) % (n + 1)); }, 450);
 }
+function dayLabel() {
+  const per = state.world.weather.days_per_year, year = Math.floor(state.day / per);
+  $("daylabel").textContent = `${state.day} (year ${year}, day ${Math.floor(state.day - year * per) + 1} of the year)`;
+}
+async function showDay(d) {
+  state.day = Math.max(0, d); $("day").value = state.day; dayLabel(); await loadField();
+  if (state.selected >= 0) showCell(state.selected);
+}
+function toggleDays() {
+  const b = $("playdays");
+  if (state.stepping) { clearInterval(state.stepping); state.stepping = null; b.textContent = "Play"; b.setAttribute("aria-pressed", "false"); return; }
+  b.textContent = "Pause"; b.setAttribute("aria-pressed", "true");
+  let busy = false;                        // a day takes the server a moment: the next is asked for when this one is drawn
+  state.stepping = setInterval(async () => { if (busy) return; busy = true;
+    try { await showDay((state.day + 1) % (+$("day").max + 1)); } finally { busy = false; } }, 250);
+}
 function setView(flat) {
   state.flat = flat; state.zoom = flat ? 1 : 0.92; state.panX = state.panY = 0;
   $("viewflat").setAttribute("aria-pressed", String(flat)); $("viewglobe").setAttribute("aria-pressed", String(!flat)); draw();
@@ -381,6 +429,8 @@ function wire() {
   $("play").addEventListener("click", togglePlay);
   $("frame").addEventListener("input", (e) => showFrame(+e.target.value));
   $("playhist").addEventListener("click", toggleFilm);
+  $("day").addEventListener("input", (e) => showDay(+e.target.value));
+  $("playdays").addEventListener("click", toggleDays);
   $("viewglobe").addEventListener("click", () => setView(false)); $("viewflat").addEventListener("click", () => setView(true));
   let drag = null;
   canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, moved: false }; canvas.setPointerCapture(e.pointerId); canvas.classList.add("dragging"); });
@@ -403,6 +453,7 @@ function wire() {
   canvas.addEventListener("wheel", (e) => { e.preventDefault(); state.zoom = Math.max(0.5, Math.min(40, state.zoom * Math.exp(-e.deltaY * 0.0015))); draw(); }, { passive: false });
   window.addEventListener("resize", draw);
 }
+function asked0() { return new URLSearchParams(location.search); }
 async function start() {
   if (!initGL()) return;
   wire(); draw();
@@ -410,8 +461,15 @@ async function start() {
   const m = w.meta;
   $("worldinfo").textContent = `${m.cells.toLocaleString()} cells · profile ${m.profile} · seed ${w.seed} · engine ${w.engine_version}`;
   const msgs = [...w.notices, ...w.warnings];
-  if (msgs.length) { $("banner").hidden = false; $("banner").innerHTML = msgs.map((t) => `<p>${t}</p>`).join(""); }
   $("month").max = m.months;
+  if (w.weather && w.weather.why_not) msgs.push(w.weather.why_not);
+  if (w.weather && Object.keys(w.weather.fields).length) {        // the fields of a day join the list: worked out on request
+    for (const [name, s] of Object.entries(w.weather.fields)) w.fields[name] = { ...s, family: s.family + " (one day)" };
+    $("day").max = Math.ceil(w.weather.days_per_year) * 10 - 1;
+    if (asked0().has("day")) state.day = Math.max(0, +asked0().get("day"));
+    $("day").value = state.day; dayLabel();
+  }
+  if (msgs.length) { $("banner").hidden = false; $("banner").innerHTML = msgs.map((t) => `<p>${t}</p>`).join(""); }
   const groups = {};
   for (const [name, s] of Object.entries(w.fields)) (groups[s.family] = groups[s.family] || []).push(name);
   const sel = $("field");

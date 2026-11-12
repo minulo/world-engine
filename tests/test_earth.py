@@ -1461,9 +1461,12 @@ def test_earths_measured_climate_falls_into_the_climate_classes_in_earths_shares
     the share Peel, Finlayson and McMahon 2007 give [DOCUMENTED when build step 2 was written]: arid B 30.2 %,
     cold D 24.6 %, tropical A 19.0 %, temperate C 13.4 %, polar E 12.8 %. The 6 points were chosen when the test
     was written."""
-    out = earth.h.run("Biomes", reads={"surface_temperature": earth.celsius + 273.15, "precipitation": earth.rain, "ocean_mask": earth.wet})
-    names = earth.h.registry.fields["climate_class"].categories
-    group = np.array([n[0] for n in names])[out.fields["climate_class"]]
+    # the classifier itself (library/koppen.py), which Biomes runs since build step 7 among the rest of BIOME1
+    from worldengine.library.koppen import koppen
+    rules = earth.h.params["models"]["slots"]["Biomes"]["constants"]["koppen"]
+    group = np.full(earth.mesh.n, "-")
+    classes, _ = koppen(earth.celsius[:, earth.land], earth.rain[:, earth.land], rules)
+    group[earth.land] = [str(n)[0] for n in classes]
     land_area = earth.area[earth.land].sum()
     for letter, share in (("A", 19.0), ("B", 30.2), ("C", 13.4), ("D", 24.6), ("E", 12.8)):
         found = 100.0 * earth.area[earth.land & (group == letter)].sum() / land_area
@@ -1491,16 +1494,13 @@ def _twin_numbers(twin):
 
 def test_on_earths_relief_the_engine_makes_earths_sea_a_climate_near_earths_mean_and_the_amazon(twin):
     """Found, then kept (first run of the twin): the sea stands within 60 m of Earth's level and covers 69 to 73 % of
-    the planet; the mean temperature of the year is within 2 K of Earth's; the wettest land lies within 15 degrees
-    of the equator; and the largest river of the twin reaches the sea within 800 km of the Amazon's mouth, with a
-    flow within a factor of two of the Amazon's 210,000 m3/s."""
+    the planet; the wettest land lies within 15 degrees of the equator; and the largest river of the twin reaches the
+    sea within 800 km of the Amazon's mouth. (The mean temperature and the Amazon's flow, kept here until build step 8,
+    are the test that follows.)"""
     e, w = twin
     m, f, area, wet, land, celsius, earth_celsius = _twin_numbers(twin)
     assert w.settled["climate"] and e.order()["geological"][0] == "Isostasy" and "Tectonics" not in e.order()["geological"]
     assert abs(w.tables["seas"]["surface_m"][0]) < 60.0 and 0.69 < area[wet].sum() / area.sum() < 0.73
-    mean = lambda x, mask: (x * area)[mask].sum() / area[mask].sum()
-    everywhere = np.ones(m.n, dtype=bool)
-    assert abs(mean(celsius.mean(axis=0), everywhere) - mean(earth_celsius.mean(axis=0), everywhere)) < 2.0
     yearly = f["precipitation"].astype(np.float64).sum(axis=0)
     lat, land_rain = op.zonal_mean(m, yearly, 10.0, mask=land.astype(np.float64))
     assert abs(lat[np.nanargmax(land_rain)]) <= 15.0
@@ -1511,7 +1511,22 @@ def test_on_earths_relief_the_engine_makes_earths_sea_a_climate_near_earths_mean
     a, b = np.deg2rad(-0.5), np.deg2rad(-50.0)
     mouth = np.array([np.cos(a) * np.cos(b), np.cos(a) * np.sin(b), np.sin(a)])
     assert np.arccos(np.clip(m.xyz[largest] @ mouth, -1, 1)) * R / 1000.0 < 800.0
-    assert 105_000.0 < river[largest] < 420_000.0
+
+
+def test_on_earths_relief_the_year_is_near_earths_and_the_amazon_carries_its_water(twin):
+    """Found, then kept (first run of the twin): the mean temperature of the year within 2 K of Earth's, and the
+    largest river within a factor of two of the Amazon's 210,000 m3/s. Both failed from build step 8 (2.1 K colder, and
+    88,000 m3/s) until the wind's overturning was closed on 2026-10-25 (docs/BUILD_NOTES.md, 22): measured since,
+    0.6 K colder (13.3 against 14.0 C) and 134,451 m3/s [MEASURED: handoff/summer/twin_pins.log]."""
+    e, w = twin
+    m, f, area, wet, land, celsius, earth_celsius = _twin_numbers(twin)
+    mean = lambda x, mask: (x * area)[mask].sum() / area[mask].sum()
+    everywhere = np.ones(m.n, dtype=bool)
+    gap = mean(celsius.mean(axis=0), everywhere) - mean(earth_celsius.mean(axis=0), everywhere)
+    recv = f["flow_receiver"]
+    coast = np.flatnonzero(land & (recv >= 0) & wet[np.maximum(recv, 0)])
+    largest = f["river_discharge"].astype(np.float64).mean(axis=0)[coast].max()
+    assert abs(gap) < 2.0 and 105_000.0 < largest < 420_000.0, f"{gap:+.1f} K; {largest:,.0f} m3/s"
 
 
 def test_the_twin_says_where_its_relief_comes_from(twin):
@@ -1531,16 +1546,16 @@ def test_the_twin_says_where_its_relief_comes_from(twin):
     assert "Tectonics" not in w.lineage["elevation"]["model"] and "crust_thickness" not in w.lineage
 
 
-@missed("13.4 K against Earth's 31.1 K [MEASURED]. Over that land the twin's coldest month is as cold as Earth's (-12.6 C "
-        "against -12.7 C) and its warmest is 17 K too cold (1.4 C against 18.4 C); the year is 9.3 K too cold (-5.8 C against "
-        "3.5 C), and 52 % of that land lies under snow in every month [MEASURED: handoff/pass2/twin_seasons.log; the test of "
-        "the twin's expected failures, below]. Two causes were measured afterwards, on twins built with one "
-        "constant changed (python handoff/pass3/seasons_apart.py, seasons_sea.py; their logs beside them; no test holds "
-        "those runs): with no snow counted on the ground the warmest month is 9.1 C and the coldest -7.3 C, and with a sea "
-        "that warms three times faster the swing is 20.5 K. The sea of the twin hardly has seasons, and the land is tied "
-        "to it; snow that never melts cools summer and winter alike, which hides in winter that the land is tied to the "
-        "sea. No single heat capacity of the sea returns both the northern and the southern seas, so nothing is mended "
-        "(docs/BUILD_NOTES.md, section 4.9).")
+@missed("21.7 K against Earth's 31.1 K [MEASURED, 2026-10-25; 20.6 K at the end of build step 8, 13.4 K at the end of step 2]. "
+        "Over that land the twin's coldest month is 1.0 K colder than Earth's (-13.7 C against -12.7 C) and its warmest 8.2 K "
+        "too cold (10.2 C against 18.4 C); the year is 5.8 K too cold (-2.3 C against 3.5 C), and 1.2 % of that land lies "
+        "under snow in every month [MEASURED; the test of the twin's expected failures, below]. Steps 4 to 6 gave the sea its "
+        "seasons and let snow melt on a month's warmer days (docs/BUILD_NOTES.md, 14 and 16); on 2026-10-24 and 25 the wind's "
+        "overturning was closed, which had taken 3.9 W/m2 out of the planet, and land was given less cloud than the sea "
+        "(warmest month 6.2 C before; docs/BUILD_NOTES.md, 22). What is left is measured there: the twin's seas between 40 and "
+        "60 north are 4.0 K too cold on the year and the land is tied to them, and its ocean carries 0.52 PW southward across "
+        "the equator where Earth's carries about 0.4 PW northward, through an overturning driven by density that the engine "
+        "does not have.")
 def test_northern_land_is_far_warmer_in_july_than_in_january_as_on_earth(twin):
     """Between 40 and 60 degrees north Earth's land is 31 K warmer in July than in January [MEASURED from the
     temperature data]. The condition: the twin's land reaches three quarters of that."""
@@ -1552,10 +1567,10 @@ def test_northern_land_is_far_warmer_in_july_than_in_january_as_on_earth(twin):
     assert swing > 0.75 * measured, f"{swing:.1f} K against {measured:.1f} K"
 
 
-@missed("Group D takes 2.1 % of the twin's land, and the polar group E 46.3 % where Earth has 12.8 %, and 35 % of "
-        "the twin's land lies under snow in every month [MEASURED]. That group D is missing because northern land with "
-        "warm summers on Earth stays under 10 C in its warmest month on the twin is a reading: the share of that land "
-        "was not counted [INFERRED].")
+@missed("Group D takes 14.9 % of the twin's land, and the polar group E 35.0 % where Earth has 12.8 %, and 12 % of "
+        "the twin's land lies under snow in every month [MEASURED, 2026-10-25; 9.4, 42.8 and 18 % at the end of build step 8]. "
+        "That group D falls short because northern land with warm summers on Earth stays under 10 C in its warmest month on "
+        "the twin is a reading: the share of that land was not counted [INFERRED].")
 def test_the_cold_climates_with_warm_summers_take_a_fifth_of_the_twins_land_as_on_earth(twin):
     """Group D of Köppen and Geiger takes 24.6 % of Earth's land (Peel, Finlayson and McMahon 2007). The condition:
     more than 15 % of the twin's."""
@@ -1573,14 +1588,12 @@ def _twin_land_rain(twin):
     return m, land, yearly, lat, land_rain
 
 
-@pytest.mark.parametrize("half", [pytest.param("north", marks=missed(
-    "The twin's driest northern band lies at 58 degrees, with 273 mm a year, where Earth's own rain over the same cells is driest "
-    "at 39 degrees [MEASURED]. The twin's northern land is too cold and too dry: between 40 and 60 degrees it gets 440 mm "
-    "against Earth's 654, and poleward of 60 degrees 181 mm against 495 [MEASURED]. That it is dry because it is cold is a "
-    "reading, not a measurement [INFERRED].")), "south"])
+@pytest.mark.parametrize("half", ["north", "south"])
 def test_on_the_twin_the_driest_land_band_between_the_equator_and_60_degrees_lies_between_15_and_40(twin, half):
     """The design's pass condition for rain, on the engine's own climate over Earth's land, where Earth itself
-    meets it (the first test of this file)."""
+    meets it (the first test of this file). The north failed it until build step 8: its driest band lay at 58 degrees
+    with 273 mm; it lay at 19 degrees with 338 mm at the end of step 8, and lies at 24 degrees with 469 mm since
+    2026-10-25 [MEASURED], where Earth's own rain is driest at 39 degrees."""
     m, land, yearly, lat, land_rain = _twin_land_rain(twin)
     sign = 1 if half == "north" else -1
     side = (sign * lat > 0) & (sign * lat < 60) & ~np.isnan(land_rain)
@@ -1588,13 +1601,10 @@ def test_on_the_twin_the_driest_land_band_between_the_equator_and_60_degrees_lie
     assert 15 <= driest <= 40, f"the driest band lies at {driest:.0f} degrees, with {land_rain[side].min():.0f} mm"
 
 
-@missed("440 mm a year against Earth's 654 mm [MEASURED]. The twin's land there is 9.3 K too cold in the yearly mean (-5.8 C "
-        "against 3.5 C) and 52 % of it lies under snow in every month [MEASURED: handoff/pass2/twin_seasons.log]. That cold "
-        "air holds little vapour and that ground under snow gives none back is a chain that was not measured link by link "
-        "[INFERRED].")
 def test_the_twins_land_between_40_and_60_north_gets_the_rain_of_earths(twin):
     """Earth's rain, read at the same cells [MEASURED from GPCP]. The condition: the twin's land at 40 to 60 degrees
-    north gets at least three quarters of it."""
+    north gets at least three quarters of it. It failed until build step 8 with 440 mm against 654; it got 543 at the
+    end of step 8 and gets 633 since 2026-10-25 [MEASURED]."""
     m, land, yearly, lat, land_rain = _twin_land_rain(twin)
     area = twin[1].fields["cell_area"].astype(np.float64)
     earth_rain = ref.at_cell_centres(m, *ref.rain_monthly()).sum(axis=0)
@@ -1638,37 +1648,201 @@ def test_the_twins_report_prints_the_twin_beside_earth(twin):
 
 def test_the_expected_failures_of_the_twin_fail_by_the_numbers_their_reasons_give(twin):
     """Each expected failure of the twin is run here and must fail in the words, and with the numbers, of its reason:
-    13.4 K for Earth's 31.1 K; group D on 2.1 % of the land; the driest northern band at 58 degrees with 273 mm; 440
-    mm for Earth's 654. An expected failure that looked at the wrong field or place would otherwise pass for one."""
-    with pytest.raises(AssertionError, match=r"^13\.4 K against 31\.1 K"):
+    21.7 K for Earth's 31.1 K; group D on 14.9 % of the land. An expected failure that looked at the wrong field or place
+    would otherwise pass for one. (The year 2.1 K colder than Earth's and the Amazon of 88,000 m3/s were checked here
+    until they passed on 2026-10-25.)"""
+    with pytest.raises(AssertionError, match=r"^21\.7 K against 31\.1 K"):
         test_northern_land_is_far_warmer_in_july_than_in_january_as_on_earth(twin)
-    with pytest.raises(AssertionError, match=r"^group D takes 2\.1 % of the twin's land"):
+    with pytest.raises(AssertionError, match=r"^group D takes 14\.9 % of the twin's land"):
         test_the_cold_climates_with_warm_summers_take_a_fifth_of_the_twins_land_as_on_earth(twin)
-    with pytest.raises(AssertionError, match=r"^the driest band lies at 58 degrees, with 273 mm"):
-        test_on_the_twin_the_driest_land_band_between_the_equator_and_60_degrees_lies_between_15_and_40(twin, "north")
-    with pytest.raises(AssertionError, match=r"^440 mm against 654 mm"):
-        test_the_twins_land_between_40_and_60_north_gets_the_rain_of_earths(twin)
-    test_on_the_twin_the_driest_land_band_between_the_equator_and_60_degrees_lies_between_15_and_40(twin, "south")      # the south meets it
     # the numbers that the reasons give beside those: the seasons of the land at 40 to 60 north, and its snow
     m, f, area, wet, land, celsius, earth_celsius = _twin_numbers(twin)
     north = land & (m.lat > 40) & (m.lat < 60)
     mean = lambda x: float((x * area)[north].sum() / area[north].sum())
     mine, earths = np.array([mean(celsius[k]) for k in range(12)]), np.array([mean(earth_celsius[k]) for k in range(12)])
-    assert abs(mine.mean() - (-5.8)) < 0.1 and abs(earths.mean() - 3.5) < 0.1
-    assert abs(mine.min() - (-12.6)) < 0.1 and abs(earths.min() - (-12.7)) < 0.1
-    assert abs(mine.max() - 1.4) < 0.1 and abs(earths.max() - 18.4) < 0.1
+    assert abs(mine.mean() - (-2.3)) < 0.1 and abs(earths.mean() - 3.5) < 0.1
+    assert abs(mine.min() - (-13.7)) < 0.1 and abs(earths.min() - (-12.7)) < 0.1
+    assert abs(mine.max() - 10.2) < 0.1 and abs(earths.max() - 18.4) < 0.1
     snow = f["snow_cover"].astype(np.float64)
-    assert abs(100.0 * area[north & (snow.min(axis=0) > 0.5)].sum() / area[north].sum() - 52.3) < 0.5
-    assert abs(100.0 * area[land & (snow.min(axis=0) > 0.5)].sum() / area[land].sum() - 35.3) < 0.5
+    assert abs(100.0 * area[north & (snow.min(axis=0) > 0.5)].sum() / area[north].sum() - 1.2) < 0.5
+    assert abs(100.0 * area[land & (snow.min(axis=0) > 0.5)].sum() / area[land].sum() - 11.7) < 0.5
     # ... the polar group's share, Earth's own driest northern band at the same cells, and the rain poleward of 60 north
     names = twin[0].registry.fields["climate_class"].categories
     group = np.array([n[0] for n in names])[f["climate_class"]]
-    assert abs(100.0 * area[land & (group == "E")].sum() / area[land].sum() - 46.3) < 0.2
+    assert abs(100.0 * area[land & (group == "E")].sum() / area[land].sum() - 35.0) < 0.2
     _, _, yearly, lat, land_rain = _twin_land_rain(twin)
     earth_rain = ref.at_cell_centres(m, *ref.rain_monthly()).sum(axis=0)
     _, earths_bands = op.zonal_mean(m, earth_rain, 5.0, mask=land.astype(np.float64))
     side = (lat > 0) & (lat < 60) & ~np.isnan(land_rain)
     assert abs(lat[side][np.nanargmin(earths_bands[side])] - 38.9) < 0.5
     far_north = land & (m.lat > 60)
-    assert abs((yearly * area)[far_north].sum() / area[far_north].sum() - 181.0) < 2.0
+    assert abs((yearly * area)[far_north].sum() / area[far_north].sum() - 298.5) < 2.0
     assert abs((earth_rain * area)[far_north].sum() / area[far_north].sum() - 495.0) < 2.0
+
+
+# ---------------------------------------------------------------------- build steps 4 to 8 on the Earth twin
+# The patterns are common geography, as the design's Layer 9 allows, held against the twin's own climate. The numbers
+# in the docstrings were measured on the preview twin after the northern-summer work of 2026-10-25 [MEASURED:
+# handoff/summer/twin_pins.log; those of the end of build step 8 are in docs/BUILD_NOTES.md, sections 14 to 18].
+def _box(m, lat0, lat1, lon0, lon1):
+    return (m.lat >= lat0) & (m.lat < lat1) & (m.lon >= lon0) & (m.lon < lon1)
+
+
+def _share(field, names, cells, wanted):
+    return float(np.isin(np.asarray(names)[field[cells]], wanted).mean())
+
+
+def test_on_the_twin_sea_ice_comes_and_goes_with_the_seasons_and_stays_near_the_poles(twin):
+    """Ice-edge test (build step 6). Measured: the Arctic Ocean (north of 70) 1.00 covered in March; the sea south of 60 S
+    0.92 in September and 0.00 in March; no sea cell nearer the equator than 45 degrees is ever half covered."""
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    ice = f["snow_ice_cover"]
+    assert ice[2][wet & (m.lat > 70)].mean() > 0.8
+    south = wet & (m.lat < -60)
+    assert ice[8][south].mean() > 0.5 and ice[2][south].mean() < 0.3
+    assert (ice[:, wet & (np.abs(m.lat) < 45)] > 0.5).any(axis=0).mean() < 0.01
+
+
+def test_on_the_twin_the_ground_is_frozen_through_in_siberia_and_northern_canada(twin):
+    """Permafrost test (build step 6). Measured: 1.00 in Siberia and 0.99 in northern Canada."""
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    for box in ((60, 70, 90, 130), (60, 70, -100, -80)):
+        assert f["permafrost"][land & _box(m, *box)].mean() > 0.9
+
+
+def test_on_the_twin_western_europe_has_no_permafrost(twin):
+    """Permafrost test (build step 6). It failed from step 6 (frozen to the degree 0.17) until the northern-summer work of
+    2026-10-25 (docs/BUILD_NOTES.md, 22). Measured since: 0.04."""
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    assert f["permafrost"][land & _box(m, 45, 55, 0, 15)].mean() < 0.05
+
+
+def test_on_the_twin_the_biomes_and_soils_of_the_tropics_deserts_and_temperate_east_are_earths(twin):
+    """Soil and biome patterns (build step 7). Measured: the Sahara desert or semi-desert on 84 % of its cells, all with
+    aridisols; the Amazon 64 % and the Congo 82 % tropical forest; the Amazon's soils 71 % oxisols and ultisols; the
+    eastern United States all temperate forest; Greenland ice."""
+    e, w = twin
+    m, f = w.mesh, w.fields
+    land = ~f["ocean_mask"]
+    biomes, soils = e.registry.fields["biome"].categories, e.registry.fields["soil_order"].categories
+    desert, tropical = ["hot_desert", "semi_desert"], ["tropical_rain_forest", "tropical_seasonal_forest"]
+    temperate = ["temperate_deciduous_forest", "warm_mixed_forest", "cool_mixed_forest", "cool_conifer_forest"]
+    sahara, amazon, congo = land & _box(m, 18, 28, -10, 25), land & _box(m, -10, 2, -70, -50), land & _box(m, -5, 3, 15, 28)
+    assert _share(f["biome"], biomes, sahara, desert) > 0.8 and _share(f["soil_order"], soils, sahara, ["aridisols", "shifting_sand"]) > 0.8
+    assert _share(f["biome"], biomes, amazon, tropical) > 0.5 and _share(f["biome"], biomes, congo, tropical) > 0.5
+    assert _share(f["soil_order"], soils, amazon, ["oxisols", "ultisols"]) > 0.5
+    assert _share(f["biome"], biomes, land & _box(m, 33, 42, -90, -75), temperate) > 0.8
+    assert _share(f["biome"], biomes, land & _box(m, 70, 80, -50, -30), ["ice"]) > 0.9
+
+
+@pytest.mark.xfail(strict=True, reason="the boreal forest is missing on the twin: Siberia (55-65 N) is tundra and polar desert, "
+                                       "boreal forest on 0 % of it, and Canada (50-60 N) on 22 % [MEASURED, 2026-10-25; 6 % at build "
+                                       "step 7]: the northern summers are still 8 K too cold (docs/BUILD_NOTES.md, 22)")
+def test_on_the_twin_siberia_and_canada_are_boreal_forest(twin):
+    e, w = twin
+    m, f = w.mesh, w.fields
+    land = ~f["ocean_mask"]
+    boreal = ["taiga", "cold_mixed_forest", "cold_deciduous_forest", "cool_conifer_forest", "cool_mixed_forest"]
+    names = e.registry.fields["biome"].categories
+    for box in ((55, 65, 90, 130), (50, 60, -110, -80)):
+        assert _share(f["biome"], names, land & _box(m, *box), boreal) > 0.5
+
+
+def test_on_the_twin_storm_tracks_lie_in_the_mid_latitudes(twin):
+    """Storm-track test (build step 8): the zonal mean of the winter track density peaks between 35 and 65 degrees in
+    each hemisphere. Measured: 47.5 N in December to February and 52.5 S in June to August."""
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    d = f["storm_track_density"]
+    bands = np.arange(-87.5, 90.0, 5.0)
+    for months, hemisphere in (([0, 1, 11], 1), ([5, 6, 7], -1)):
+        zonal = np.array([d[months].mean(axis=0)[np.abs(m.lat - b) <= 2.5].mean() for b in bands])
+        side = hemisphere * bands > 0
+        peak = abs(bands[side][int(np.argmax(zonal[side]))])
+        assert 35 <= peak <= 65
+
+
+def test_on_the_twin_cyclones_form_in_the_late_summer_of_each_hemisphere(twin):
+    """Cyclone-region test, seasons (build step 8). Measured: the northern genesis potential peaks in September, the
+    southern in March."""
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    g = f["tc_genesis_potential"].astype(np.float64) * area
+    assert int(np.argmax(g[:, m.lat > 0].sum(axis=1))) in (7, 8, 9)
+    assert int(np.argmax(g[:, m.lat < 0].sum(axis=1))) in (1, 2, 3)
+
+
+@pytest.mark.xfail(strict=True, reason="on the twin 22 % of the year's genesis potential lies in the southeast Pacific and the South "
+                                       "Atlantic, and 66 % south of the equator [MEASURED, 2026-10-25; 25 % at build step 8]: the "
+                                       "southern tropical seas are too warm, the northern ones too cool, and the wind shear is small "
+                                       "everywhere (docs/BUILD_NOTES.md, 18.3 and 22.3)")
+def test_on_the_twin_no_cyclones_form_in_the_south_atlantic_or_the_southeast_pacific(twin):
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    g = (f["tc_genesis_potential"].astype(np.float64) * area).sum(axis=0)
+    quiet = (m.lat < 0) & (m.lon > -140) & (m.lon <= 20)
+    assert g[quiet].sum() / g.sum() < 0.05
+
+
+def _patterns():
+    return tool("earth_climate_patterns")
+
+
+def _west_coast_anomaly(twin, name):
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    p = _patterns()
+    b = p.WEST_COASTS[name]
+    here, band = wet & p.box(m, b), wet & (m.lat >= b[0]) & (m.lat <= b[1])
+    return float(np.nanmean(celsius.mean(axis=0)[here]) - np.nanmean(celsius.mean(axis=0)[band]))
+
+
+@pytest.mark.parametrize("name", ["Peru", "south-west Africa", "north-west Africa"])
+def test_on_the_twin_cold_water_lies_off_west_coasts(twin, name):
+    """Build step 4: the sea off a west coast is colder than the sea of its band. Measured on the twin (Earth): Peru
+    -0.5 K (-5.4), south-west Africa -2.5 K (-3.6), north-west Africa -0.7 K (-1.8)."""
+    assert _west_coast_anomaly(twin, name) < 0
+
+
+@pytest.mark.xfail(strict=True, reason="the sea off California is 0.6 K warmer than its band on the twin, where Earth's is 2.7 K colder "
+                                       "[MEASURED, 2026-10-25; 1.9 K at build step 4]: the wind there drives no upwelling (-0.02 m a day)")
+def test_on_the_twin_cold_water_lies_off_california(twin):
+    assert _west_coast_anomaly(twin, "California") < 0
+
+
+def test_on_the_twin_a_coast_facing_the_westerlies_is_milder_in_winter(twin):
+    """Build step 5: in January western Europe is milder than the east coast of Asia between 45 and 60 north. Measured:
+    -4.5 against -16.0 C on the twin (Earth 3.2 against -25.4)."""
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    p = _patterns()
+    jan = {name: np.average(celsius[0][land & p.box(m, b)], weights=area[land & p.box(m, b)]) for name, b in p.COASTS.items()}
+    assert jan["western Europe"] - jan["east coast of Asia"] > 5.0
+
+
+def _summer_rain(twin, name):
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    p = _patterns()
+    here = land & p.box(m, p.DESERTS[name])
+    return float(np.average(f["precipitation"][[5, 6, 7]].mean(axis=0)[here], weights=area[here]))
+
+
+def test_on_the_twin_the_sahara_stays_dry_in_summer(twin):
+    """Build step 5, the summer rain of the 30-degree deserts. Measured: 24.4 mm a month from June to August on the twin,
+    15.2 in GPCP."""
+    assert _summer_rain(twin, "Sahara") < 30.0
+
+
+@pytest.mark.xfail(strict=True, reason="Arabia gets 77.4 mm a month from June to August on the twin, 4.7 in GPCP [MEASURED, "
+                                       "2026-10-25; 41.2 at build step 5]: the stand-in for summer sinking west of heated land does "
+                                       "not reach it")
+def test_on_the_twin_arabia_stays_dry_in_summer(twin):
+    assert _summer_rain(twin, "Arabia") < 30.0
+
+
+@pytest.mark.xfail(strict=True, reason="the wind over India blows toward the west and the south in July as in January on the twin "
+                                       "(-3.25 m/s east, -0.91 m/s north) [MEASURED, 2026-10-25; -2.33 and -0.57 at build step 5]: "
+                                       "India's July is too cool for the rising branch to cross it (docs/BUILD_NOTES.md, 15)")
+def test_on_the_twin_the_wind_over_india_turns_with_the_seasons(twin):
+    """Build step 5, the seasonal reversal: from the north-east in January, from the south-west in July [UNVERIFIED for
+    Earth: recalled; the reference data hold no wind]."""
+    m, f, area, wet, land, celsius, earth = _twin_numbers(twin)
+    p = _patterns()
+    here = land & p.box(m, p.INDIA)
+    east = lambda month: float(np.einsum("ij,ij->i", f["wind"][month], m.east)[here].mean())
+    assert east(0) < 0 < east(6)

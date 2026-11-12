@@ -5,3 +5,5 @@ worlds/
 *.zarr/
 *.egg-info/
 reference_data/
+.venv/
+.worldengine/

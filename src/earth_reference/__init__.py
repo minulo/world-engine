@@ -11,6 +11,7 @@ northward and longitude from -180 to 180, whatever the layout of the file.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import os
 from pathlib import Path
@@ -24,7 +25,9 @@ NAMES = ("ETOPO5.DAT", "V22_GPCP.1979-2010.nc", "absolute.nc", "landsea.nc")
 YEAR_S = float(yaml.safe_load((ROOT / "data" / "planet.yaml").read_text(encoding="utf-8"))["year_length_s"])    # the default planet's year, which is Earth's
 DAYS_PER_MONTH = YEAR_S / 86400.0 / 12.0    # the engine's month is one twelfth of that year
 
-RELIEF_FOLDER_VARIABLE = "WORLDENGINE_RELIEF_FOLDER"     # where ReliefFromFile looks for the twin's relief file
+RELIEF_FOLDER_VARIABLE = "WORLDENGINE_RELIEF_FOLDER"
+MELT_SPREAD_K = 0.0              # the daily spread of snow melt in the Earth analysis of build step 2: none (see Earth.hydrology)
+TWIN_SURFACE_AGE_MY = 100.0      # the twin's stand-in age of every surface: older than every age rule of the soil table [INFERRED]     # where ReliefFromFile looks for the twin's relief file
 
 _checked = {}
 
@@ -360,9 +363,16 @@ class Earth:
 
     def hydrology(self, constants=None):
         """Hydrology under Earth's measured rain (GPCP) and warmth (CRU). With `constants`, a run with those changes
-        to the slot's constants, which is not kept."""
+        to the slot's constants, which is not kept.
+
+        Snow melts by the plain degree-day rule here, the days of a month all at its mean (MELT_SPREAD_K): the rule the
+        analysis of build step 2 measured, and that docs/BUILD_NOTES.md, sections 4.4 and 4.5, report. Since build step
+        6 the engine scatters the days around the mean; tests/test_earth.py measures what that changes on Earth's data."""
         if constants is None and hasattr(self, "_hydrology"):
             return self._hydrology
+        given = constants
+        constants = copy.deepcopy(constants or {})
+        constants.setdefault("snow", {}).setdefault("daily_spread_k", MELT_SPREAD_K)
         from worldengine.library import lakes
         kelvin = self.celsius + 273.15
         snowfall = self.snow_handed_in()
@@ -385,7 +395,7 @@ class Earth:
         finally:
             lakes.lake_flows = real
         out.books = seen
-        if constants is None:
+        if given is None:
             self._hydrology = out
         return out
 
@@ -1427,4 +1437,12 @@ def earth_twin_models(models: dict, mesh) -> dict:
         "wrong_where": "Straits and gorges narrower than a cell are closed.",
         "writes": ["elevation"],
         "constants": {"file": Path(path).name, "sha256": digest, "folder_from_env": RELIEF_FOLDER_VARIABLE}}
+    if "Soils" in twin["slots"]:                     # what Soils reads of the ground's history, which the twin has not got
+        twin["slots"]["Lithology"] = {
+            "implementation": "worldengine.processes.relief_from_file:GroundWithoutHistory", "standing": "Test",
+            "model": "One rock class, one surface age and no erosion everywhere: stand-ins, since the twin has no history.",
+            "ignores": "Earth's rocks and the ages of its surfaces.",
+            "wrong_where": "Everywhere the rock or the age of the ground decides the soil: young volcanic soils, old tropical ones.",
+            "writes": ["rock_type", "surface_age", "erosion_rate"],
+            "constants": {"rock": "stable_platform", "surface_age_my": TWIN_SURFACE_AGE_MY}}
     return twin

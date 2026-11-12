@@ -26,3 +26,21 @@ def tool(name):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def first_version_data(folder):
+    """A copy of the data in which Albedo, Biomes and Soils are filled by their first versions again, with the constants
+    they were built with (toy_data/first_versions.yaml), and the biome field takes its classes from Whittaker's chart."""
+    import shutil
+    import yaml
+    target = Path(folder) / "first_version_data"
+    if not target.exists():
+        shutil.copytree(DATA, target)
+        models = yaml.safe_load((target / "models.yaml").read_text(encoding="utf-8"))
+        first = yaml.safe_load((HERE / "toy_data" / "first_versions.yaml").read_text(encoding="utf-8"))
+        models["slots"].update(first["slots"])
+        (target / "models.yaml").write_text(yaml.safe_dump(models, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        fields = yaml.safe_load((target / "fields.yaml").read_text(encoding="utf-8"))
+        fields["fields"]["biome"]["categories_from"] = {"file": "biomes", "key": "biomes"}
+        (target / "fields.yaml").write_text(yaml.safe_dump(fields, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return target

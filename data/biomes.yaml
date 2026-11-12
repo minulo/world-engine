@@ -80,3 +80,47 @@ climate_classes:
   - {name: Dfd, color: "#00465F"}
   - {name: ET, color: "#B2B2B2"}
   - {name: EF, color: "#666666"}
+
+# biome1: the biomes of BIOME1, Prentice et al. 1992, Table 5, each named by the set of plant types that dominate it,
+#   and the plant types of its Table 1 with their limits [DOCUMENTED: as tabulated in the CRAN package macroBiome,
+#   sysdata.rda (bioPFTDefinitions, bioBiomeDefinitions), read 2026-10-09; the paper itself not opened]. A limit is
+#   [lower, upper): the index must be at least the lower and below the upper. Indices: tc, the mean temperature of the
+#   coldest month (C); tw, of the warmest month (C); gdd5 and gdd0, growing degree-days above 5 and 0 C; alpha, the
+#   Priestley-Taylor coefficient (yearly actual over potential evapotranspiration). Dominance: 1 dominates all others.
+#   ocean and ice are the engine's own (sea; lasting ice). color is for display only; cover, the share of ground under
+#   plants, and seasonal, whether that share falls in the months too cold to grow, are mine [PROVISIONAL].
+biome1:
+  - {name: ocean, color: "#1B4A8A", cover: 0.0}
+  - {name: ice, color: "#F4F7FA", cover: 0.0}
+  - {name: tropical_rain_forest, color: "#1F6B1F", cover: 0.95, plant_types: [tropical_evergreen_tree]}
+  - {name: tropical_seasonal_forest, color: "#3E8E2A", cover: 0.85, seasonal: true, plant_types: [tropical_evergreen_tree, tropical_raingreen_tree]}
+  - {name: tropical_dry_forest_savanna, color: "#A09700", cover: 0.55, seasonal: true, plant_types: [tropical_raingreen_tree]}
+  - {name: warm_mixed_forest, color: "#4E9A54", cover: 0.85, plant_types: [warm_temperate_evergreen_tree]}
+  - {name: temperate_deciduous_forest, color: "#7FB24A", cover: 0.8, seasonal: true, plant_types: [temperate_summergreen_tree, cool_temperate_conifer_tree, boreal_summergreen_tree]}
+  - {name: cool_mixed_forest, color: "#5F9E6E", cover: 0.8, seasonal: true, plant_types: [temperate_summergreen_tree, cool_temperate_conifer_tree, boreal_evergreen_conifer_tree, boreal_summergreen_tree]}
+  - {name: cool_conifer_forest, color: "#2F7A5E", cover: 0.75, plant_types: [cool_temperate_conifer_tree, boreal_evergreen_conifer_tree, boreal_summergreen_tree]}
+  - {name: taiga, color: "#A5C790", cover: 0.6, plant_types: [boreal_evergreen_conifer_tree, boreal_summergreen_tree]}
+  - {name: cold_mixed_forest, color: "#7DA88F", cover: 0.6, seasonal: true, plant_types: [cool_temperate_conifer_tree, boreal_summergreen_tree]}
+  - {name: cold_deciduous_forest, color: "#9FBF9A", cover: 0.55, seasonal: true, plant_types: [boreal_summergreen_tree]}
+  - {name: xerophytic_woods_scrub, color: "#B8A34A", cover: 0.4, plant_types: [sclerophyll_succulent]}
+  - {name: warm_grass_shrub, color: "#D9C27A", cover: 0.35, seasonal: true, plant_types: [warm_grass_shrub]}
+  - {name: cool_grass_shrub, color: "#C9C98A", cover: 0.4, seasonal: true, plant_types: [cool_grass_shrub, cold_grass_shrub]}
+  - {name: tundra, color: "#C1E1DD", cover: 0.3, seasonal: true, plant_types: [cold_grass_shrub]}
+  - {name: hot_desert, color: "#E8D29A", cover: 0.05, plant_types: [hot_desert_shrub]}
+  - {name: semi_desert, color: "#D8C9A3", cover: 0.15, plant_types: [cold_desert_shrub]}
+  - {name: polar_desert, color: "#DDE6EA", cover: 0.02, plant_types: [polar_desert]}
+plant_types:
+  - {name: tropical_evergreen_tree, dominance: 1, limits: {tc: [15.5, null], alpha: [0.80, null]}}
+  - {name: tropical_raingreen_tree, dominance: 1, limits: {tc: [15.5, null], alpha: [0.45, 0.95]}}
+  - {name: warm_temperate_evergreen_tree, dominance: 2, limits: {tc: [5.0, null], alpha: [0.65, null]}}
+  - {name: temperate_summergreen_tree, dominance: 3, limits: {tc: [-15.0, 15.5], gdd5: [1200.0, null], alpha: [0.65, null]}}
+  - {name: cool_temperate_conifer_tree, dominance: 3, limits: {tc: [-19.0, 5.0], gdd5: [900.0, null], alpha: [0.65, null]}}
+  - {name: boreal_evergreen_conifer_tree, dominance: 3, limits: {tc: [-35.0, -2.0], gdd5: [350.0, null], alpha: [0.75, null]}}
+  - {name: boreal_summergreen_tree, dominance: 3, limits: {tc: [null, 5.0], gdd5: [350.0, null], alpha: [0.65, null]}}
+  - {name: sclerophyll_succulent, dominance: 4, limits: {tc: [5.0, null], alpha: [0.28, null]}}
+  - {name: warm_grass_shrub, dominance: 5, limits: {tw: [22.0, null], alpha: [0.18, null]}}
+  - {name: cool_grass_shrub, dominance: 6, limits: {gdd5: [500.0, null], alpha: [0.33, null]}}
+  - {name: cold_grass_shrub, dominance: 6, limits: {gdd0: [100.0, null], alpha: [0.33, null]}}
+  - {name: hot_desert_shrub, dominance: 7, limits: {tw: [22.0, null]}}
+  - {name: cold_desert_shrub, dominance: 8, limits: {gdd0: [100.0, null]}}
+  - {name: polar_desert, dominance: 9, limits: {}}
