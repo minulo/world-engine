@@ -4113,3 +4113,71 @@ world; none comes from a source].
 6. The colours, the bands and the signs were set by eye on one world. A world with another list of biomes gets the
    engine's colours, paled, and no signs.
 7. No names: the world holds no named places unless a push sets `place_label`, and the drawing does not show those.
+
+## 33. Finer cells in the map: the detail of a region, drawn (2026-11-12)
+
+Section 32 ended where a cell of the world fills the screen: closer than that, the illustrated look had only its own
+bends and signs to show. The engine has had a way to work out more since build step 11 (section 25): `detail.refine`
+splits each cell of a region into the cells of a finer level of the same mesh (16 to one) and works the heights, the
+sea and the lakes, the rivers and the climate out again on them. Until now it could only print a summary. This section
+brings it into the map.
+
+### 33.1 What happens
+
+- **The request.** `GET /api/detail?lat=&lon=&radius_km=` gives the fine cells of the world's cells within that
+  distance of that place, laid out for a drawing: the fine cells numbered among themselves, their places and
+  neighbours, the cell of the world each lies in, sea and lake, height, the fine cell its water runs to and the flow;
+  and a grid of nearest fine cells on the flat sheet that touches the sphere at the region's middle. The same cells
+  of the world give the same answer, whatever place and radius chose them; the last six regions are kept. Refused,
+  each with a test: a place or a radius that is none, a region of more than 400 cells of the world or of none, and a
+  world that lacks a field the detail reads.
+- **Rivers across borders.** The detail routes the water inside each cell of the world to the fine cell nearest the
+  middle of the border to the receiving cell, and lets it into that cell at the fine cell nearest the same place from
+  the other side; between the two its own receiver is "none". For a drawing the server joins the two, so that a river
+  is one line (the first picture showed every river cut at every border).
+- **The page.** Once a cell of the world is 110 points wide on the screen, the illustrated look asks for the region
+  in view (between 5 and 10 spacings of the world's cells in radius) and draws from the fine cells there: their own
+  coast, heights, lakes and rivers, with bends a quarter the size, since the bends go by the spacing of the cells
+  drawn. Over the last 1.6 spacings toward the region's edge the finer drawing gives way to the world's own. When the
+  view leaves the region the next one is asked for; below 85 points to a cell the fine cells are let go of. A box
+  switches this off.
+- **What stays the world's own:** the biome and the ice (the detail works neither out), so a fine cell is coloured
+  by the biome of the land around it in the world's cells. The cell that a click selects is still the world's; the
+  status line names the fine cell under the pointer (land, sea or lake, its height, its river).
+
+**What is true in it.** The fine cells are the engine's work, not the viewer's hand: the same region asked for twice
+is the same, the fine heights keep each world cell's height on the mean, and the rivers leave the region where the
+world's rivers do (section 25, and the tests of `tests/test_world.py`). But section 25's own limit holds: the
+roughness of the fine heights is a stand-in for landforms that no process makes, so a fine coast or valley is a
+likely one, not the one. The page says the cells were worked out on request and are not stored.
+
+### 33.2 Checked
+
+- `tools/viewer_check.py`, on the default world with magic in the headless Chromium of section 32 [MEASURED on
+  2026-11-12]: close to a coast, 3,927 fine cells about 59 km apart came for 246 cells of the world, with 6,560
+  parts of rivers; a fine cell of sea with sea all around was drawn in the sea's colours and one of land in a land
+  colour; the pointer was told of the fine cell under it; further out the fine cells were let go of; no error from
+  the page.
+- The request [MEASURED, same day, same world, one process]: a region of 55 cells of the world (879 fine cells) took
+  2.0 s the first time, which includes making the finer mesh, and 0.5 to 0.7 s for regions of 17 to 149 cells after
+  that; its answer is 167 kB of JSON.
+- `tests/test_world.py` (the built world; no workflow runs this file): the answer against `detail.refine` itself,
+  the neighbours each way, the grid against the nearest cell, the rivers joined at 10 or more borders and ending
+  without a ring, the same answer for the same cells, and the two refusals that need a real world.
+  `tests/test_store_server.py`: the refusals that need none.
+
+### 33.3 Limits
+
+1. Everything of section 32.5 holds here too: seen only in one headless browser without a graphics card.
+2. While fine cells are shown, each point of the picture is drawn twice (once from each level), and how fast that is
+   on a graphics card was not measured.
+3. On the standard mesh the fine cells are those of a mesh of 2.6 million cells, which the server has to make on the
+   first request. That was not tried: its time and memory are not known.
+4. With the seasons shown, the fine rivers keep the year's flow: the detail works out one flow, not twelve.
+5. In the band near the region's edge two drawings are laid over each other, and a coast may show twice there. The
+   region is asked for larger than the view so that the band lies off the screen, which it cannot on a screen wider
+   than about ten cells of the world at the zoom where the fine cells first come.
+6. A fine cell of land in a cell of sea (a small island) takes the biome of the nearest land within two cells of the
+   world, or a plain colour if there is none.
+7. A "why" answer is still about the world's cell: the detail keeps no cause records.
+

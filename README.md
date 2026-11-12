@@ -195,7 +195,9 @@ lakes and rivers, with inked coasts, flat colours, shaded heights and small sign
 drawing, not a result: everything in it smaller than a cell is the viewer's hand, and the page says so
 (docs/BUILD_NOTES.md, section 32). The **Data** look shows any one field exactly as stored, each cell with its exact
 borders at any zoom. To zoom: scroll, pinch, double-click, the + and − buttons on the map, or the + and − keys; a
-bar on the map gives the scale in kilometres.
+bar on the map gives the scale in kilometres. Close in, the illustrated look asks the engine for **finer cells** for
+the region in view (sixteen to each cell of the world: heights, coast, lakes and rivers, worked out on request and
+not stored; section 33), and draws from those.
 
 In the viewer: choose a field, drag to turn the globe, switch to the flat map, play
 the months, and click a cell for its values and its "why" answer. For elevation, ocean_mask, plate_id

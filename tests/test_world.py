@@ -975,6 +975,70 @@ def test_the_rivers_of_a_refined_region_leave_it_where_the_world_s_rivers_do(pla
     assert set(ends.tolist()) <= set(d.outlets.values()) | set(d.cells[d.fields["ocean_mask"]].tolist()) | set(d.cells[sea[d.owner]].tolist())
 
 
+def test_the_server_lays_the_detail_out_for_a_drawing(plain, detail):
+    """GET /api/detail: the fine cells of detail.refine, numbered among themselves, with their neighbours, a grid of
+    nearest cells on the flat sheet at the region's middle, and rivers joined across the borders of the world's cells."""
+    from worldengine import server
+    from worldengine.mesh import get_mesh
+    e, w = plain
+    view, dt, region, _ = detail
+    lat, hs = w.fields["latitude"], w.fields["height_above_sea"]
+    k = int(np.argmax(np.where(np.abs(lat) < 50, hs, -1e9)))
+    place = (float(lat[k]), float(w.fields["longitude"][k]))
+    service = server.WorldService(view)
+    got = service.detail(place[0], place[1], 800.0)
+    d = dt.refine(view, region(0, 0, 800))
+    fine, m = get_mesh(d.level), d.cells.size
+    assert got["cells"] == m and got["level"] == d.level and got["of_world_cells"] == d.region.size
+    xyz, nbr = np.array(got["xyz"]).reshape(m, 3), np.array(got["nbr"]).reshape(m, 6)
+    assert np.allclose(xyz, fine.xyz[d.cells], atol=1e-7) and got["owner"] == d.owner.tolist()
+    sea = d.fields["ocean_mask"].astype(bool)
+    assert got["sea"] == sea.astype(int).tolist() and got["lake"] == d.fields["lake"].astype(int).tolist()
+    assert np.allclose(got["height"], np.where(sea, np.minimum(d.fields["height_above_sea"], 0), np.maximum(d.fields["height_above_sea"], 0)), atol=0.01)
+    assert np.allclose(got["flow"], d.fields["river_discharge"], atol=1e-3)
+    # neighbours: those of the fine mesh that are among these cells, each way
+    for i in range(0, m, 7):
+        mine = set(int(x) for x in fine.nbr[d.cells[i]] if x >= 0 and x in set(d.cells.tolist()))
+        assert {int(d.cells[j]) for j in nbr[i] if j >= 0} == mine
+        assert all(i in nbr[j] for j in nbr[i] if j >= 0)
+    # the grid: each point holds the fine cell nearest to the place straight under it
+    size, half = got["grid"]["size"], got["grid"]["half"]
+    ids = np.array(got["grid"]["ids"]).reshape(size, size)
+    centre, east, north = (np.array(got[name]) for name in ("centre", "east", "north"))
+    assert abs(centre @ east) < 1e-8 and abs(centre @ north) < 1e-8 and abs(east @ north) < 1e-8
+    rng = np.random.default_rng(3)
+    for i, j in rng.integers(0, size, (60, 2)):
+        x, y = ((i + 0.5) / size * 2 - 1) * half, ((j + 0.5) / size * 2 - 1) * half
+        under = x * east + y * north + np.sqrt(max(0.0, 1 - x * x - y * y)) * centre
+        assert ids[j, i] == int(np.argmax(xyz @ under))
+    assert np.arccos(np.clip(xyz @ centre, -1, 1)).max() == pytest.approx(got["reach"]) and got["spacing"] == pytest.approx(np.sqrt(2 / np.sqrt(3) * 4 * np.pi / fine.n))
+    # rivers: where the detail's own routing ends at a border of the world's cells, the drawing's river goes on into
+    # the fine cell of the receiving cell; followed downstream, every river ends, and none runs in a ring
+    recv, own = np.array(got["recv"]), np.array(got["owner"])
+    inside = set(d.region.tolist())
+    joined = 0
+    for cell, outlet in d.outlets.items():
+        r = int(w.fields["flow_receiver"][cell])
+        at = int(np.searchsorted(d.cells, outlet))
+        if r in inside:
+            assert recv[at] >= 0 and own[recv[at]] == r
+            joined += 1
+        else:
+            assert recv[at] == -1
+    assert joined > 10
+    for start in np.flatnonzero((recv >= 0) & (np.array(got["flow"]) > 0))[::5]:
+        at, steps = int(start), 0
+        while recv[at] >= 0 and steps <= m:
+            at, steps = int(recv[at]), steps + 1
+        assert steps <= m
+    # the same cells of the world give the same answer, whatever place chose them; a region too large is refused
+    assert service.detail(place[0], place[1], 800.0) is got and service.detail(place[0] + 1e-4, place[1], 800.0) is got
+    with pytest.raises(server._BadRequest, match="the detail is worked out for at most 400"):
+        service.detail(place[0], place[1], 6000.0)
+    with pytest.raises(server._BadRequest, match="no cell of the world lies within that distance"):
+        service.detail(place[0] + 0.4, place[1], 1.0)                 # (the place itself is the middle of a cell)
+
+
 def test_two_regions_that_overlap_agree_on_the_cells_they_share_and_one_region_twice_is_the_same(detail):
     view, dt, region, d = detail
     a, b = dt.refine(view, region(0, 0, 600)), dt.refine(view, region(4, 4, 600))
