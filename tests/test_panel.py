@@ -374,6 +374,156 @@ def test_upgrade_without_git_or_outside_a_clone_says_so(clone, tmp_path, monkeyp
     assert (mine / "worlds" / "first.zarr").exists()
 
 
+# ---------------------------------------------------------------------------------------------- versions
+def publish_version(theirs, branch, text, monkeypatch, day, files=("engine.txt",)):
+    """Publish a commit on `branch` (made from main if it is new), dated `day` of January 2026, and go back to main."""
+    monkeypatch.setenv("GIT_COMMITTER_DATE", f"2026-01-{day:02d}T12:00:00+00:00")
+    known = subprocess.run(["git", "rev-parse", "--verify", "-q", f"refs/heads/{branch}"], cwd=theirs, capture_output=True)
+    git("checkout", *((branch,) if known.returncode == 0 else ("-b", branch)), cwd=theirs)
+    for name in files:
+        (theirs / name).parent.mkdir(parents=True, exist_ok=True)
+        (theirs / name).write_text(text)
+    git("add", ".", cwd=theirs)
+    git("commit", "-m", text.strip(), cwd=theirs)
+    git("push", "origin", f"HEAD:{branch}", cwd=theirs)
+    git("checkout", "-", cwd=theirs)
+
+
+def controller(repo):
+    c = control.Controller(repo)
+    c.settings["port"] = free_port()
+    return c
+
+
+def test_the_versions_are_the_branches_of_the_remote_the_newest_first(clone, tmp_path, monkeypatch):
+    mine, theirs = clone
+    c = controller(mine)
+    here = c.current_version()
+    assert here.branch == "main" and here.commit == git("rev-parse", "HEAD", cwd=mine) and here.subject == "one"
+    assert [(v.branch, v.current, v.behind) for v in c.versions(fetch=False)] == [("main", True, 0)]
+    publish_version(theirs, "claude/next", "next\n", monkeypatch, day=3)
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-01-02T12:00:00+00:00")
+    publish(theirs, "2\n")
+    assert [v.branch for v in c.versions(fetch=False)] == ["main"]          # what the clone knew, without the network
+    said = []
+    found = c.versions(log=said.append)
+    assert [(v.branch, v.current, v.behind, v.date, v.subject) for v in found] == [
+        ("claude/next", False, 0, "2026-01-03", "next"), ("main", True, 1, "2026-01-02", "2")]
+    assert found[0].label == "claude/next   (2026-01-03)" and any("git fetch" in t for t in said)
+    assert (mine / "engine.txt").read_text() == "1\n" and (mine / "worlds" / "first.zarr").exists()   # nothing moved
+    # a clone that was made of one branch alone learns of the others all the same
+    single = tmp_path / "single"
+    git("clone", "--single-branch", "--branch", "main", str(tmp_path / "origin.git"), str(single))
+    assert [v.branch for v in control.Controller(single).versions(fetch=False)] == ["main"]
+    assert [v.branch for v in control.Controller(single).versions()] == ["claude/next", "main"]
+
+
+def test_upgrade_switches_to_the_chosen_version_follows_it_and_comes_back(clone, monkeypatch):
+    mine, theirs = clone
+    c = controller(mine)
+    publish_version(theirs, "claude/next", "next\n", monkeypatch, day=3, files=("engine.txt", "panel/new.py"))
+    said = []
+    result = c.upgrade(log=said.append, version="claude/next")
+    assert result.changed and result.panel_changed and "now on the version claude/next" in result.message
+    assert "open it again" in result.message and "first.zarr was deleted" in result.message
+    assert (mine / "engine.txt").read_text() == "next\n" and c.current_version().branch == "claude/next"
+    assert not (mine / "worlds" / "first.zarr").exists() and (mine / "worlds" / "other.zarr").exists()
+    assert any("git checkout -B claude/next" in t for t in said)
+    # the copy follows the version it switched to: a plain upgrade fetches that version's next commit
+    (mine / "worlds" / "first.zarr").mkdir()
+    publish_version(theirs, "claude/next", "next 2\n", monkeypatch, day=4)
+    again = c.upgrade()
+    assert again.changed and not again.panel_changed and (mine / "engine.txt").read_text() == "next 2\n"
+    assert "open it again" not in again.message and not (mine / "worlds" / "first.zarr").exists()
+    # and back, to a version this copy was on before and that has moved since
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-01-05T12:00:00+00:00")
+    publish(theirs, "2\n")
+    back = c.upgrade(version="main")
+    assert back.changed and back.panel_changed and (mine / "engine.txt").read_text() == "2\n"
+    assert c.current_version().branch == "main" and not (mine / "panel" / "new.py").exists()
+    assert [(v.branch, v.current, v.behind) for v in c.versions(fetch=False)] == [("main", True, 0), ("claude/next", False, 0)]
+    # the version this copy is on already is an ordinary upgrade
+    assert not c.upgrade(version="main").changed
+
+
+def test_a_switch_to_the_same_code_keeps_the_world_and_a_copy_on_no_version_can_choose_one(clone, monkeypatch):
+    mine, theirs = clone
+    git("push", "origin", "HEAD:refs/heads/same", cwd=theirs)
+    c = controller(mine)
+    same = c.upgrade(version="same")
+    assert not same.changed and "same code" in same.message and c.current_version().branch == "same"
+    assert (mine / "worlds" / "first.zarr").exists()
+    git("checkout", "--detach", cwd=mine)
+    assert c.current_version().branch == ""
+    with pytest.raises(control.ControlError, match="Choose a version in the panel"):
+        c.upgrade()
+    publish(theirs, "2\n")
+    result = c.upgrade(version="main")
+    assert result.changed and c.current_version().branch == "main" and (mine / "engine.txt").read_text() == "2\n"
+
+
+def test_a_switch_that_cannot_be_made_changes_nothing(clone, monkeypatch):
+    mine, theirs = clone
+    publish_version(theirs, "claude/next", "next\n", monkeypatch, day=3)
+    c = controller(mine)
+    head = git("rev-parse", "HEAD", cwd=mine)
+
+    def unchanged():
+        return (git("rev-parse", "HEAD", cwd=mine) == head and c.current_version().branch == "main"
+                and (mine / "worlds" / "first.zarr").exists())
+    for name in ("no-such-version", "--force", "main~1"):
+        with pytest.raises(control.ControlError, match="There is no version .* Nothing was changed"):
+            c.upgrade(version=name)
+        assert unchanged()
+    # a file of the engine that was changed here and differs in the other version
+    (mine / "engine.txt").write_text("my own\n")
+    with pytest.raises(control.ControlError) as e:
+        c.upgrade(version="claude/next")
+    assert "git checkout failed" in str(e.value) and "would be overwritten. Nothing was changed" in str(e.value)
+    assert unchanged() and (mine / "engine.txt").read_text() == "my own\n"
+    git("checkout", "--", "engine.txt", cwd=mine)
+    # a branch of this copy with the version's name and commits of its own
+    git("checkout", "-b", "claude/next", cwd=mine)
+    (mine / "mine.txt").write_text("my own\n")
+    git("add", "mine.txt", cwd=mine)
+    git("commit", "-m", "my own", cwd=mine)
+    git("checkout", "main", cwd=mine)
+    with pytest.raises(control.ControlError, match="commits of its own on the version .claude/next.* Nothing was changed"):
+        c.upgrade(version="claude/next")
+    assert unchanged() and git("rev-parse", "claude/next", cwd=mine) != git("rev-parse", "origin/claude/next", cwd=mine)
+    # the repository cannot be reached: the list the clone had stays, and nothing moves
+    git("remote", "set-url", "origin", str(mine.parent / "gone.git"), cwd=mine)
+    with pytest.raises(control.ControlError, match="could not be fetched .* Nothing was changed"):
+        c.versions()
+    with pytest.raises(control.ControlError, match="could not be fetched"):
+        c.upgrade(version="claude/next")
+    assert unchanged() and "claude/next" in [v.branch for v in c.versions(fetch=False)]
+
+
+def test_the_versions_need_a_clone_and_say_so(tmp_path, clone, monkeypatch):
+    mine, _ = clone
+    plain = control.Controller(tmp_path / "no-clone")
+    assert plain.current_version() is None
+    with pytest.raises(control.ControlError, match="not a Git clone"):
+        plain.versions()
+    git("remote", "remove", "origin", cwd=mine)
+    with pytest.raises(control.ControlError, match="does not know where it was cloned from"):
+        control.Controller(mine).versions(fetch=False)
+    monkeypatch.setattr(control.shutil, "which", lambda name: None)
+    assert control.Controller(mine).current_version() is None
+    with pytest.raises(control.ControlError, match="Git was not found"):
+        control.Controller(mine).versions()
+
+
+def test_the_panel_opens_again_with_the_python_that_runs_it(tmp_path):
+    assert control.panel_command(tmp_path, executable=sys.executable, windows=False) == [
+        str(Path(sys.executable)), str(tmp_path / "panel" / "world_engine_panel.py")]
+    again = control.open_panel_again(tmp_path, command=[sys.executable, "-c", "open('again.txt', 'w').write('opened')"])
+    assert again.wait(timeout=60) == 0 and (tmp_path / "again.txt").read_text() == "opened"
+    with pytest.raises(control.ControlError, match="Could not open the panel again"):
+        control.open_panel_again(tmp_path, command=[str(tmp_path / "no-such-python")])
+
+
 # ---------------------------------------------------------------------------------------------- delete, rebuild, reset
 def fake_repo(tmp_path):
     repo = tmp_path / "world-engine"
