@@ -25,6 +25,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import viewer_shot                                        # noqa: E402  (beside this file: how the browser is started)
 from worldengine import console                          # noqa: E402
 from worldengine.server import make_server                # noqa: E402
 
@@ -265,7 +268,7 @@ def check(store, out_dir, fields, query="", no_class=None):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     problems = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(args=["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])
+        browser = viewer_shot.launch(p)
         page = browser.new_page(viewport={"width": 1500, "height": 860})
         page.on("console", lambda m: problems.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: problems.append(str(e)))
