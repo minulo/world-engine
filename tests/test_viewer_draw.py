@@ -113,8 +113,10 @@ def test_the_shaders_are_whole_texts_with_the_viewers_colours_in_them():
 def test_the_page_holds_everything_its_scripts_reach_for():
     page = (VIEWER / "index.html").read_text(encoding="utf-8")
     ids = set(re.findall(r'id="([^"]+)"', page))
-    used = set(re.findall(r'\$\("([^"]+)"\)', (VIEWER / "viewer.js").read_text(encoding="utf-8")))
+    scripts = re.findall(r'<script src="([^"]+)"', page)
+    assert scripts[0] == "draw.js" and scripts[-1] == "viewer.js"                               # viewer.js starts the page: all it uses is defined before it
+    assert sorted(scripts) == sorted(p.name for p in VIEWER.glob("*.js"))                       # every script of the folder, and none that is not there
+    used = set().union(*(re.findall(r'\$\("([^"]+)"\)', (VIEWER / name).read_text(encoding="utf-8")) for name in scripts))
     assert used and not (used - ids), used - ids
-    assert page.index('src="draw.js"') < page.index('src="viewer.js"')                         # viewer.js uses what draw.js defines
     css = (VIEWER / "style.css").read_text(encoding="utf-8")
     assert not (set(re.findall(r"#([a-z]+)\b(?=[^{}]*\{)", css)) - ids - {"fff"})               # no rule for a part that is gone

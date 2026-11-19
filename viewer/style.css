@@ -34,6 +34,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 #stage { position: relative; background: var(--space); min-height: 320px; }
 #gl { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
 #gl.dragging { cursor: grabbing; }
+#over { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }   /* the sheet over the map: lettering and ornaments */
 #status { position: absolute; left: 10px; bottom: 8px; color: #c9d1dc; text-shadow: 0 1px 2px #000; }
 body[data-look=map] #status { color: #2b2333; text-shadow: 0 0 3px #f3ecdc, 0 0 3px #f3ecdc; font-weight: 600; }
 #zoomctl { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; }

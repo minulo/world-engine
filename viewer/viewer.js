@@ -204,6 +204,7 @@ function draw() {
     gl.useProgram(prog);
   }
   showScale();
+  Overlay.redraw();                        // the sheet over the map: lettering and ornaments, placed by the same view
   clearTimeout(draw.then); draw.then = setTimeout(considerDetail, 220);     // once the view rests: does it want finer cells?
 }
 function screenToLatLon(cx, cy) {
@@ -724,6 +725,7 @@ function drawnAt(id) {                     // in the illustrated look: what the 
 function asked0() { return new URLSearchParams(location.search); }
 async function start() {
   if (!initGL()) return;
+  Overlay.init($("over"));
   wire(); draw();
   const w = state.world = await getJSON("/api/world");
   const m = w.meta;

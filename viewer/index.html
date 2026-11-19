@@ -83,6 +83,7 @@
   </aside>
   <section id="stage">
     <canvas id="gl" tabindex="0" aria-label="Map of the world: drag to move, scroll or press + and - to zoom"></canvas>
+    <canvas id="over" aria-hidden="true"></canvas>
     <div id="zoomctl" role="group" aria-label="Zoom">
       <button id="zoomin" type="button" title="Zoom in (+)" aria-label="Zoom in">+</button>
       <button id="zoomout" type="button" title="Zoom out (-)" aria-label="Zoom out">−</button>
@@ -98,6 +99,7 @@
   </aside>
 </main>
 <script src="draw.js"></script>
+<script src="overlay.js"></script>
 <script src="viewer.js"></script>
 </body>
 </html>

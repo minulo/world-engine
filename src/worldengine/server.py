@@ -13,6 +13,7 @@ import hmac
 import json
 import mimetypes
 import os
+import re
 import socket
 import sys
 import threading
@@ -362,6 +363,7 @@ class WorldService:
         return explain(self.day_view(day)[0], cell, field)
 
 
+CHECK_HOLDS = {"viewer.js": b"WebGL2", "draw.js": b"#version 300 es"}       # what check() expects two of the page's scripts to hold
 MESH_PARTS = {"xyz": "<f4", "nbr": "<i4"}       # what GET /api/mesh gives, and how each is written
 DETAIL_NEEDS = ("elevation", "ocean_mask", "lake_level", "height_above_sea", "surface_temperature", "wind", "precipitation",
                 "flow_receiver", "runoff_annual", "river_discharge")      # the fields detail.refine reads
@@ -534,18 +536,25 @@ def local_url(server) -> str:
 
 
 def check(server, timeout_s=600) -> list:
-    """Ask a running server for what the browser asks for first: the page, its two scripts and its style sheet with
-    the types a browser accepts, and /api/world. Returns one line for each; raises RuntimeError if an answer is wrong. For the
-    launchers' and the workflow's check that a world serves; no proxy is used, whatever the environment sets."""
+    """Ask a running server for what the browser asks for first: the page, every script the page names and its
+    style sheet, with the types a browser accepts, and /api/world. Returns one line for each; raises RuntimeError if an
+    answer is wrong. For the launchers' and the workflow's check that a world serves; no proxy is used, whatever the
+    environment sets."""
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     base, said = local_url(server), []
-    for name, want, holds in (("", "text/html", b"World viewer"), ("viewer.js", "text/javascript", b"WebGL2"),
-                              ("draw.js", "text/javascript", b"#version 300 es"), ("style.css", "text/css", b"")):
+
+    def ask(name, want, holds=b""):
         with opener.open(base + name, timeout=timeout_s) as r:
             body, ctype = r.read(), r.headers.get_content_type()
-        if ctype != want or holds not in body:
+        if ctype != want or holds not in body or not body:
             raise RuntimeError(f"GET /{name} gave {len(body)} bytes of {ctype}; expected {want}" + (f" holding {holds.decode()}" if holds else ""))
         said.append(f"GET /{name} gave {len(body)} bytes of {ctype}")
+        return body
+    page = ask("", "text/html", b"World viewer")
+    named = [n.decode() for n in re.findall(rb'<script src="([^"/:]+\.js)"', page)]     # the page's own scripts, in its order
+    for name in dict.fromkeys(named + ["viewer.js"]):                                    # (viewer.js whatever the page names)
+        ask(name, "text/javascript", CHECK_HOLDS.get(name, b""))
+    ask("style.css", "text/css")
     with opener.open(base + "api/world", timeout=timeout_s) as r:
         world = json.loads(r.read())
     cells, fields = world["meta"]["cells"], len(world["fields"])
