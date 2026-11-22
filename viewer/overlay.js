@@ -82,7 +82,8 @@ const Overlay = (() => {
   // The map's own area as the canvas' clip: the disc of the globe, or the band of the flat map between the poles.
   function clipToMap(c, v) {
     c.beginPath();
-    if (v.flat) { const top = (1 - (1 - v.panY) * v.fit * v.zoom) / 2 * v.H, bottom = (1 - (-1 - v.panY) * v.fit * v.zoom) / 2 * v.H; c.rect(0, top, v.W, bottom - top); }
+    if (v.flat) { const e = DRAWING.flatEdge / 90, top = (1 - (e - v.panY) * v.fit * v.zoom) / 2 * v.H, bottom = (1 - (-e - v.panY) * v.fit * v.zoom) / 2 * v.H;
+      c.rect(0, top, v.W, bottom - top); }
     else c.arc(v.W / 2, v.H / 2, v.zoom * v.H / 2, 0, 2 * Math.PI);
     c.clip();
   }

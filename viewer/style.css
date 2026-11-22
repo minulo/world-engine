@@ -43,9 +43,11 @@ body[data-look=map] #status { color: #2b2333; text-shadow: 0 0 3px #f3ecdc, 0 0 
          font-size: 12px; color: #c9d1dc; text-shadow: 0 1px 2px #000; pointer-events: none; }
 #scalebar { display: block; height: 6px; border: 1.5px solid currentColor; border-top: 0; box-sizing: border-box; }
 body[data-look=map] #scale { color: #2b2333; text-shadow: 0 0 3px #f3ecdc, 0 0 3px #f3ecdc; font-weight: 600; }
-label.check { font-weight: 400; display: flex; gap: 6px; align-items: baseline; margin: 8px 0 0; font-size: 14px; }
+label.check { font-weight: 400; display: block; margin: 8px 0 0; font-size: 14px; }
+label.check input { margin: 0 6px 0 0; vertical-align: -2px; }
 body[data-look=map] #smoothrow, body[data-look=map] #fielddesc, body[data-look=map] #partrow, body[data-look=map] #historyrow,
 body[data-look=map] #dayrow, body[data-look=map] #modelbox { display: none; }
+body:not([data-look=map]) #namesrow, body:not([data-look=map]) #magicrow,
 body:not([data-look=map]) #mapnote, body:not([data-look=map]) #seasonrow, body:not([data-look=map]) #finerrow,
 body:not([data-look=map]) #detailnote { display: none; }
 #detailnote { margin: 4px 0 0; }
@@ -70,3 +72,16 @@ tr.current td { font-weight: 600; }
   #controls, #cellpanel { border: 0; border-bottom: 1px solid var(--line); }
   #stage { height: 62vh; }
 }
+
+/* The illustrated look: the page around the map in the map's own paper and ink, and the map's furniture drawn on it */
+body[data-look=map] { --bg: #f3eee2; --panel: #faf6ec; --line: #d9cfb8; --accent: #27647f; }
+@media (prefers-color-scheme: dark) { body[data-look=map] { --bg: #17151a; --panel: #1f1d22; --line: #3a3540; --accent: #6fc3dd; } }
+body[data-look=map] h1, body[data-look=map] h2, body[data-look=map] label {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif; letter-spacing: 0.02em; }
+body[data-look=map] #status, body[data-look=map] #scale {
+  background: #efe7d4; color: #2b2333; border: 1.2px solid #2b2333; border-radius: 2px; padding: 3px 7px 2px; text-shadow: none;
+  font: 600 12px/1.25 "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif; font-variant-numeric: lining-nums; }
+body[data-look=map] #status:empty { display: none; }
+body[data-look=map] #scalebar { height: 5px; border: 1.2px solid #2b2333;
+  background: linear-gradient(90deg, #2b2333 0 25%, transparent 25% 50%, #2b2333 50% 75%, transparent 75%); }
+body[data-look=map] #zoomctl button { background: #efe7d4; color: #2b2333; border: 1.2px solid #2b2333; border-radius: 3px; box-shadow: 2px 2px 0 #2b233340; }

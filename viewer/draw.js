@@ -19,6 +19,8 @@ const DRAWING = {
   ruggedM: 1100.0,                        // where the heights change this much from cell to cell, the drawn ridges are at their strongest
   riverParts: 16,                         // a river's way from one cell to the next is drawn in this many straight parts
   riverFloor: 0.004,                      // rivers below this share of the largest flows are not drawn at any zoom
+  flatEdge: 84,                           // the flat map ends at this latitude, north and south (degrees): beyond it a
+                                          // plain latitude-longitude sheet only smears the last cells into streaks
 };
 const INK = [0.168, 0.137, 0.2];
 
@@ -42,7 +44,8 @@ void place(vec2 p, out vec3 w, out float shade, out float beyond) {
   if (uFlat == 1) {
     float fit = min(1.0, uAspect / 2.0);                 // the whole map fits the canvas at zoom 1
     float lon = (p.x * uAspect / 2.0 / fit / uZoom + uPan.x) * PI, lat = (p.y / fit / uZoom + uPan.y) * PI / 2.0;
-    beyond = (abs(lat) - PI / 2.0) * uPxPerRad; lat = clamp(lat, -PI / 2.0, PI / 2.0);
+    const float EDGE = ${(DRAWING.flatEdge * Math.PI / 180).toFixed(6)};
+    beyond = (abs(lat) - EDGE) * uPxPerRad; lat = clamp(lat, -EDGE, EDGE);
     w = vec3(cos(lat) * cos(lon), cos(lat) * sin(lon), sin(lat)); shade = 1.0;
   } else {
     vec2 q = vec2(p.x * uAspect, p.y) / uZoom; float r = length(q);
@@ -150,7 +153,7 @@ void main() {
 
 // What the illustrated look and its rivers share: the bends, and where the land is, at either level of cells.
 const GLSL_DRAWN = `
-uniform sampler2D uA; uniform sampler2D uB; uniform sampler2D uFA; uniform sampler2D uFB; uniform int uOct, uFOct;
+uniform sampler2D uA; uniform sampler2D uB; uniform sampler2D uC; uniform sampler2D uFA; uniform sampler2D uFB; uniform int uOct, uFOct, uSnow;
 uvec3 pcg3(uvec3 v) {                                     // whole-number arithmetic: the same bends on every machine
   v = v * 1664525u + 1013904223u; v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
   v ^= v >> 16u; v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y; return v;
@@ -166,16 +169,32 @@ vec3 warp(vec3 w, int oct, float cell) {                  // the bends: large on
   for (int o = 0; o < 10; o++) { if (o >= oct) break; s += a * noise3(w * f + 19.7 * float(o)); a *= 0.5; f *= 2.0; }
   return s * (${DRAWING.warp.toFixed(3)} * cell);
 }
-// x: 1 on land and 0 at sea; y: 1 under ice; each smoothly from cell to cell (the cells: their places, neighbours and values)
-vec2 landAt(sampler2D pos, sampler2D nb, sampler2D A, vec3 wp, int c) {
-  int n[6]; nbrsOf(nb, c, n); float sw = 0.0; vec2 s = vec2(0.0);
+// The four values of T for the cells around a place, blended: each cell's weight falls to nothing one spacing from its
+// centre (the cells: their places and neighbours).
+vec4 blend4(sampler2D pos, sampler2D nb, sampler2D T, vec3 wp, int c) {
+  int n[6]; nbrsOf(nb, c, n); float sw = 0.0; vec4 s = vec4(0.0);
   for (int k = 0; k < 7; k++) {
     int j = k == 0 ? c : n[k - 1]; if (j < 0) continue;
     vec4 P = texelFetch(pos, at(j), 0); float t = length(wp - P.xyz) / (KERNEL * P.w); if (t >= 1.0) continue;
-    float q = 1.0 - t * t; q *= q; sw += q; s += q * texelFetch(A, at(j), 0).xw;
+    float q = 1.0 - t * t; q *= q; sw += q; s += q * texelFetch(T, at(j), 0);
   }
-  return sw > 0.0 ? s / sw : texelFetch(A, at(c), 0).xw;
+  return sw > 0.0 ? s / sw : texelFetch(T, at(c), 0);
 }
+// x: 1 on land and 0 at sea; y: 1 under ice; each smoothly from cell to cell
+vec2 landAt(sampler2D pos, sampler2D nb, sampler2D A, vec3 wp, int c) { return blend4(pos, nb, A, wp, c).xw; }
+// Land and lake at a place as the drawing shows them: from the world's cells, and from the finer cells where they are,
+// each looked up at its own bend of the place (as the illustrated look does).
+vec2 landLake(vec3 w) {
+  vec3 wp = normalize(w + warp(w, uOct, uCell)); int c = nearest(wp);
+  vec2 v = vec2(blend4(uPos, uNbr, uA, wp, c).x, blend4(uPos, uNbr, uB, wp, c).w);
+  if (uFine == 1) {
+    float s = fineShare(w);
+    if (s > 0.0) { vec3 wf = normalize(w + warp(w, uFOct, uFCell)); int f = nearestFine(wf);
+      v = mix(v, vec2(blend4(uFPos, uFNbr, uFA, wf, f).x, blend4(uFPos, uFNbr, uFB, wf, f).w), s); }
+  }
+  return v;
+}
+float snowAt(vec3 wp, int c) { return uSnow == 1 ? blend4(uPos, uNbr, uC, wp, c).x : 0.0; }   // the month's snow, where the seasons are shown
 `;
 
 // The illustrated look. No branch here holds a derivative (fwidth, dFdx): every pixel runs the same lines, and the
@@ -229,9 +248,12 @@ vec2 sign_(vec2 p, int kind, float pick, float aa) {
   return vec2(ink, fill);
 }
 // The signs of one size: one may stand in each mesh of a net of latitude and longitude with meshes "pitch" radians
-// wide (fewer meshes around the world toward the poles), a little off its middle. dens: how many of the meshes hold one.
-vec2 signs(vec3 w, vec3 ex, vec3 ny, float lat, float lon, float pitch, float seed, int kind, float dens, float size) {
-  vec2 got = vec2(0.0); float row = floor(lat / pitch), east = uFlat == 1 ? 1.0 / max(cos(lat), 0.05) : 1.0;
+// wide (fewer meshes around the world toward the poles), a little off its middle. dens: how many of the meshes hold
+// one. A sign is drawn whole or not at all: of the signs whose own number lies from lo to hi, the strongest at this
+// point is returned, and anchor is where its foot stands.
+vec2 signs(vec3 w, vec3 ex, vec3 ny, float lat, float lon, float pitch, float seed, int kind, float dens, float size, float lo, float hi, out vec3 anchor) {
+  vec2 got = vec2(0.0); float best = 0.0; anchor = w;
+  float row = floor(lat / pitch), east = uFlat == 1 ? 1.0 / max(cos(lat), 0.05) : 1.0;
   for (int dj = -1; dj <= 1; dj++) {
     float j = row + float(dj), latc = (j + 0.5) * pitch;
     if (abs(latc) > 1.45) continue;
@@ -239,23 +261,30 @@ vec2 signs(vec3 w, vec3 ex, vec3 ny, float lat, float lon, float pitch, float se
     for (int di = -1; di <= 1; di++) {
       float i = mod(i0 + float(di), around);
       vec3 h = hash3(vec3(i, j, seed)) * 0.5 + 0.5;
-      float show = 1.0 - smoothstep(dens - 0.06, dens + 0.06, h.z); if (show <= 0.0) continue;
+      float own = fract(h.z * 7.13 + h.y * 3.71);
+      if (h.z >= dens || own < lo || own >= hi) continue;
       float alat = latc + (h.y - 0.5) * 0.66 * pitch, alon = (i + 0.5 + (h.x - 0.5) * 0.66) * wide - PI;
-      vec3 d = w - vec3(cos(alat) * cos(alon), cos(alat) * sin(alon), sin(alat));
-      vec2 p = vec2(dot(d, ex) * east, dot(d, ny)) * uPxPerRad / size;
+      vec3 a = vec3(cos(alat) * cos(alon), cos(alat) * sin(alon), sin(alat));
+      float sz = size * (0.85 + 0.3 * fract(h.x * 5.31 + h.y));
+      vec2 p = vec2(dot(w - a, ex) * east, dot(w - a, ny)) * uPxPerRad / sz;
       if (dot(p, p) > 90.0) continue;
-      got = max(got, show * sign_(p, kind, fract(h.z * 17.31 + h.x), 1.0 / size));
+      vec2 s = sign_(p, kind, fract(h.z * 17.31 + h.x), 1.0 / sz);
+      if (max(s.x, s.y) > best) { best = max(s.x, s.y); got = s; anchor = a; }
     }
   }
   return got;
 }
-// The signs at this zoom: they grow as the view comes closer, and when they have doubled, a finer net of small
-// ones takes their place.
-vec2 signsNow(vec3 w, vec3 ex, vec3 ny, float lat, float lon, float pitchPx, float seed, int kind, float dens) {
-  float l = log2(uPxPerRad * 0.02 / pitchPx), l0 = floor(l), fr = l - l0, pitch = 0.02 * exp2(-l0), size = uDpr * exp2(fr);
-  vec2 a = signs(w, ex, ny, lat, lon, pitch, seed + 31.0 * l0, kind, dens, size);
-  if (fr < 0.8) return a;
-  return mix(a, signs(w, ex, ny, lat, lon, 0.5 * pitch, seed + 31.0 * (l0 + 1.0), kind, dens, uDpr), smoothstep(0.8, 1.0, fr));
+// The signs at this zoom, "pitchPx" of the page's points apart: they grow as the view comes closer, and when they have
+// doubled, the signs of a finer net come in one by one as those of the coarser one leave, each whole.
+vec2 signsNow(vec3 w, vec3 ex, vec3 ny, float lat, float lon, float pitchPx, float seed, int kind, float dens, out vec3 anchor) {
+  float l = log2(uPxPerRad * 0.02 / (pitchPx * uDpr)), l0 = floor(l), fr = l - l0, pitch = 0.02 * exp2(-l0), size = uDpr * exp2(fr);
+  float t = smoothstep(0.55, 1.0, fr);
+  vec3 a1, a2;
+  vec2 big = signs(w, ex, ny, lat, lon, pitch, seed + 31.0 * l0, kind, dens, size, t, 1.0, a1);
+  vec2 small = vec2(0.0);
+  if (t > 0.0) small = signs(w, ex, ny, lat, lon, 0.5 * pitch, seed + 31.0 * (l0 + 1.0), kind, dens, uDpr, 0.0, t, a2);
+  if (max(small.x, small.y) > max(big.x, big.y)) { anchor = a2; return small; }
+  anchor = a1; return big;
 }
 // What the cells around a place say of it, blended (each cell's weight falls to nothing one spacing from its centre).
 struct Ground {
@@ -291,53 +320,88 @@ Ground around(sampler2D pos, sampler2D nb, sampler2D A, sampler2D B, vec3 wp, in
   g.margin = (best - second) / sw;
   return g;
 }
+// Whether a sign whose foot stands at a may be drawn: its foot on land as drawn, off ice and lakes, and well inside
+// its biome; a peak only on rugged or high ground, any other sign only off it. Decided at the foot, so a sign is
+// whole or absent and never cut by a coast or a border.
+float signFits(vec3 a, bool peak) {
+  vec3 ap = normalize(a + warp(a, uOct, uCell));
+  Ground g = around(uPos, uNbr, uA, uB, ap, nearest(ap));
+  vec2 ll = landLake(a);
+  float rug = clamp(length(g.grad) * uCell / ${DRAWING.ruggedM.toFixed(1)}, 0.0, 1.0);
+  bool rocky = rug > 0.38 || g.up > 1700.0;
+  if (ll.x < 0.62 || ll.y > 0.3 || g.ice > 0.5) return 0.0;
+  if (peak) return rocky ? 1.0 : 0.0;
+  return !rocky && g.margin > 0.08 ? 1.0 : 0.0;
+}
 // The country at a place, drawn from its ground: w is the place, wp the place the bends moved it to, cell the
 // spacing of the cells the ground came from, and relief the distance over which a rise counts as a slope.
-vec3 country(Ground g, vec3 w, vec3 wp, float cell, float relief, int ridgeOct, vec3 ex, vec3 ny, float lat, float lon, float px) {
-  float pxCell = cell * uPxPerRad;
-  // the light on the heights: the slope the cells hold, and the drawn ridges on it
+vec3 country(Ground g, float snow, vec3 w, vec3 wp, float cell, float relief, int ridgeOct, vec3 ex, vec3 ny, float lat, float lon, float px, float seen) {
+  float pxCell = cell * uPxPerRad, pxWorld = uCell * uPxPerRad;
+  // the light on the heights: the slope the cells hold, and, once a cell is large on the screen, the drawn ridges on it
   vec2 slope = vec2(dot(g.grad, ex), dot(g.grad, ny)) * (relief / ${DRAWING.reliefM.toFixed(1)});
   float rug = clamp(length(g.grad) * relief / ${DRAWING.ruggedM.toFixed(1)}, 0.0, 1.0);
+  float near = smoothstep(16.0, 30.0, pxCell / px);
   float reach = 2.5 * px / uPxPerRad, b0 = ridges(wp, ridgeOct, cell);  // the ridges' slope, taken over a few pixels
-  vec2 db = rug * vec2(ridges(normalize(wp + ex * reach), ridgeOct, cell) - b0, ridges(normalize(wp + ny * reach), ridgeOct, cell) - b0) * (cell / reach) * 0.5;
+  vec2 db = near * rug * vec2(ridges(normalize(wp + ex * reach), ridgeOct, cell) - b0, ridges(normalize(wp + ny * reach), ridgeOct, cell) - b0) * (cell / reach) * 0.5;
   float lit = dot(normalize(vec3(-(slope + db), 1.0)), LIGHT);
-  float sh1 = 1.0 - aastep(LIGHT.z - 0.20, lit), sh2 = 1.0 - aastep(LIGHT.z - 0.40, lit), hl = aastep(LIGHT.z + 0.18, lit);
+  float sh1 = 1.0 - aastep(LIGHT.z - 0.20, lit), sh2 = 1.0 - aastep(LIGHT.z - 0.40, lit), sh3 = 1.0 - aastep(LIGHT.z - 0.56, lit);
+  float hl = aastep(LIGHT.z + 0.18, lit);
   // every line's distance, in pixels, before any choice is made
   float isLand = aastep(0.5, g.land), coast = abs(g.land - 0.5) / max(fwidth(g.land), 1e-7);
   float isIce = aastep(0.5, g.ice), iceEdge = abs(g.ice - 0.5) / max(fwidth(g.ice), 1e-7);
+  float isSnow = aastep(0.5, snow) * (1.0 - isIce);
   float isLake = aastep(0.5, g.lake) * isLand, lakeEdge = abs(g.lake - 0.5) / max(fwidth(g.lake), 1e-7);
-  float biomeEdge = g.margin / max(fwidth(g.margin), 1e-7);
-  float crest = g.up + (b0 - 0.35) * rug * 900.0;         // the heights' bands follow the drawn ridges
-  float high1 = aastep(1500.0, crest), high2 = aastep(2700.0, crest);
-  float far1 = 1.0 - aastep(0.30, g.land), far2 = aastep(3800.0, g.deep) * (1.0 - aastep(0.04, g.land));
-  float h1 = hatch(asin(clamp(dot(w, vec3(0.2873, 0.1642, 0.9437)), -1.0, 1.0)), 6.5 * px, 0.4 * px);
-  // the land: flat colours by biome, rock on the heights, ice; then light and shadow in three steps
+  float crest = g.up + (b0 - 0.35) * max(rug, 0.4) * 900.0 * near;   // the heights' bands follow the drawn ridges
+  float fc = max(fwidth(crest), 1e-7), fd = max(fwidth(g.deep), 1e-7);
+  float high1 = aastep(1000.0, crest), high2 = aastep(2000.0, crest), high3 = aastep(3000.0, crest);
+  float shelf = 1.0 - aastep(1000.0, g.deep), deep = aastep(3800.0, g.deep);
+  float h1 = hatch(asin(clamp(dot(w, vec3(0.2873, 0.1642, 0.9437)), -1.0, 1.0)), 8.0 * px, 0.4 * px);
+  float cline = max(stroke(abs(crest - 1000.0) / fc, 0.35 * px), stroke(abs(crest - 2000.0) / fc, 0.35 * px));
+  float dline = max(stroke(abs(g.deep - 1000.0) / fd, 0.35 * px), stroke(abs(g.deep - 3800.0) / fd, 0.35 * px));
+  float shore = stroke(abs(coast - 5.0 * px), 0.4 * px) * 0.42 + stroke(abs(coast - 10.5 * px), 0.4 * px) * 0.27 + stroke(abs(coast - 17.0 * px), 0.4 * px) * 0.15;
+  float lakeShore = stroke(abs(lakeEdge - 4.0 * px), 0.35 * px);
+  // the land: flat colours by biome; the heights in tints; the month's snow as a veil, under which the country still shows
   vec4 biome = g.bio >= 0.0 ? texelFetch(uBiome, ivec2(int(g.bio), 0), 0) : vec4(0.82, 0.80, 0.64, 0.0);
   vec3 base = biome.rgb; int kind = int(biome.a * 255.0 / 30.0 + 0.5);
-  base = mix(base, vec3(0.745, 0.685, 0.625), 0.38 * high1); base = mix(base, vec3(0.93, 0.91, 0.90), 0.65 * high2);
-  base = mix(base, vec3(0.972, 0.980, 0.984), isIce);
-  vec3 landc = mix(base, base * vec3(1.06, 1.045, 0.97) + 0.018, hl);
-  landc = mix(landc, landc * vec3(0.82, 0.795, 0.90), sh1); landc = mix(landc, landc * vec3(0.80, 0.77, 0.90), sh2);
-  landc = mix(landc, INK, 0.30 * h1 * sh2);
-  // the small signs: peaks where the land is rugged, and elsewhere what grows there; none on ice, in lakes or at a biome's very edge
-  float peaks = smoothstep(0.30, 0.46, rug), inside = smoothstep(0.03, 0.14, g.margin) * smoothstep(0.52, 0.64, g.land) * (1.0 - isIce) * (1.0 - step(0.5, g.lake));
+  base = mix(base, vec3(0.80, 0.72, 0.62), 0.45 * high1); base = mix(base, vec3(0.88, 0.84, 0.79), 0.6 * high2);
+  base = mix(base, vec3(0.96, 0.96, 0.95), 0.85 * high3);
+  base = mix(base, vec3(0.955, 0.965, 0.970), 0.80 * isSnow);
+  // light and shadow in flat steps; the shadow is one ink laid over, bluer on pale ground; strokes in the deepest
+  float pale = smoothstep(0.62, 0.86, dot(base, vec3(0.299, 0.587, 0.114)));
+  vec3 shade = mix(vec3(0.30, 0.28, 0.40), vec3(0.42, 0.50, 0.62), pale);
+  vec3 landc = mix(base, mix(base * vec3(1.05, 1.04, 0.98) + 0.015, base * 1.03 + 0.01, pale), hl);
+  landc = mix(landc, shade, 0.20 * sh1 + 0.16 * sh2);
+  landc = mix(landc, INK, 0.28 * h1 * sh3);
+  landc = mix(landc, INK, 0.22 * cline * smoothstep(6.0, 14.0, pxCell / px));
+  // ice in its own cold light
+  vec3 icec = mix(vec3(0.972, 0.980, 0.984), vec3(1.0), hl);
+  icec = mix(icec, vec3(0.84, 0.89, 0.94), sh1); icec = mix(icec, vec3(0.74, 0.81, 0.90), sh2);
+  landc = mix(landc, icec, isIce);
+  // the small signs, each decided whole at its foot: peaks on rugged or high ground, and elsewhere what grows there
+  float grow = 1.0 + 0.5 * clamp(log2(pxWorld / (150.0 * px)), 0.0, 2.5);
   float dens = kind == 1 || kind == 2 ? 0.86 : kind == 3 ? 0.62 : kind == 4 ? 0.5 : kind == 5 ? 0.42 : kind == 6 ? 0.36 : 0.0;
-  vec2 grows = kind > 0 ? signsNow(w, ex, ny, lat, lon, 23.0, 7.0, kind, dens) * (1.0 - peaks) : vec2(0.0);
-  vec2 peak = peaks > 0.0 ? signsNow(w, ex, ny, lat, lon, 31.0, 211.0, 7, 0.82) * peaks : vec2(0.0);
-  landc = mix(landc, mix(base * 0.66, vec3(0.13, 0.33, 0.29), 0.3), grows.y * inside);
-  landc = mix(landc, landc * vec3(0.72, 0.69, 0.84), peak.y * inside);
-  landc = mix(landc, INK, 0.82 * max(grows.x, peak.x) * inside);
-  landc = mix(landc, INK, 0.2 * stroke(biomeEdge, 0.3 * px) * (1.0 - isIce) * smoothstep(14.0, 30.0, pxCell / px));
-  // the sea: a pale band along the coasts, the open sea, the deep; and the old charts' lines along the shore
-  vec3 seac = mix(vec3(0.682, 0.871, 0.855), vec3(0.545, 0.792, 0.816), far1); seac = mix(seac, vec3(0.506, 0.765, 0.800), far2);
-  seac = mix(seac, vec3(0.925, 0.955, 0.962), isIce);
-  float shore = (stroke(abs(coast - 5.0 * px), 0.4 * px) * 0.42 + stroke(abs(coast - 10.5 * px), 0.4 * px) * 0.27 + stroke(abs(coast - 17.0 * px), 0.4 * px) * 0.15);
-  seac = mix(seac, vec3(0.22, 0.42, 0.52), shore * (1.0 - isIce) * smoothstep(7.0, 16.0, pxCell / px));
+  vec3 aG, aP; vec2 grows = vec2(0.0), peak = vec2(0.0);
+  if (kind > 0) grows = signsNow(w, ex, ny, lat, lon, 15.0 * grow, 7.0, kind, dens, aG);
+  if (grows.x + grows.y > 0.0) grows *= signFits(aG, false);
+  peak = signsNow(w, ex, ny, lat, lon, 21.0 * grow, 211.0, 7, 0.82, aP);
+  if (peak.x + peak.y > 0.0) peak *= signFits(aP, true);
+  grows *= seen; peak *= seen;
+  landc = mix(landc, mix(base * 0.66, vec3(0.13, 0.33, 0.29), 0.3), grows.y);
+  landc = mix(landc, mix(landc, shade, 0.55), peak.y);
+  landc = mix(landc, INK, 0.82 * max(grows.x, peak.x));
+  // the sea in three steps from the stored depth, each with a drawn edge; frozen sea; the old charts' lines along the shore
+  vec3 seac = mix(vec3(0.545, 0.792, 0.816), vec3(0.455, 0.716, 0.780), deep);
+  seac = mix(seac, vec3(0.71, 0.88, 0.86), shelf);
+  seac = mix(seac, vec3(0.22, 0.42, 0.52), 0.18 * dline * (1.0 - aastep(0.04, g.land)));
+  seac = mix(seac, vec3(0.86, 0.92, 0.95), isIce);
+  seac = mix(seac, vec3(0.22, 0.42, 0.52), shore * (1.0 - isIce) * smoothstep(18.0, 34.0, pxCell / px) * smoothstep(0.03, 0.12, g.land));
+  // lakes, with a shore line inside
   vec3 lakec = mix(vec3(0.60, 0.83, 0.84), vec3(0.93, 0.955, 0.962), isIce);
+  lakec = mix(lakec, vec3(0.22, 0.42, 0.52), 0.35 * lakeShore * (1.0 - isIce));
   landc = mix(landc, lakec, isLake);
   landc = mix(landc, INK, 0.8 * stroke(lakeEdge, 0.7 * px) * isLand);
   vec3 col = mix(seac, landc, isLand);
-  col = mix(col, vec3(0.42, 0.55, 0.66), 0.55 * stroke(iceEdge, 0.55 * px));
+  col = mix(col, vec3(0.30, 0.45, 0.58), mix(0.8, 0.45, isLand) * stroke(iceEdge, 0.7 * px));
   return mix(col, INK, 0.92 * stroke(coast, 1.0 * px));
 }
 void main() {
@@ -345,37 +409,47 @@ void main() {
   float px = uDpr, lat = asin(clamp(w.z, -1.0, 1.0)), lon = atan(w.y, w.x);
   vec3 ex = uFlat == 1 ? normalize(vec3(-w.y, w.x, 1e-9)) : uRot[0];
   vec3 ny = uFlat == 1 ? cross(w, ex) : uRot[1];
-  // the world's own cells
-  vec3 wp = normalize(w + warp(w, uOct, uCell));
-  Ground g = around(uPos, uNbr, uA, uB, wp, nearest(wp));
-  vec3 col = country(g, w, wp, uCell, uCell, uRidge, ex, ny, lat, lon, px);
-  if (uFine == 1) {                                       // (the same for every pixel of a picture, so no line is lost)
-    // the finer cells of the detail, where they are: their own heights, coast, lakes; the biome and the ice are the world's
+  // the world's own cells; and near and in the region of the finer cells, the ground of both blended into one, so that
+  // one coast slides from the one level to the other and each point is drawn once
+  vec3 wp = normalize(w + warp(w, uOct, uCell)); int c = nearest(wp);
+  Ground g = around(uPos, uNbr, uA, uB, wp, c);
+  float snow = snowAt(wp, c);
+  vec3 wd = wp; float cell = uCell, relief = uCell; int ro = uRidge;
+  float s = uFine == 1 ? fineShare(w) : 0.0;
+  if (s > 0.0) {                                          // (no derivative is taken in here)
     vec3 wf = normalize(w + warp(w, uFOct, uFCell));
     Ground f = around(uFPos, uFNbr, uFA, uFB, wf, nearestFine(wf));
-    if (g.bio >= 0.0) { f.bio = g.bio; f.margin = g.margin; } else f.margin = 1.0;
-    f.ice = g.ice;
-    col = mix(col, country(f, w, wf, uFCell, 1.5 * uFCell, uFRidge, ex, ny, lat, lon, px), fineShare(w));
+    g.land = mix(g.land, f.land, s); g.up = mix(g.up, f.up, s); g.deep = mix(g.deep, f.deep, s);
+    g.lake = mix(g.lake, f.lake, s); g.grad = mix(g.grad, f.grad, s);
+    if (g.bio < 0.0 && s > 0.5) { g.bio = f.bio; g.margin = 1.0; }   // a fine island in a cell of the world's sea
+    wd = normalize(mix(wp, wf, s)); cell = mix(uCell, uFCell, s); relief = mix(uCell, 1.5 * uFCell, s); ro = s > 0.5 ? uFRidge : uRidge;
   }
+  float seen = uFlat == 1 ? 1.0 : smoothstep(0.20, 0.42, (limb - 0.72) / 0.28);   // the signs thin out toward the globe's rim
+  vec3 col = country(g, snow, w, wd, cell, relief, ro, ex, ny, lat, lon, px, seen);
   float every = uCell * uPxPerRad > 180.0 * px ? 10.0 : 30.0;        // the lines of latitude and longitude, in degrees
   float glat = lat * 180.0 / PI / every, glon = lon * 180.0 / PI / every;
   float grat = max(stroke(abs(glat - floor(glat + 0.5)) / max(fwidth(glat), 1e-7), 0.4 * px),
-                   stroke(abs(glon - floor(glon + 0.5)) / max(fwidth(glon), 1e-7), 0.4 * px) * (1.0 - smoothstep(1.35, 1.5, abs(lat))));
+                   stroke(abs(glon - floor(glon + 0.5)) / max(fwidth(glon), 1e-7), 0.4 * px) * (1.0 - smoothstep(1.22, 1.40, abs(lat))));
   int cu = uSel >= 0 ? nearest(w) : -1;                   // the cell that is selected is shown where it truly lies
   float sel = cu == uSel && uSel >= 0 ? 1.0 : 0.0, selEdge = uSel >= 0 ? border(w, cu) * uPxPerRad : 99.0;
-  col = mix(col, INK, 0.06 * grat);
+  col = mix(col, INK, 0.10 * grat);
   col = mix(col, vec3(1.0), 0.28 * sel); col = mix(col, vec3(0.75, 0.16, 0.2), sel * (1.0 - smoothstep(1.2 * px, 2.4 * px, selEdge)));
-  col *= uFlat == 1 ? 1.0 : 0.86 + 0.14 * limb;
-  // the paper around the map: the globe's shadow on it, and the map's inked edge
-  vec3 paper = uDark == 1 ? vec3(0.150, 0.140, 0.180) : vec3(0.925, 0.893, 0.820);
+  // the globe as a ball in one flat step of shade at the lower right (the viewer's hand, as its light is)
   vec2 q = vec2(vPos.x * uAspect, vPos.y) / uZoom;
-  float thrown = uFlat == 1 ? 0.0 : 1.0 - smoothstep(0.0, 0.075, length(q - vec2(0.02, -0.027)) - 1.0);
-  vec3 outc = paper * (1.0 - 0.3 * thrown);
+  vec3 ball = vec3(q, sqrt(max(0.0, 1.0 - dot(q, q))));
+  float lam = dot(ball, normalize(vec3(-0.45, 0.45, 0.77)));
+  col *= uFlat == 1 ? 1.0 : mix(0.87, 1.0, aastep(-0.25, lam));
+  if (uDark == 1) col *= vec3(0.90, 0.88, 0.84);          // the same sheet under a lamp
+  // the paper around the map: the globe's hard shadow on it, and the map's inked edge
+  vec3 paper = uDark == 1 ? vec3(0.150, 0.140, 0.180) : vec3(0.925, 0.893, 0.820);
+  float thrown = uFlat == 1 ? 0.0 : 1.0 - smoothstep(-0.5, 0.5, (length(q - vec2(0.035, -0.047)) - 1.0) * uPxPerRad);
+  vec3 outc = uDark == 1 ? paper * (1.0 + 0.25 * thrown) : paper * (1.0 - 0.16 * thrown);
   col = mix(col, outc, smoothstep(-0.5, 0.5, beyond));
-  col = mix(col, INK, stroke(abs(beyond), 1.2 * px) * 0.95);
+  col = mix(col, uDark == 1 ? vec3(0.62, 0.57, 0.48) : INK, stroke(abs(beyond), 1.7 * px) * 0.95);
   col = uReady == 1 ? col : paper * 0.94;
-  vec2 fc = gl_FragCoord.xy;
-  float grain = hash3(vec3(floor(fc), 3.0)).x * 0.016 + noise3(vec3(fc * 0.011 / px, 5.0)).x * 0.028;
+  vec2 fp = gl_FragCoord.xy;                              // the paper's grain: fibres along it, and fine speckle
+  float grain = hash3(vec3(floor(fp), 3.0)).x * 0.014 + noise3(vec3(fp.x * 0.9 / px, fp.y * 0.06 / px, 5.0)).x * 0.012
+              + noise3(vec3(fp * 0.011 / px, 5.0)).x * 0.012;
   frag = vec4(col * (1.0 + grain), 1.0);
 }`;
 
@@ -384,8 +458,8 @@ void main() {
 // of the detail the one gives way to the other.
 const VS_RIVER = GLSL_HEAD + GLSL_DRAWN + `
 in vec2 aCorner; in vec3 aA; in vec3 aB; in vec2 aQ;
-uniform vec2 uView; uniform float uShift, uWide, uDpr; uniform int uLevel;
-out float vSide, vHalf, vFront, vQ; out vec2 vP;
+uniform vec2 uView; uniform float uShift, uWide, uDpr, uQMin; uniform int uLevel;
+out float vSide, vHalf, vFront; out vec2 vP;
 vec3 bent(vec3 x) {                                       // where the drawing shows the place x: against the bends
   int oct = min(uLevel == 1 ? uFOct : uOct, 3); float cell = uLevel == 1 ? uFCell : uCell;
   vec3 w = normalize(x - warp(x, oct, cell)); w = normalize(x - warp(w, oct, cell)); return normalize(x - warp(w, oct, cell));
@@ -404,24 +478,29 @@ void main() {
   }
   vec2 pa = sa * uView * 0.5, pb = sb * uView * 0.5, dir = pb - pa; float len = length(dir);
   dir = len > 1e-5 ? dir / len : vec2(1.0, 0.0);
-  float q = mix(aQ.x, aQ.y, aCorner.x), halfw = 0.5 * uDpr * uWide * (0.55 + 4.2 * pow(clamp(q, 0.0, 1.0), 0.45));
-  vec2 p = mix(pa, pb, aCorner.x) + vec2(-dir.y, dir.x) * aCorner.y * (halfw + 1.0) + dir * (aCorner.x * 2.0 - 1.0) * min(0.5 * halfw, 0.4 * len);
+  float q = mix(aQ.x, aQ.y, aCorner.x), front = mix(fa, fb, aCorner.x);
+  // the river's width: by its flow; to nothing where the other level of cells takes over, at the smallest flows
+  // drawn, and toward the globe's rim, so that a river ends thin and never fades to a ghost of itself
+  float fine = fineShare(normalize(mix(aA, aB, aCorner.x))), mine = uLevel == 1 ? fine : 1.0 - fine;
+  float halfw = 0.5 * uDpr * uWide * (0.40 + 4.4 * pow(clamp(q, 0.0, 1.0), 0.6))
+              * mine * smoothstep(uQMin * 0.55, uQMin, q) * (uFlat == 1 ? 1.0 : smoothstep(0.05, 0.30, front));
+  float edge = halfw > 0.05 ? 1.0 : 0.0;
+  vec2 p = mix(pa, pb, aCorner.x) + vec2(-dir.y, dir.x) * aCorner.y * (halfw + edge) + dir * (aCorner.x * 2.0 - 1.0) * min(0.5 * halfw, 0.4 * len);
   gl_Position = vec4(p / (uView * 0.5), 0.0, 1.0);
-  vSide = aCorner.y * (halfw + 1.0); vHalf = halfw; vFront = mix(fa, fb, aCorner.x); vQ = q; vP = gl_Position.xy;
+  vSide = aCorner.y * (halfw + edge); vHalf = halfw; vFront = front; vP = gl_Position.xy;
 }`;
 const FS_RIVER = GLSL_HEAD + GLSL_DRAWN + `
-in float vSide, vHalf, vFront, vQ; in vec2 vP; out vec4 frag; uniform float uQMin; uniform int uLevel;
+in float vSide, vHalf, vFront; in vec2 vP; out vec4 frag;
 void main() {
-  if (vFront < 0.0) discard;                              // on the far side of the globe
+  if (vFront < 0.0 || vHalf <= 0.05) discard;             // on the far side of the globe, or a river with no width here
   vec3 w; float shade, beyond; place(vP, w, shade, beyond);
-  float fine = fineShare(w), mine = uLevel == 1 ? fine : 1.0 - fine;
-  if (beyond > 0.0 || mine <= 0.0) discard;
-  vec3 wp = normalize(w + warp(w, uOct, uCell));
-  vec2 ground = landAt(uPos, uNbr, uA, wp, nearest(wp));  // the world's own land and ice
-  if (uLevel == 1) { vec3 wf = normalize(w + warp(w, uFOct, uFCell)); ground.x = landAt(uFPos, uFNbr, uFA, wf, nearestFine(wf)).x; }
-  if (ground.x < 0.5 || ground.y > 0.5) discard;          // a river ends where the drawn sea begins, and is not drawn under ice
-  float a = (1.0 - smoothstep(vHalf - 0.5, vHalf + 0.5, abs(vSide))) * smoothstep(uQMin * 0.55, uQMin, vQ);
-  frag = vec4(0.153, 0.392, 0.522, 0.94 * a * mine);
+  vec3 wp = normalize(w + warp(w, uOct, uCell)); int c = nearest(wp);
+  vec2 ll = landLake(w);
+  // a river ends where the drawn sea begins, is not drawn under ice, crosses a lake only as the lake, and under the
+  // month's snow is drawn faint
+  if (beyond > 0.0 || ll.x < 0.5 || blend4(uPos, uNbr, uA, wp, c).w > 0.5) discard;
+  float a = (1.0 - smoothstep(vHalf - 0.5, vHalf + 0.5, abs(vSide))) * (1.0 - smoothstep(0.35, 0.6, ll.y)) * (1.0 - 0.6 * step(0.5, snowAt(wp, c)));
+  frag = vec4(0.153, 0.392, 0.522, a);
 }`;
 
 // ---------------------------------------------------------------- preparing a world for the shaders
@@ -461,18 +540,22 @@ function cellGradients(xyz, nbr, value) {
 // curve through the cell above it and the cell below (so that a river has no corners at the centres of the cells),
 // cut into straight parts. Each part: where it starts, where it ends, and the flow at each end as a share (0 to 1) of
 // `top`, the flow of the largest rivers. The flow is that of the cell at the start and of the receiver at the end, so
-// a river widens along its way; a river that starts in the cell starts as a thread.
-function riverParts(xyz, recv, flow, sea, top) {
+// a river widens along its way; a river that starts in the cell starts as a thread. Within a lake (both cells in
+// `lake`, where it is given) no part is drawn.
+function riverParts(xyz, recv, flow, sea, top, lake) {
   const n = recv.length, floor = DRAWING.riverFloor * top, donor = new Int32Array(n).fill(-1), out = [];
-  const drawn = (i) => !sea[i] && recv[i] >= 0 && flow[i] >= floor;
+  const drawn = (i) => !sea[i] && recv[i] >= 0 && flow[i] >= floor, inLake = (i) => !!(lake && lake[i]);
   for (let i = 0; i < n; i++) if (drawn(i)) { const r = recv[i]; if (donor[r] < 0 || flow[i] > flow[donor[r]]) donor[r] = i; }
   const P = (i) => [xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]], S = DRAWING.riverParts;
   const share = (v) => Math.max(0, Math.min(1, v / top));
   for (let i = 0; i < n; i++) {
-    if (!drawn(i)) continue;
+    if (!drawn(i) || (inLake(i) && inLake(recv[i]))) continue;      // within a lake the river is the lake
     const r = recv[i], p1 = P(i), p2 = P(r), d = donor[i], r2 = recv[r];
     const p0 = d >= 0 ? P(d) : p1.map((v, k) => 2 * v - p2[k]), p3 = r2 >= 0 ? P(r2) : p2.map((v, k) => 2 * v - p1[k]);
-    const qa = share(flow[i]) * (d >= 0 ? 1 : 0.12), qb = share(sea[r] ? flow[i] : Math.max(flow[r], flow[i]));
+    // a way widens toward the flow of the cell it joins only if it is that cell's main stem (its largest donor):
+    // a side river keeps its own width to the join, and none swells into the sea or a lake
+    const main = donor[r] === i && !sea[r] && !inLake(r);
+    const qa = share(flow[i]) * (d >= 0 ? 1 : 0.12), qb = share(main ? Math.max(flow[r], flow[i]) : flow[i]);
     let prev = p1;
     for (let s = 1; s <= S; s++) {
       const t = s / S, t2 = t * t, t3 = t2 * t, pt = [0, 0, 0];
@@ -493,14 +576,14 @@ function percentile(values, p) {
 // paled toward the paper.
 const DRAWN_BIOMES = {
   ocean: "#8bcad0", ice: "#f8fafb",
-  tropical_rain_forest: "#3f9c74", tropical_seasonal_forest: "#5fae72", tropical_dry_forest_savanna: "#d6bd62", tropical_seasonal_forest_savanna: "#d6bd62",
-  warm_mixed_forest: "#6fb383", temperate_deciduous_forest: "#8cc481", cool_mixed_forest: "#70ae8e", cool_conifer_forest: "#4c9a84",
-  taiga: "#93bda3", cold_mixed_forest: "#86b6a2", cold_deciduous_forest: "#aacba6",
-  xerophytic_woods_scrub: "#d3b674", warm_grass_shrub: "#e6cf88", cool_grass_shrub: "#d3d792",
-  tundra: "#cddccb", hot_desert: "#f4d3a1", semi_desert: "#eec592", polar_desert: "#e4e9e4",
+  tropical_rain_forest: "#4f9a5a", tropical_seasonal_forest: "#74ad5e", tropical_dry_forest_savanna: "#cdbb5e", tropical_seasonal_forest_savanna: "#c3bd66",
+  warm_mixed_forest: "#7fb46e", temperate_deciduous_forest: "#9cc47a", cool_mixed_forest: "#7aa878", cool_conifer_forest: "#4f8a6a",
+  taiga: "#86a98a", cold_mixed_forest: "#8fb08f", cold_deciduous_forest: "#b3c99a",
+  xerophytic_woods_scrub: "#cfa873", warm_grass_shrub: "#e3d58c", cool_grass_shrub: "#d0d48e",
+  tundra: "#c3c7a1", hot_desert: "#f6dcae", semi_desert: "#ecc08a", polar_desert: "#d8d2c3",
 };
-// The small sign that stands for each biome: 0 none, 1 a broad-leaved tree, 2 a conifer, 3 open woodland (a
-// flat-topped tree among grass), 4 grass, 5 sand, 6 tundra. (7, a peak, is drawn where the land is rugged.)
+// The sign that stands for each biome: 0 none, 1 a broad-leaved tree, 2 a conifer, 3 open woodland (a
+// flat-topped tree among grass), 4 grass, 5 sand, 6 tundra. (7, a peak, is drawn where the land is rugged or high.)
 const DRAWN_SIGNS = {
   tropical_rain_forest: 1, tropical_seasonal_forest: 1, warm_mixed_forest: 1, temperate_deciduous_forest: 1, cool_mixed_forest: 1, cold_deciduous_forest: 1,
   cool_conifer_forest: 2, taiga: 2, cold_mixed_forest: 2,
@@ -508,6 +591,11 @@ const DRAWN_SIGNS = {
   warm_grass_shrub: 4, cool_grass_shrub: 4, hot_desert: 5, semi_desert: 5, tundra: 6,
 };
 const SIGN_NAMES = ["", "trees", "conifers", "scattered trees and grass", "grass", "sand", "tundra"];
+// The colours the drawing gives the sea's depths, the heights and the rivers, for the legend (the shaders' own numbers).
+const DRAWN_KEY = {
+  shelf: [181, 224, 219], sea: [139, 202, 208], deep: [116, 183, 199], frozenSea: [219, 235, 242], lake: [153, 212, 214],
+  high1: [204, 184, 158], high2: [224, 214, 201], high3: [245, 245, 242], river: [39, 100, 133], snow: [244, 246, 247],
+};
 function hexRGB(h) { return [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); }
 function drawnBiomeColours(names, engineColours) {       // for each biome: red, green, blue, and its sign
   return names.map((name, i) => {

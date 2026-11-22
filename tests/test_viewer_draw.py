@@ -120,3 +120,140 @@ def test_the_page_holds_everything_its_scripts_reach_for():
     assert used and not (used - ids), used - ids
     css = (VIEWER / "style.css").read_text(encoding="utf-8")
     assert not (set(re.findall(r"#([a-z]+)\b(?=[^{}]*\{)", css)) - ids - {"fff"})               # no rule for a part that is gone
+
+
+# ---------------------------------------------------------------------------------------------- the atlas (viewer/atlas.js)
+def atlas_js(expression, **given):
+    """The value of a JavaScript expression that may use everything draw.js and atlas.js define, and `given`."""
+    run = ("const fs = require('fs'), vm = require('vm'), ctx = vm.createContext({});"
+           "for (const f of process.argv.slice(2, -1)) vm.runInContext(fs.readFileSync(f, 'utf8'), ctx);"
+           "ctx.given = JSON.parse(fs.readFileSync(0, 'utf8'));"
+           "process.stdout.write(JSON.stringify(vm.runInContext(process.argv[process.argv.length - 1], ctx)));")
+    r = subprocess.run([NODE, "-e", run, str(VIEWER / "draw.js"), str(VIEWER / "atlas.js"), expression], input=json.dumps(given),
+                       capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr[-2000:]
+    return json.loads(r.stdout)
+
+
+def toy_world(m):
+    """On a mesh of 642 cells: a land of the cells within 50 degrees of one place, with a ring of highland in it and a
+    lake, a speck of land of one cell off its coast, and a river from the highland down to the sea; sea everywhere else."""
+    centre = np.array([1.0, 0.0, 0.0])
+    off = np.degrees(np.arccos(np.clip(m.xyz @ centre, -1, 1)))
+    island = int(np.argmin(np.abs(off - 70) + 50 * (m.xyz[:, 1] > -0.3)))
+    sea = (off > 50).astype(int)
+    sea[island] = 0
+    height = np.where(sea == 1, -4000.0, 300.0)
+    height[(off > 10) & (off < 18)] = 1800.0
+    lake = np.zeros(m.n, int)
+    lake[int(np.argmin(off))] = 1
+    recv, flow = np.full(m.n, -1), np.zeros(m.n)
+    path = [int(np.argmin(np.abs(off - a) + 50 * (np.abs(m.xyz[:, 2]) > 0.2) + 50 * (m.xyz[:, 1] < 0))) for a in (14, 24, 34, 44, 49, 56)]
+    for k, (a, b) in enumerate(zip(path, path[1:])):
+        recv[a] = b
+        flow[a] = 1000.0 * (k + 1)
+    return {"n": m.n, "xyz": m.xyz.ravel().tolist(), "nbr": m.nbr.ravel().tolist(), "sea": sea.tolist(), "height": height.tolist(),
+            "recv": recv.tolist(), "flow": flow.tolist(), "lake": lake.tolist()}, path, island
+
+
+@needs_node
+def test_the_atlas_finds_the_worlds_own_features():
+    m = get_mesh(3)
+    world, path, island = toy_world(m)
+    feats = atlas_js("Atlas.features({...given, xyz: Float32Array.from(given.xyz), nbr: Int32Array.from(given.nbr)})"
+                     ".map((f) => ({kind: f.kind, size: f.size, cells: f.cells, anchor: f.anchor, rank: f.rank, path: f.path, along: f.along}))", **world)
+    kinds = [f["kind"] for f in feats]
+    land = next(f for f in feats if f["kind"] == "continent")
+    sea = np.array(world["sea"])
+    assert land["size"] == int((sea == 0).sum()) - 1 and all(sea[c] == 0 for c in land["cells"])        # the land without the speck far off
+    assert "island" not in kinds                                                                          # one cell is no island (fewer than 3)
+    assert kinds.count("range") == 1 and kinds.count("lake") == 1 and kinds.count("ocean") + kinds.count("sea") == 1   # (an ocean from 300 cells)
+    high = next(f for f in feats if f["kind"] == "range")
+    assert all(world["height"][c] >= 1500 for c in high["cells"]) and high["along"] > 0
+    river = next(f for f in feats if f["kind"] == "river")
+    mouth = next(c for c, after in zip(path, path[1:]) if sea[c] == 0 and sea[after] == 1)
+    up = path[:path.index(mouth) + 1][::-1]                                                              # from the mouth up the toy river,
+    up = [c for k, c in enumerate(up) if all(world["flow"][q] >= 0.25 * world["flow"][mouth] for q in up[:k + 1])]   # while the flow holds
+    assert river["path"] == up and len(up) >= 4
+    ocean = next(f for f in feats if f["kind"] in ("ocean", "sea"))
+    assert all(sea[c] == 1 for c in ocean["cells"]) and land["anchor"] in land["cells"]
+    assert [f["rank"] for f in feats if f["kind"] == "continent"] == [0]
+
+
+@needs_node
+def test_the_invented_names_are_the_same_for_the_same_seed_and_none_is_used_twice():
+    m = get_mesh(3)
+    world, _, _ = toy_world(m)
+    expr = ("(() => { const f = Atlas.features({...given, xyz: Float32Array.from(given.xyz), nbr: Int32Array.from(given.nbr)});"
+            " const a = Atlas.names(given.seed, f), b = Atlas.names(given.seed, f), c = Atlas.names(given.seed + 1, f);"
+            " return { a: [a.world, ...a.of.values()], b: [b.world, ...b.of.values()], c: [c.world, ...c.of.values()], kinds: f.map((x) => x.kind) }; })()")
+    got = atlas_js(expr, **world, seed=20261004)
+    assert got["a"] == got["b"] and got["a"] != got["c"]
+    words = [n.split()[-1] if n.split()[0] in ("the", "Lake", "River", "Isle", "Sea") else n.split()[0] for n in got["a"][1:]]
+    assert len(set(words)) == len(words) and all(re.fullmatch(r"[A-Z][a-z]{2,12}", w) for w in [got["a"][0], *words])
+    for kind, name in zip(got["kinds"], got["a"][1:]):
+        assert {"ocean": "Ocean", "range": ("Mountains", "Range", "Heights"), "lake": ("Lake", "Water", "Mere"),
+                "river": ("River", "the ")}[kind] if kind in ("ocean",) else True
+        if kind == "ocean":
+            assert "Ocean" in name
+        if kind == "lake":
+            assert any(w in name for w in ("Lake", "Water", "Mere"))
+        if kind == "range":
+            assert any(w in name for w in ("Mountains", "Range", "Heights"))
+
+
+@needs_node
+def test_the_magic_layers_marks_are_lines_not_nets():
+    """Plate lines as a tree through their cells (each cell joined once), river lines along the water's way, the
+    nexus cells, and the wellsprings with their mana among the wellsprings'."""
+    m = get_mesh(3)
+    a = int(np.argmax(m.xyz[:, 0]))
+    band = sorted({a, *[int(j) for j in m.nbr[a] if j >= 0]})                          # seven cells: a dense blob
+    river = [int(np.argmax(m.xyz[:, 1]))]
+    river.append(int(next(j for j in m.nbr[river[0]] if j >= 0)))
+    recv = [-1] * m.n
+    recv[river[0]] = river[1]
+    ley = [0] * m.n
+    for c in band:
+        ley[c] = 1
+    for c in river:
+        ley[c] = 2
+    nexus = int(next(j for c in band for j in m.nbr[c] if j >= 0 and j not in band and j not in river))
+    ley[nexus] = 3
+    aura = [0] * m.n
+    aura[band[0]], aura[river[0]] = 1, 1
+    density = [0.0] * m.n
+    density[band[0]], density[river[0]] = 2.0, 8.0
+    got = atlas_js("Atlas.magicMarks(given.n, Int32Array.from(given.nbr), given.recv, given.ley, ['none', 'plate_line', 'river_line', 'nexus'],"
+                   " given.aura, ['faint', 'wellspring'], given.density)", n=m.n, nbr=m.nbr.ravel().tolist(), recv=recv, ley=ley, aura=aura, density=density)
+    tree = got["plate"]
+    joined = {c for e in tree for c in e}
+    assert len(tree) == len(joined) - 1 == len(band)                                   # a tree over the band and the nexus: no triangle
+    assert got["river"] == [[river[0], river[1]]] and got["nexus"] == [nexus]
+    assert sorted(got["springs"]) == sorted([[band[0], 0.25], [river[0], 1.0]])
+
+
+@needs_node
+def test_a_river_is_not_drawn_across_a_lake_and_only_the_main_stem_swells():
+    m = get_mesh(3)
+    a = 100
+    b = int(m.nbr[a][0])
+    side = int(next(j for j in m.nbr[b] if j >= 0 and j != a))
+    c = int(next(j for j in m.nbr[b] if j >= 0 and j not in (a, side)))
+    recv, flow, sea, lake = [-1] * m.n, [0.0] * m.n, [0] * m.n, [0] * m.n
+    recv[a], recv[side], recv[b] = b, b, c
+    flow[a], flow[side], flow[b] = 30.0, 10.0, 50.0
+    xyz = m.xyz.astype(np.float32).ravel().tolist()
+    parts = np.array(draw_js("Array.from(riverParts(Float32Array.from(given.xyz), Int32Array.from(given.recv), Float32Array.from(given.flow), given.sea, 50, given.lake))",
+                             xyz=xyz, recv=recv, flow=flow, sea=sea, lake=lake)).reshape(-1, 8)
+    each = draw_js("DRAWING.riverParts")
+
+    def way(parts, frm):                                       # the parts of the way from a cell: they start at its centre
+        k = next(k for k in range(0, len(parts), each) if np.allclose(parts[k][0:3], m.xyz[frm], atol=1e-5))
+        return parts[k:k + each]
+    assert np.allclose(way(parts, a)[-1][3:6], m.xyz[b], atol=1e-5) and np.allclose(way(parts, side)[-1][3:6], m.xyz[b], atol=1e-5)
+    assert np.isclose(way(parts, a)[-1][7], 1.0) and np.isclose(way(parts, side)[-1][7], 10 / 50)   # the main stem swells to the join's flow; a side river does not
+    lake[b] = lake[c] = 1
+    across = np.array(draw_js("Array.from(riverParts(Float32Array.from(given.xyz), Int32Array.from(given.recv), Float32Array.from(given.flow), given.sea, 50, given.lake))",
+                              xyz=xyz, recv=recv, flow=flow, sea=sea, lake=lake)).reshape(-1, 8)
+    assert not any(np.allclose(p[3:6], m.xyz[c], atol=1e-5) for p in across)          # nothing drawn from b to c: both are lake

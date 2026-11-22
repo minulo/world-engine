@@ -23,6 +23,8 @@
       <p id="mapnote" class="muted small">A drawing of this world, made from its sea, heights, biomes, ice, lakes and rivers. The cells hold what is true: everything smaller than a cell (the bends of the coasts and rivers, the ridges, the lines in the shadows) is the viewer's hand. Click a place for its cell's stored values, or choose <b>Data</b> to see one field exactly as stored.</p>
       <label class="check" id="seasonrow"><input id="season" type="checkbox"> Show the month's snow and rivers</label>
       <label class="check" id="finerrow"><input id="finer" type="checkbox" checked> Work out finer cells close in</label>
+      <label class="check" id="namesrow"><input id="names" type="checkbox" checked> Place names <span class="muted">(invented)</span></label>
+      <label class="check" id="magicrow" hidden><input id="magic" type="checkbox"> Ley lines and wellsprings <span class="muted">(the invented layer magic)</span></label>
       <p id="detailnote" class="muted small"></p>
     </div>
 
@@ -94,12 +96,14 @@
   </section>
   <aside id="cellpanel">
     <h2 id="celltitle">No cell selected</h2>
+    <p id="cellhint" class="muted small">Click a place on the map: this panel then shows what the world stores in that cell, and why it is so.</p>
     <div id="why"></div>
     <div id="cellvalues"></div>
   </aside>
 </main>
 <script src="draw.js"></script>
 <script src="overlay.js"></script>
+<script src="atlas.js"></script>
 <script src="viewer.js"></script>
 </body>
 </html>
