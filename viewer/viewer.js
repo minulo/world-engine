@@ -89,9 +89,9 @@ const canvas = $("gl");
 const gl = canvas.getContext("webgl2", { antialias: false });
 let prog, uni = {}, tex = {}, looks = {}, quad, rivers, fineRivers;
 // each texture keeps a unit of its own, so that no drawing has to bind one again
-const UNITS = { ids: 0, data: 1, lut: 2, pal: 3, sea: 4, pos: 5, nbr: 6, a: 7, b: 8, biome: 9, fids: 10, fpos: 11, fnbr: 12, fa: 13, fb: 14 };
+const UNITS = { ids: 0, data: 1, lut: 2, pal: 3, sea: 4, pos: 5, nbr: 6, a: 7, b: 8, biome: 9, fids: 10, fpos: 11, fnbr: 12, fa: 13, fb: 14, c: 15 };
 const SAMPLERS = { uIds: 0, uData: 1, uLut: 2, uPal: 3, uSea: 4, uPos: 5, uNbr: 6, uA: 7, uB: 8, uBiome: 9,
-                   uFIds: 10, uFPos: 11, uFNbr: 12, uFA: 13, uFB: 14 };
+                   uFIds: 10, uFPos: 11, uFNbr: 12, uFA: 13, uFB: 14, uC: 15 };
 function program(vs, fs, attributes) {
   const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
@@ -108,8 +108,13 @@ function program(vs, fs, attributes) {
 function initGL() {
   if (!gl) { $("status").textContent = "This browser has no WebGL2, which the viewer needs."; return false; }
   looks.data = program(VS_QUAD, dataShader(NO_CLASS, NO_VALUE, NOTHING_AT_SEA, NOTHING_ON_LAND), ["aPos"]);
-  looks.map = program(VS_QUAD, FS_MAP, ["aPos"]);
-  looks.river = program(VS_RIVER, FS_RIVER, ["aCorner", "aA", "aB", "aQ"]);
+  try {                                    // without the illustrated look the page still shows the data
+    looks.map = program(VS_QUAD, FS_MAP, ["aPos"]);
+    looks.river = program(VS_RIVER, FS_RIVER, ["aCorner", "aA", "aB", "aQ"]);
+  } catch (e) {
+    looks.map = looks.river = null; looks.failed = String(e.message || e).split("\n")[0].slice(0, 200);
+    console.warn("the illustrated look could not be made on this graphics card; the page shows the data look", e);
+  }
   prog = looks.data.prog; uni = looks.data.uni;         // the data look's program is the one in use between two drawings
   quad = gl.createVertexArray(); gl.bindVertexArray(quad);
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
@@ -162,6 +167,7 @@ function shared(u, w, h, ready) {         // what every program is told before i
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   gl.uniform3f(u.uSpace, dark ? 0.02 : 0.043, dark ? 0.027 : 0.059, dark ? 0.043 : 0.09);
   gl.uniform1i(u.uDark, dark ? 1 : 0);
+  gl.uniform1i(u.uSnow, state.look === "map" && state.season && state.map ? 1 : 0);
   const d = state.look === "map" ? state.detail : null;
   gl.uniform1i(u.uFine, d ? 1 : 0);
   if (d) { gl.uniform1i(u.uFSize, d.size); gl.uniform3fv(u.uFCentre, d.centre); gl.uniform3fv(u.uFEast, d.east); gl.uniform3fv(u.uFNorth, d.north);
@@ -180,7 +186,7 @@ function draw() {
   } else {
     const m = state.map, ready = !!(m && state.idmap), ppr = pxPerRad(h, w / h), d = state.detail;
     // as many sizes of bend as the screen can show, the smallest a few pixels long; and as many sizes of ridge
-    const bends = (cell) => Math.max(2, Math.min(9, Math.floor(Math.log2(Math.max(1, cell * ppr * DRAWING.warpStep / 3))) + 1));
+    const bends = (cell) => Math.max(2, Math.min(9, Math.floor(Math.log2(Math.max(1, cell * ppr * DRAWING.warpStep / (8 * dpr)))) + 1));   // the smallest bend 8 points long on every screen
     const ridges = (cell) => Math.max(1, Math.min(4, Math.floor(Math.log2(Math.max(1, cell * ppr * 0.9 / (12 * dpr)))) + 1));
     const cell = state.mesh ? state.mesh.cell : 0.03, fine = d ? d.cell : cell;
     const M = looks.map; gl.useProgram(M.prog); shared(M.uni, w, h, ready);
@@ -191,10 +197,10 @@ function draw() {
       const R = looks.river; gl.useProgram(R.prog); shared(R.uni, w, h, ready);
       gl.uniform1i(R.uni.uOct, bends(cell)); gl.uniform1i(R.uni.uFOct, bends(fine)); gl.uniform1f(R.uni.uDpr, dpr); gl.uniform2f(R.uni.uView, w, h);
       const turns = state.zoom / (state.flat ? 1 : 0.92);   // how far in the view is, 1 for the whole world
-      gl.uniform1f(R.uni.uWide, Math.max(0.6, Math.min(2.4, 0.72 * Math.pow(turns, 0.4))));
+      gl.uniform1f(R.uni.uWide, Math.max(0.45, Math.min(2.4, 0.45 * Math.pow(turns, 0.6))));   // thin far out: no heavier than the coast
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      for (const [level, strip, least] of [[0, rivers, Math.max(DRAWING.riverFloor, 0.11 / Math.pow(turns, 1.2))],   // closer in, smaller rivers are drawn too
-                                           [1, fineRivers, DRAWING.riverFloor]]) {
+      for (const [level, strip, least] of [[0, rivers, Math.max(DRAWING.riverFloor, 0.20 / Math.pow(turns, 1.4))],   // closer in, smaller rivers are drawn too
+                                           [1, fineRivers, Math.max(DRAWING.riverFloor, 0.05 / Math.pow(turns, 0.9))]]) {
         if (!strip.count || (level === 1 && !d)) continue;
         gl.uniform1i(R.uni.uLevel, level); gl.uniform1f(R.uni.uQMin, least); gl.bindVertexArray(strip.vao);
         for (const shift of state.flat ? [-2, 0, 2] : [0]) { gl.uniform1f(R.uni.uShift, shift); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, strip.count); }
@@ -204,6 +210,7 @@ function draw() {
     gl.useProgram(prog);
   }
   showScale();
+  Overlay.redraw();                        // the sheet over the map: lettering and ornaments, placed by the same view
   clearTimeout(draw.then); draw.then = setTimeout(considerDetail, 220);     // once the view rests: does it want finer cells?
 }
 function screenToLatLon(cx, cy) {
@@ -211,7 +218,7 @@ function screenToLatLon(cx, cy) {
   if (state.flat) {
     const fit = Math.min(1, rect.width / rect.height / 2);
     const lat = (y / fit / state.zoom + state.panY) * 90; let lon = (x / 2 / fit / state.zoom + state.panX) * 180;
-    if (Math.abs(lat) > 90) return null;
+    if (Math.abs(lat) > DRAWING.flatEdge) return null;
     lon = ((lon + 180) % 360 + 360) % 360 - 180; return [lat, lon];
   }
   const qx = x / state.zoom, qy = y / state.zoom, r2 = qx * qx + qy * qy;
@@ -288,7 +295,7 @@ async function loadMesh() {
   cellTexture("pos", DATA_W, rows, pos); cellTexture("nbr", DATA_W * 2, rows, around);
   state.mesh = { xyz, nbr, h, cell: sum / n };
 }
-function canDraw() { return !!(state.mesh && state.world && state.world.fields.ocean_mask); }
+function canDraw() { return !!(looks.map && state.mesh && state.world && state.world.fields.ocean_mask); }
 async function loadMap() {                 // everything the illustrated look is drawn from, asked for once
   if (state.map) return state.map;
   const f = state.world.fields, n = state.world.meta.cells;
@@ -314,16 +321,20 @@ async function loadMap() {                 // everything the illustrated look is
 }
 function redrawMap() {                     // the parts of the drawing that follow the month when the seasons are shown
   const m = state.map, n = state.world.meta.cells, rows = Math.ceil(n / DATA_W), mo = state.season ? state.month - 1 : -1;
-  const A = new Float32Array(DATA_W * rows * 4), B = new Float32Array(DATA_W * rows * 4);
-  const snow = m.snow ? (mo >= 0 && m.snow.length > 1 ? m.snow[mo] : m.snowLeast) : null;
+  const A = new Float32Array(DATA_W * rows * 4), B = new Float32Array(DATA_W * rows * 4), C = new Float32Array(DATA_W * rows * 4);
+  // ice: the biome ice, and where snow and ice cover the ground all year; the month's snow apart from it (C), drawn as a veil
+  const month = m.snow && mo >= 0 && m.snow.length > 1 ? m.snow[mo] : null, lake = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    const ice = (m.biome && m.biome[i] === m.ice) || (snow && snow[i] >= 0.5);
+    const ice = (m.biome && m.biome[i] === m.ice) || (m.snowLeast && m.snowLeast[i] >= 0.5);
+    lake[i] = m.lake && m.lake[i] >= 0.5 ? 1 : 0;
     A.set([m.sea[i] ? 0 : 1, m.height[i], m.biome ? m.biome[i] : -1, ice ? 1 : 0], i * 4);
-    B.set([m.slope[i * 3], m.slope[i * 3 + 1], m.slope[i * 3 + 2], m.lake && m.lake[i] >= 0.5 ? 1 : 0], i * 4);
+    B.set([m.slope[i * 3], m.slope[i * 3 + 1], m.slope[i * 3 + 2], lake[i]], i * 4);
+    C[i * 4] = month && !ice && month[i] >= 0.5 ? 1 : 0;
   }
-  cellTexture("a", DATA_W, rows, A); cellTexture("b", DATA_W, rows, B);
+  cellTexture("a", DATA_W, rows, A); cellTexture("b", DATA_W, rows, B); cellTexture("c", DATA_W, rows, C);
+  m.snowCells = month ? C.reduce((k, v, i) => k + (i % 4 === 0 && v > 0 ? 1 : 0), 0) : 0;
   if (m.recv && m.flow && m.top > 0) {
-    const parts = riverParts(state.mesh.xyz, m.recv, mo >= 0 && m.flow.length > 1 ? m.flow[mo] : m.flowYear, m.sea, m.top);
+    const parts = riverParts(state.mesh.xyz, m.recv, mo >= 0 && m.flow.length > 1 ? m.flow[mo] : m.flowYear, m.sea, m.top, lake);
     gl.bindBuffer(gl.ARRAY_BUFFER, rivers.parts); gl.bufferData(gl.ARRAY_BUFFER, parts, gl.DYNAMIC_DRAW);
     m.riverCount = rivers.count = parts.length / 8;
   }
@@ -344,7 +355,7 @@ function considerDetail() {
   if (v.cellPx < DETAIL.drop || (v.cellPx < DETAIL.from && !state.detail)) return dropDetail();
   const d = state.detail, cell = state.mesh.cell;
   // the detail held is enough while the view lies inside its full part (or, for a view wider than any detail, near its middle)
-  if (d && angle(v.at, d.centre) + Math.min(v.reach, 0.7 * d.inner) <= d.inner) return;
+  if (d && angle(v.at, d.centre) + Math.min(v.reach, 0.7 * d.inner) <= d.inner - 0.5 * DETAIL.band * cell) return;
   if (considerDetail.asking) return;
   const want = Math.max(DETAIL.least * cell, Math.min(DETAIL.most * cell, v.reach * 1.15 + (DETAIL.band + 1.6) * cell));
   const asked = new URLSearchParams({ lat: v.lat.toFixed(2), lon: v.lon.toFixed(2), radius_km: (want * state.world.planet.radius_m / 1000).toFixed(0) }).toString();
@@ -376,7 +387,17 @@ function useDetail(j) {                    // the finer cells as the shaders rea
   const ids = Uint32Array.from(j.grid.ids);
   gl.activeTexture(gl.TEXTURE0 + UNITS.fids); gl.bindTexture(gl.TEXTURE_2D, tex.fids);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32UI, j.grid.size, j.grid.size, 0, gl.RED_INTEGER, gl.UNSIGNED_INT, ids);
-  const parts = M.top > 0 ? riverParts(xyz, Int32Array.from(j.recv), Float32Array.from(j.flow), j.sea, M.top) : new Float32Array(0);
+  const recv = Int32Array.from(j.recv);
+  for (let pass = 0; pass < 6; pass++)                 // a fine river that ends on land, short of the sea, is led on downhill
+    for (let i = 0; i < m; i++) {                      // (the detail hands water over at the world's borders, not at its coast)
+      if (j.sea[i] || recv[i] >= 0 || !(j.flow[i] > 0)) continue;
+      let to = -1, low = j.height[i];
+      for (let k = 0; k < 6; k++) { const q = nbr[i * 6 + k]; if (q < 0) continue;
+        if (j.sea[q]) { to = q; break; }
+        if (j.height[q] < low) { low = j.height[q]; to = q; } }
+      if (to >= 0) recv[i] = to;
+    }
+  const parts = M.top > 0 ? riverParts(xyz, recv, Float32Array.from(j.flow), j.sea, M.top, j.lake) : new Float32Array(0);
   gl.bindBuffer(gl.ARRAY_BUFFER, fineRivers.parts); gl.bufferData(gl.ARRAY_BUFFER, parts, gl.DYNAMIC_DRAW); fineRivers.count = parts.length / 8;
   const outer = Math.max(0.5 * j.reach, j.reach - 0.6 * mesh.cell), inner = Math.max(0.3 * j.reach, j.reach - DETAIL.band * mesh.cell);
   state.detail = { centre: j.centre, east: j.east, north: j.north, half: j.grid.half, size: j.grid.size, ids, cell: sum / m, reach: j.reach, inner, outer,
@@ -404,14 +425,25 @@ function mapLegend() {                     // what the colours and lines of the 
   const ul = document.createElement("ul"), here = new Set();
   if (m.biome) for (let i = 0; i < m.biome.length; i++) if (!m.sea[i]) here.add(m.biome[i]);
   m.names.forEach((name, i) => { if (here.has(i) && name !== "ocean") ul.append(swatch(m.colours[i], name.replace(/_/g, " "))); });
-  ul.append(swatch([174, 222, 218], "sea near the coast (a drawn band)"), swatch([139, 202, 208], "open sea"), swatch([110, 178, 196], "sea deeper than 3,800 m"));
-  if (m.lake && m.lake.some((v) => v >= 0.5)) ul.append(swatch([153, 212, 214], "lake"));
-  ul.append(swatch([190, 172, 167], "above 1,500 m"), swatch([237, 232, 230], "above 2,700 m"), swatch([39, 100, 133], "river, wider with its flow"));
+  const K = DRAWN_KEY;
+  ul.append(swatch(K.shelf, "sea shallower than 1,000 m"), swatch(K.sea, "open sea"), swatch(K.deep, "sea deeper than 3,800 m"),
+            swatch(K.frozenSea, "frozen sea"));
+  if (m.lake && m.lake.some((v) => v >= 0.5)) ul.append(swatch(K.lake, "lake"));
+  ul.append(swatch(K.high1, "above 1,000 m"), swatch(K.high2, "above 2,000 m"), swatch(K.high3, "above 3,000 m"), swatch(K.river, "river, wider with its flow"));
+  if (state.season) ul.append(swatch(K.snow, `snow in month ${state.month} (over the country, which still shows)`));
+  if (Atlas.show.magic && Atlas.magic) ul.append(swatch([123, 63, 179], "ley line along a plate boundary (invented)"), swatch([63, 111, 184], "ley line along a great river (invented)"),
+                                               swatch([201, 162, 39], "nexus, where they meet (invented)"), swatch([242, 193, 78], "wellspring, larger with more mana (invented)"));
   legend.append(ul);
   const note = document.createElement("p"); note.className = "muted small";
   note.textContent = "The small signs say what kind of country a place is: trees for forest, a flat-topped tree among tufts for open woodland, " +
     "tufts for grass, dots for sand, short strokes for tundra, peaks where the heights change fast. None of them marks a thing that stands at that spot.";
   legend.append(note);
+  if (Atlas.show.names) {
+    const said = document.createElement("p"); said.className = "muted small";
+    said.textContent = "The names are invented by the viewer from the world's seed: the world holds none. What they name is the world's own: its lands, " +
+      "its open seas (eight cells or more from any land), its highlands above 1,500 m, its largest rivers and its lakes.";
+    legend.append(said);
+  }
 }
 async function setLook(look) {
   if (look === "map" && !canDraw()) look = "data";
@@ -430,7 +462,7 @@ function monthRow() {                      // the month matters to a monthly fie
   if (!on && state.playing) togglePlay();
 }
 async function showMonth() {               // the month has changed
-  if (state.look === "map") { if (state.map && state.season) { redrawMap(); draw(); } }
+  if (state.look === "map") { if (state.map && state.season) { redrawMap(); mapLegend(); draw(); } }
   else await loadField();
 }
 function rangeOf(arr, positive) {       // as the server's stats: the 2nd and 98th percentiles, and the 99.9th for a log scale
@@ -541,6 +573,7 @@ async function selectField() {
 // ---------------------------------------------------------------- cell panel
 const MONTHS = (n) => Array.from({ length: n }, (_, i) => i + 1);
 async function showCell(id) {
+  $("cellhint").hidden = true;
   state.selected = id; draw();
   const c = await getJSON("/api/cell?id=" + id);
   $("celltitle").textContent = `Cell ${id} at ${Math.abs(c.lat).toFixed(1)}° ${c.lat >= 0 ? "N" : "S"}, ${Math.abs(c.lon).toFixed(1)}° ${c.lon >= 0 ? "E" : "W"}`;
@@ -658,8 +691,13 @@ function wire() {
   $("viewglobe").addEventListener("click", () => setView(false)); $("viewflat").addEventListener("click", () => setView(true));
   $("lookmap").addEventListener("click", () => setLook("map")); $("lookdata").addEventListener("click", () => setLook("data"));
   $("smooth").addEventListener("change", (e) => { state.smooth = e.target.checked; draw(); });
-  $("season").addEventListener("change", (e) => { state.season = e.target.checked; monthRow(); if (state.map) { redrawMap(); draw(); } });
+  $("season").addEventListener("change", (e) => { state.season = e.target.checked; monthRow(); if (state.map) { redrawMap(); mapLegend(); draw(); } });
   $("finer").addEventListener("change", (e) => { state.finer = e.target.checked; considerDetail.last = null; considerDetail(); });
+  $("names").addEventListener("change", (e) => { Atlas.show.names = e.target.checked; mapLegend(); draw(); });
+  $("magic").addEventListener("change", async (e) => {
+    $("status").textContent = e.target.checked ? "reading the layer magic…" : "";
+    try { await Atlas.setMagic(e.target.checked, state); } catch (err) { e.target.checked = false; Atlas.show.magic = false; console.error(err); }
+    $("status").textContent = ""; mapLegend(); draw(); });
   $("zoomin").addEventListener("click", () => zoomTo(state.zoom * 1.6)); $("zoomout").addEventListener("click", () => zoomTo(state.zoom / 1.6));
   $("zoomreset").addEventListener("click", () => setView(state.flat));
   const touching = new Map(); let drag = null, pinch = null;          // one finger or the mouse drags; two fingers pinch
@@ -724,11 +762,14 @@ function drawnAt(id) {                     // in the illustrated look: what the 
 function asked0() { return new URLSearchParams(location.search); }
 async function start() {
   if (!initGL()) return;
+  Overlay.init($("over"));
+  Atlas.install(getBuffer);
   wire(); draw();
   const w = state.world = await getJSON("/api/world");
   const m = w.meta;
   $("worldinfo").textContent = `${m.cells.toLocaleString()} cells · profile ${m.profile} · seed ${w.seed} · engine ${w.engine_version}`;
   const msgs = [...w.notices, ...w.warnings];
+  if (looks.failed) msgs.push(`The illustrated look could not be drawn on this graphics card, so the map shows the data look. (${looks.failed})`);
   if (m.fantasy && m.fantasy.length)                        // an invented layer laid over the physics (data/fantasy/)
     msgs.unshift(`This world carries the invented fantasy layer ${m.fantasy.join(", ")}: the fields it adds follow made-up rules ` +
                  "and claim nothing about any real world.");
@@ -755,6 +796,7 @@ async function start() {
   if (asked.has("smooth")) { state.smooth = true; $("smooth").checked = true; }
   if (asked.has("season")) { state.season = true; $("season").checked = true; }
   if (asked.get("finer") === "0") { state.finer = false; $("finer").checked = false; }
+  if (asked.get("names") === "0") { Atlas.show.names = false; $("names").checked = false; }
   const hist = w.history || { rounds: [], times_my: [], fields: [] };
   w.history = hist;
   $("frame").max = hist.rounds.length; $("frame").value = hist.rounds.length;
@@ -777,6 +819,7 @@ async function start() {
   }
   try { await loadMesh(); } catch (e) { console.warn("no mesh from the server: the cells' borders follow the grid", e); }
   $("lookrow").hidden = !canDraw();
+  $("magicrow").hidden = !Atlas.hasMagic(w);
   // the drawing is what a world opens with; a request that names a field (?field=) asks for the data look
   document.body.dataset.look = "data";
   await selectField();

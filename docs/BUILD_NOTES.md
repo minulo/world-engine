@@ -4181,3 +4181,98 @@ likely one, not the one. The page says the cells were worked out on request and 
    world, or a plain colour if there is none.
 7. A "why" answer is still about the world's cell: the detail keeps no cause records.
 
+## 34. The atlas: a second round on the illustrated look, names, the magic layer, and the map's furniture (2026-11-22)
+
+The owner asked for the graphics to go further. Two reviews of the illustrated look as section 33 left it, one of the
+whole world and the page and one close in (28 findings; six other reviews were cut short and not repeated), found
+what was weak, and this section is the work on most of it, in the viewer alone (`viewer/draw.js`, `viewer/viewer.js`,
+the new `viewer/overlay.js` and `viewer/atlas.js`, the page and its styles) and in two tools. No field, no process
+and no stored world changes.
+
+### 34.1 The drawing (the shaders)
+
+- **Rivers** were the heaviest marks on the world map and ran straight across lakes. They are now thinner far out
+  (no heavier than the coast), taper more between source and mouth, fewer are drawn far out, and they thin to nothing
+  toward the globe's rim, at the smallest flows drawn and at the edge of the finer cells (their width goes, never
+  their colour: no more half-transparent ghosts and ladder stripes where strips overlap). A river is not drawn inside
+  a lake; only a cell's main stem swells to the flow of the cell it joins; under the month's snow it is drawn faint.
+  A fine river that ended on land short of the sea is led on downhill to it.
+- **The north** was four near-whites. Polar desert and tundra have colours of their own (bare stone, moss); ice is
+  lit in its own cold colours instead of turning lavender in shadow; frozen sea is a pale blue with a drawn edge. With
+  the seasons shown, **the month's snow is a veil** over the country, which still shows under it, and permanent ice
+  (the biome ice, and where snow and ice cover the ground all year) is drawn apart from it.
+- **The sea** is three steps from the stored depth (shallower than 1,000 m, open sea, deeper than 3,800 m), each with
+  a thin drawn edge, in place of a pale band and blotches; the old charts' lines along the shore start closer in.
+- **Relief** is an ink laid over in two flat steps, bluer on pale ground, with strokes only in the deepest third step;
+  the height tints start at 1,000, 2,000 and 3,000 m and carry thin contour lines; the drawn ridges come in only once
+  a cell is large on the screen, so that far out the shadows are the flanks of the world's own ranges.
+- **The small signs** were sized in device pixels (four times as many on a screen of twice the density) and were
+  cut in half by coasts and biome borders. They are now sized in the page's points, each is decided whole at its foot
+  (on land as drawn, off ice and lakes, well inside its biome; a peak only on rugged ground or above 1,700 m, any
+  other sign only off it), they grow as the view comes closer, the signs of a finer net come in one by one as those
+  of the coarser one leave, and they thin out toward the globe's rim.
+- **The finer cells** of section 33 were drawn as a second picture over the first, and at the region's edge a second
+  coast and ghost land showed through. The two levels' grounds are now blended into one before the drawing, so one
+  coast slides from the one level to the other and each point is drawn once.
+- **The globe** has one flat step of shade at its lower right and a hard thrown shadow instead of a blurred halo, a
+  heavier rim, and a stronger graticule. The paper has fibres. In the dark scheme the map is the same sheet under a
+  lamp. The flat map ends at 84 degrees north and south: beyond, a latitude-longitude sheet only smears the last
+  cells into streaks (the globe shows the poles).
+- **The coast's smallest bend** is 8 points long on every screen, so the coast is no longer nervous on dense screens.
+- **Colours by biome**: the greens turned toward yellow, away from the sea's teal, and the ochres spread apart.
+
+### 34.2 The sheet over the map (overlay.js, atlas.js)
+
+A second canvas lies over the drawing, and its layers place things by the same arithmetic as the shaders (a probe
+checked that a dot at a given place falls on that place, also across the flat map's wrapping edge).
+
+- **Names.** The world stores no names, so the viewer makes them up from the world's seed, in a language that is also
+  made up from it: the same world always gets the same names. The things named are the world's own: its lands
+  (connected land cells; 100 cells or more are lettered as continents, from 3 as islands), its open seas (sea cells
+  eight or more cells from any land; from 300 cells an ocean, from 100 a sea), its highlands (connected land above
+  1,500 m, from 4 cells), its largest rivers (from each mouth whose flow is at least 5 % of the largest mouth's, up
+  the main stem while the flow is at least a quarter of the mouth's) and its lakes. Each kind has its own lettering
+  (spaced capitals for lands, spaced italic capitals for seas, italics along the river for rivers), the larger ones
+  first; closer in, more rivers are named; a name that would collide with another, leave the screen or not fit its
+  feature is left out. The page says, beside the box that switches them off, in the legend and in the cartouche, that
+  the names are invented and what they name is the world's.
+- **The magic layer**, on a world that carries it (the box shows only there): ley lines along plate boundaries
+  (drawn as a tree through their cells, so a band reads as a line), ley lines along great rivers (along the water's
+  way), the nexus where they meet, and the wellsprings (cells whose aura is "wellspring"), larger with more mana.
+  Off until asked for; the legend marks each mark invented.
+- **A compass rose** that points north on the globe as it turns, and **a cartouche** with the world's invented name,
+  its seed and cell count, and the line "names and ornaments invented by the viewer".
+
+### 34.3 The page
+
+In the illustrated look the page takes the map's paper and ink: warm panels, serif headings, and the scale bar, the
+status line and the zoom buttons drawn as the map's furniture (the bar as a two-tone map scale). The empty cell panel
+says what clicking does. A panel that opened only once a cell was clicked was tried and taken back: it resized the
+map under the pointer (the viewer check caught it: the place under the pointer moved by 37 degrees on the flat map).
+**If the illustrated look's shaders cannot be made on a graphics card**, the page no longer stops: it says so in the
+banner and shows the data look.
+
+### 34.4 Checked
+
+- `tools/viewer_check.py`, on the default world with magic in the headless Chromium of section 32 [MEASURED on
+  2026-11-22]: every check of sections 32 and 33 passed again, now also with the names (8 lettered on the opening
+  globe, and gone when the box is cleared; the legend says they are invented) and the magic layer (122 joins of plate
+  lines, 156 of river lines, 15 nexus, 31 wellsprings; the legend marks them invented); no error from the page.
+- `tests/test_viewer_draw.py` (with node): the atlas finds a toy world's land, open sea, highland, river and lake and
+  names them the same way for the same seed, never twice the same word; the magic layer's plate lines are a tree; a
+  river is not drawn across a lake and only the main stem swells; and the shaders still use no word GLSL keeps.
+- `tools/viewer_shot.py` (new): pictures of given views of a world, for looking at the drawing.
+
+### 34.5 Limits
+
+1. As before, seen only in one headless Chromium that draws without a graphics card; not on Windows, a Mac, Safari
+   or Firefox. The fallback when a shader cannot be made was not seen to work: no browser here refused the shaders.
+2. Deciding each sign at its foot costs two more lookups of the cells around wherever a sign covers the screen; its
+   cost on a graphics card was not measured.
+3. Only this one world was looked at. The rules for what is named were set on it; another world may name more or
+   fewer things. The names are lettered on the sheet in points and are not tested against every screen size.
+4. Names are placed again at each drawing, so a name may move or drop out as the view changes.
+5. The six reviews cut short (cartography, the shaders' portability across graphics cards, speed, the data for names,
+   the data for magic, the page) were not repeated; their questions are open, above all how the shaders fare on
+   ANGLE over Direct3D and Metal.
+

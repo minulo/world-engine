@@ -25,6 +25,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import viewer_shot                                        # noqa: E402  (beside this file: how the browser is started)
 from worldengine import console                          # noqa: E402
 from worldengine.server import make_server                # noqa: E402
 
@@ -183,6 +186,34 @@ def drawing(page, out, problems):
         problems.append(f"the looks do not change as they should: {data!r}, {back!r}")
 
 
+def atlas(page, out, problems):
+    """The sheet over the map: invented names, marked as such; the compass and cartouche; the magic layer's marks."""
+    page.click("#zoomreset")
+    settled(page)
+    names = page.evaluate("Atlas.placed.slice()")
+    legend = page.inner_text("#legend")
+    print(f"atlas: {len(names)} names lettered on the globe, for example {names[:4]}; the legend says they are invented: {'invented' in legend}")
+    if not names or "invented by the viewer" not in legend:
+        problems.append(f"the atlas lettered {len(names)} names, or the legend does not say the names are invented")
+    page.uncheck("#names")
+    settled(page)
+    gone = page.evaluate("Atlas.placed.length === 0 || !Atlas.show.names")
+    page.check("#names")
+    if not gone:
+        problems.append("the names stay when the box for them is cleared")
+    if page.is_visible("#magicrow"):
+        page.check("#magic")
+        page.wait_for_function("!!Atlas.magic", timeout=60000)
+        marks = page.evaluate("({plate: Atlas.magic.plate.length, river: Atlas.magic.river.length, nexus: Atlas.magic.nexus.length, springs: Atlas.magic.springs.length})")
+        settled(page)
+        page.screenshot(path=str(out / "drawing_magic.png"), timeout=120000)
+        legend = page.inner_text("#legend")
+        print(f"atlas: the magic layer drew {marks}; the legend marks it invented: {'wellspring' in legend and 'invented' in legend}")
+        if not (marks["plate"] + marks["river"]) or not marks["springs"] or "wellspring" not in legend:
+            problems.append(f"the magic layer: {marks}, legend {legend[-200:]!r}")
+        page.uncheck("#magic")
+
+
 def finer(page, out, problems):
     """The finer cells that the engine works out for the region in view, close in."""
     went = page.evaluate("""() => {
@@ -265,7 +296,7 @@ def check(store, out_dir, fields, query="", no_class=None):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     problems = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(args=["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])
+        browser = viewer_shot.launch(p)
         page = browser.new_page(viewport={"width": 1500, "height": 860})
         page.on("console", lambda m: problems.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: problems.append(str(e)))
@@ -274,6 +305,7 @@ def check(store, out_dir, fields, query="", no_class=None):
         print("world:", page.inner_text("#worldinfo"))
         if "field=" not in query and "look=" not in query and page.evaluate("canDraw()"):
             drawing(page, out, problems)
+            atlas(page, out, problems)
             finer(page, out, problems)
         names = fields or [page.eval_on_selector("#field", "e => e.value")]
         for name in names:
@@ -325,7 +357,8 @@ def check(store, out_dir, fields, query="", no_class=None):
                 const out = {};
                 for (const [name, sea] of [["land", 0], ["sea", 1]]) {
                     let id = -1;
-                    for (let i = 0; i < state.data.length; i++) if (state.data[i] === 0 && state.sea[i] === sea) { id = i; break; }
+                    for (let i = 0; i < state.data.length; i++)    // (a cell the flat map shows: it ends short of the poles)
+                        if (state.data[i] === 0 && state.sea[i] === sea && Math.abs(Math.asin(state.mesh.xyz[i * 3 + 2])) * 180 / Math.PI < DRAWING.flatEdge - 4) { id = i; break; }
                     if (id < 0) continue;
                     const c = await getJSON("/api/cell?id=" + id);
                     draw();

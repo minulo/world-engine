@@ -379,9 +379,16 @@ def test_the_check_of_a_running_server_refuses_a_wrong_page_or_an_empty_world():
     try:
         with pytest.raises(RuntimeError, match="GET / gave 7 bytes of text/plain; expected text/html holding World viewer"):
             server.check(stand_in, timeout_s=30)
-        answers.update({"/": ("text/html", b"World viewer"), "/viewer.js": ("text/javascript", b"WebGL2"),
-                        "/draw.js": ("text/javascript", b"#version 300 es"), "/style.css": ("text/css", b""),
+        page = b'World viewer <script src="draw.js"></script><script src="more.js"></script><script src="viewer.js"></script>'
+        answers.update({"/": ("text/html", page), "/viewer.js": ("text/javascript", b"WebGL2"),
+                        "/draw.js": ("text/javascript", b"#version 300 es"), "/style.css": ("text/css", b"body {}"),
                         "/api/world": ("application/json", json.dumps({"meta": {"cells": 0}, "fields": {}, "seed": 1}).encode())})
+        with pytest.raises(RuntimeError, match="GET /more.js gave 7 bytes of text/plain; expected text/javascript"):
+            server.check(stand_in, timeout_s=30)                      # every script the page names is asked for
+        answers["/more.js"] = ("text/javascript", b"")
+        with pytest.raises(RuntimeError, match="GET /more.js gave 0 bytes of text/javascript"):
+            server.check(stand_in, timeout_s=30)                      # and an empty one is no script
+        answers["/more.js"] = ("text/javascript", b"'use strict';")
         with pytest.raises(RuntimeError, match="GET /api/world gave a world of 0 cells and 0 fields"):
             server.check(stand_in, timeout_s=30)
         answers["/api/world"] = ("application/json", json.dumps({"meta": {"cells": 5}, "fields": {"a": {}}, "seed": 1}).encode())
